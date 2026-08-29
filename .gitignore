@@ -3,3 +3,7 @@ env/*
 .env/*
 __pycache__/
 *.py[cod]
+
+.codex-worker/
+__pycache__/
+*.py[cod]
