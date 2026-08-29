@@ -1,0 +1,13 @@
+export type CapabilityType =
+  | 'INGEST'
+  | 'IDENTIFY'
+  | 'EXTRACT'
+  | 'RECONCILE'
+  | 'MONITOR'
+  | 'PREDICT'
+  | 'DETECT'
+  | 'EXPLAIN'
+  | 'IMPACT'
+  | 'PLAN'
+  | 'DECIDE'
+  | 'ACT'

@@ -28,8 +28,12 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
+import { getActionImpact, getPetComment } from '@/data/action-impact'
+import { ActionImpactDetail } from '@/components/donald/action-impact-detail'
+import { PetComment } from '@/components/donald/pet-comment'
 import { NodeActivationEffect } from '@/components/donald/node-activation-effect'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
+import { DonaldPet } from '@/components/donald-pet/DonaldPet'
 import '@xyflow/react/dist/style.css'
 
 type Status = 'WAITING' | 'RUNNING' | 'DONE' | 'NEEDS HUMAN' | 'BLOCKED' | 'FAILED' | 'SKIPPED'
@@ -76,6 +80,7 @@ type FlowNodeData = FlowNode & {
   selected: boolean
   activating: boolean
   activationKey: number
+  petMoving: boolean
   onSelect: () => void
   onActivationComplete: () => void
 }
@@ -124,7 +129,7 @@ const initialNodes: FlowNode[] = [
       makeStep('PREDICT', 'Forecast delay risk', '9-day delay forecast', 'Forecasting delay risk...', 'Detect anomalies', { Forecast: '9-day delay', Confidence: '87%', 'SLA risk': 'HIGH' }),
       makeStep('DETECT', 'Detect anomalies', 'Unexpected transshipment detected', 'Checking for anomalies...', 'Analyze root cause', { Exception: 'Unexpected transshipment', Severity: 'HIGH' }),
     ],
-    x: 370,
+    x: 620,
     y: 150,
   },
   {
@@ -141,7 +146,7 @@ const initialNodes: FlowNode[] = [
       makeStep('EXPLAIN', 'Analyze root cause', 'Root cause analysis', 'Analyzing root cause...', 'Calculate exposure', { 'Root cause': 'Missed vessel connection in Busan', Confidence: '94%' }),
       makeStep('IMPACT', 'Calculate exposure', 'Business impact calculated', 'Calculating financial exposure...', 'Generate recovery options', { 'Operational exposure': '$18,400', 'POs affected': '12' }),
     ],
-    x: 690,
+    x: 1180,
     y: 150,
   },
   {
@@ -159,7 +164,7 @@ const initialNodes: FlowNode[] = [
       makeStep('DECIDE', 'Await human decision', 'Human approval required', 'Waiting for human approval...', 'Execute approved reroute', { Problem: 'ETA delayed 9 days', Recommendation: 'Approve alternative route' }),
       makeStep('ACT', 'Execute approved reroute', 'Execute approved action', 'Executing approved reroute...', undefined, { Action: 'Execute approved action', Result: 'Waiting for decision' }),
     ],
-    x: 1010,
+    x: 1740,
     y: 150,
   },
 ]
@@ -170,6 +175,10 @@ const baseEdges: Edge[] = initialNodes.slice(0, -1).map((node, index) => ({
   target: initialNodes[index + 1].id,
   type: 'signal',
 }))
+
+function edgeSourceId(edgeId: string) {
+  return edgeId.replace(/^e-/, '')
+}
 
 function getSteps(node: FlowNode) {
   return node.steps ?? (node.capability ? [makeStep(node.capability, node.output, node.output, `${node.capability.toLowerCase()} running...`, undefined, node.detail)] : [])
@@ -221,6 +230,18 @@ function preferredCapability(node: FlowNode) {
   )?.capability ?? null
 }
 
+function activeCapability(node: FlowNode) {
+  return getSteps(node).find((step) => step.status === 'RUNNING' || step.status === 'NEEDS HUMAN')?.capability
+}
+
+function operationalExposure(node: FlowNode) {
+  const values = [
+    node.detail.Impact,
+    ...getSteps(node).flatMap((step) => Object.values(step.detail ?? {})),
+  ]
+  return values.join(' ').match(/\$[\d,]+/)?.[0]
+}
+
 function ArcBeacon() {
   return <span className="arc-beacon" aria-hidden="true"><i /></span>
 }
@@ -254,6 +275,7 @@ function FlowCard({
   selected,
   activating,
   activationKey,
+  petMoving,
   onSelect,
   onActivationComplete,
 }: {
@@ -261,15 +283,29 @@ function FlowCard({
   selected: boolean
   activating: boolean
   activationKey: number
+  petMoving: boolean
   onSelect: () => void
   onActivationComplete: () => void
 }) {
   const steps = getSteps(data)
   const pct = progressPercent(data)
+  const petCapability = preferredCapability(data) ?? undefined
+  const petAssetCapability = activeCapability(data)
+  const petComment = petCapability ? getPetComment(petCapability, data.status, { isMoving: petMoving, operationalExposure: operationalExposure(data) }) : null
+  const showPet = Boolean(petAssetCapability) || petMoving || data.status === 'RUNNING' || data.status === 'NEEDS HUMAN' || data.status === 'FAILED'
+  const showPetComment = petMoving || data.status === 'RUNNING' || data.status === 'NEEDS HUMAN' || data.status === 'FAILED'
   return (
     <div className={`flow-card ${data.status.toLowerCase().replace(' ', '-')} ${selected ? 'selected' : ''} ${activating ? 'activating' : ''}`} onClick={onSelect}>
       <NodeActivationEffect active={activating} effectKey={activationKey} onComplete={onActivationComplete} />
       <StatusRail node={data} />
+      {showPet && (
+        <div className="pet-companion">
+          {showPetComment && petComment && <PetComment comment={petComment} />}
+          <div className="donald-pet-anchor">
+            <DonaldPet capability={petAssetCapability ?? petCapability} status={data.status} isMoving={petMoving} size={70} />
+          </div>
+        </div>
+      )}
       <div className="flow-card-content">
         <Handle type="target" position={Position.Left} />
         <div className="card-top">
@@ -297,6 +333,7 @@ function FlowNodeRenderer(props: NodeProps) {
       selected={data.selected}
       activating={data.activating}
       activationKey={data.activationKey}
+      petMoving={data.petMoving}
       onSelect={data.onSelect}
       onActivationComplete={data.onActivationComplete}
     />
@@ -322,6 +359,11 @@ export default function Page() {
   const activeSteps = getSteps(active)
   const inspectorStep = activeSteps.find((step) => step.capability === selectedCapability) ?? activeSteps.find((step) => step.status === 'RUNNING' || step.status === 'NEEDS HUMAN') ?? activeSteps[0]
   const humanPaused = nodes.some((node) => getSteps(node).some((step) => step.status === 'NEEDS HUMAN'))
+  const selectedPetMoving = handoff?.phase === 'travel' && (handoff.targetId === active.id || edgeSourceId(handoff.edgeId) === active.id)
+  const inspectorActiveCapability = activeCapability(active)
+  const inspectorPetAssetCapability = inspectorStep?.capability === 'INGEST' ? inspectorStep.capability : inspectorActiveCapability
+  const inspectorImpact = inspectorStep ? getActionImpact(inspectorStep.capability) : null
+  const decisionImpact = getActionImpact('DECIDE')
 
   const startNode = useCallback((nodeIndex: number, stepIndex = 0) => {
     setNodes((current) => current.map((node, index) => {
@@ -358,6 +400,7 @@ export default function Page() {
       selected: selected === node.id,
       activating: handoff?.targetId === node.id && handoff.phase === 'activate',
       activationKey: handoff?.key ?? 0,
+      petMoving: handoff?.phase === 'travel' && (handoff.targetId === node.id || edgeSourceId(handoff.edgeId) === node.id),
       onSelect: () => selectNode(node),
       onActivationComplete: completeActivation,
     },
@@ -481,10 +524,10 @@ export default function Page() {
       phase: 'ESTABLISH TRUTH',
       status: 'WAITING',
       detail: { 'DOCUMENT COMPARISON': 'Booking - MSC Aurora / Bill of Lading - MSC Aries', Mismatch: 'Vessel', Actions: 'Request correction - Accept - View evidence' },
-      x: 310,
+      x: 620,
       y: 390,
     }
-    setNodes((list) => [...list.slice(0, 1), bl, ...list.slice(1).map((node) => ({ ...node, x: node.x + 120 }))])
+    setNodes((list) => [...list.slice(0, 1), bl, ...list.slice(1).map((node) => ({ ...node, x: node.x + 560 }))])
     setSelected('bl-validation')
     setSelectedCapability('RECONCILE')
     setEvents((list) => [...list, '11:19:02  Flow changed - BL validation inserted'])
@@ -531,6 +574,7 @@ export default function Page() {
         <aside className={`inspector ${showHumanDecision ? 'human' : ''}`}>
           <div className="inspector-head">
             <div><div className="eyebrow">NODE INSPECTOR</div><h2>{active.title ?? active.capability}</h2></div>
+            <DonaldPet className="inspector-pet" capability={inspectorPetAssetCapability ?? inspectorStep?.capability} status={active.status} isMoving={selectedPetMoving} size={88} />
             <button className="close-btn"><X size={15} /></button>
           </div>
 
@@ -540,6 +584,9 @@ export default function Page() {
               <h1>Decision required</h1>
               <p>Operation <code>OP-2048</code> for customer Liverpool is delayed 9 days.</p>
               <div className="impact-box"><span>OPERATIONAL EXPOSURE</span><strong>$18,400</strong><small>Recommendation: Approve alternative route</small></div>
+              <section className="inspector-impact-section">
+                <ActionImpactDetail impact={decisionImpact} />
+              </section>
               <div className="options">
                 <div><b>KEEP CURRENT ROUTE</b><span>ETA Sep 27 · Additional cost $0</span></div>
                 <div className="recommended"><b>APPROVE ALTERNATIVE</b><span>ETA Sep 22 · Additional cost $1,840</span></div>
@@ -569,6 +616,11 @@ export default function Page() {
               <section><label>INPUT</label><p>{inspectorStep?.capability === 'INGEST' ? 'Carrier event' : 'Operational context from previous step'}</p></section>
               <section><label>OUTPUT</label><p className="output-large">{inspectorStep?.status === 'RUNNING' ? inspectorStep.current : inspectorStep?.output ?? active.output}</p></section>
               <section><label>EVIDENCE</label>{Object.entries(inspectorStep?.detail ?? active.detail).map(([key, value]) => <div className="kv" key={key}><span>{key}</span><b>{value}</b></div>)}</section>
+              {inspectorImpact && (
+                <section className="inspector-impact-section">
+                  <ActionImpactDetail impact={inspectorImpact} />
+                </section>
+              )}
               {inspectorStep?.capability === 'DETECT' && <div className="warning"><AlertTriangle size={15} /> High severity exception</div>}
             </div>
           )}
