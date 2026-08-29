@@ -165,11 +165,86 @@ def list_scenarios() -> list[str]:
     return [name for _, name, _ in _fixture_scenarios()]
 
 
+def _validate_actions(
+    scenario_name: str,
+    actions: list[dict[str, Any]],
+    known_nodes: set[str],
+    finding_nodes: set[str],
+    location: str,
+) -> None:
+    for index, action in enumerate(actions):
+        action_location = f"{location}[{index}]"
+        verb = action.get("verb")
+        if verb == "advance":
+            update = action.get("update", {})
+            finding = update.get("finding")
+            if isinstance(finding, str) and finding.strip():
+                finding_nodes.add(action["node_key"])
+        elif verb == "replan":
+            for field in ("reason", "triggered_by"):
+                value = action.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(
+                        f"Escenario {scenario_name!r}: replan en {action_location} "
+                        f"requiere {field} no vacío"
+                    )
+            evidence = action.get("evidence")
+            if not isinstance(evidence, list) or not evidence:
+                raise ValueError(
+                    f"Escenario {scenario_name!r}: replan en {action_location} "
+                    "requiere evidence no vacío"
+                )
+            triggered_by = action["triggered_by"]
+            if triggered_by not in known_nodes:
+                raise ValueError(
+                    f"Escenario {scenario_name!r}: replan en {action_location} señala "
+                    f"triggered_by {triggered_by!r}, pero ese nodo no existe en el run"
+                )
+            if triggered_by not in finding_nodes:
+                raise ValueError(
+                    f"Escenario {scenario_name!r}: replan en {action_location} señala "
+                    f"triggered_by {triggered_by!r}, pero ese nodo aún no reportó un finding"
+                )
+            known_nodes.update(
+                node["node_key"] for node in action.get("add_nodes", [])
+            )
+        elif verb == "ask":
+            for branch_id, branch in action.get("branches", {}).items():
+                _validate_actions(
+                    scenario_name,
+                    branch,
+                    known_nodes.copy(),
+                    finding_nodes.copy(),
+                    f"{action_location}.branches[{branch_id!r}]",
+                )
+
+
+def _validate_scenario(scenario: dict[str, Any]) -> None:
+    scenario_name = scenario.get("name", "<sin nombre>")
+    basis = scenario.get("plan", {}).get("basis")
+    if not isinstance(basis, str) or not basis.strip():
+        raise ValueError(
+            f"Escenario {scenario_name!r}: plan requiere basis no vacío"
+        )
+    known_nodes = {
+        node["node_key"] for node in scenario["plan"].get("steps", [])
+    }
+    _validate_actions(
+        scenario_name,
+        scenario.get("timeline", []),
+        known_nodes,
+        set(),
+        "timeline",
+    )
+
+
 def _load_scenario(name: str) -> dict[str, Any]:
     for _, scenario_name, path in _fixture_scenarios():
         if scenario_name == name:
             with path.open(encoding="utf-8") as fixture_file:
-                return json.load(fixture_file)
+                scenario = json.load(fixture_file)
+            _validate_scenario(scenario)
+            return scenario
     choices = ", ".join(list_scenarios())
     raise ValueError(f"Escenario desconocido {name!r}; opciones: {choices}")
 
@@ -207,7 +282,13 @@ def _declare(
     )
     yield emitter.emit(
         "plan_declared",
-        payload={"graph_revision": plan.get("graph_revision", 1), "plan": plan},
+        payload={
+            "graph_revision": plan.get("graph_revision", 1),
+            "proposed": True,
+            "revisable": True,
+            "basis": plan["basis"],
+            "plan": plan,
+        },
     )
     for plan_order, node in enumerate(plan["steps"], start=1):
         resolved_node = deepcopy(node)
@@ -297,7 +378,9 @@ def _replan(
         "run_updated",
         payload={
             "graph_revision": action["graph_revision"],
-            "reason": action.get("reason"),
+            "reason": action["reason"],
+            "triggered_by": action["triggered_by"],
+            "evidence": action["evidence"],
         },
     )
 

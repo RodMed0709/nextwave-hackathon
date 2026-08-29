@@ -12,6 +12,7 @@
   },
   "plan": {
     "graph_revision": 1,
+    "basis": "pipeline conocido del proveedor para conciliación de pagos",
     "summary": "Conciliar el depósito del PSP contra el ledger y contabilizarlo.",
     "steps": [
       {"node_key": "read-settlement", "agent_label": "Mara", "label": "Leer liquidación del PSP"},
@@ -46,6 +47,7 @@
       "update": {
         "headline": "Faltan MXN 18,430.00 en el depósito",
         "finding": "Doce contracargos aparecen descontados por el PSP, pero todavía no existen en el ledger.",
+        "message_id": "MSG-PSP-8821-MATCH",
         "metrics": {
           "expected_net_mxn": 2500334.20,
           "received_net_mxn": 2481904.20,
@@ -57,7 +59,9 @@
     {
       "verb": "replan",
       "graph_revision": 2,
-      "reason": "La diferencia no se puede contabilizar como una liquidación limpia.",
+      "reason": "Los doce contracargos ausentes del ledger impiden contabilizar la liquidación como limpia.",
+      "triggered_by": "match-ledger",
+      "evidence": ["MSG-PSP-8821-MATCH"],
       "remove_nodes": [
         {"node_key": "post-settlement", "reason": "Publicar ahora dejaría el ledger descuadrado."}
       ],

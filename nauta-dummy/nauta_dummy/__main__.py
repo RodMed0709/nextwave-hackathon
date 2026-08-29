@@ -38,6 +38,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(scenario)
         return 0
 
+    proposal_agent = "El proveedor"
     for event in stream(scenario=args.scenario, speed=args.speed, seed=args.seed):
         if args.json:
             print(json.dumps(event.to_dict(), ensure_ascii=False), flush=True)
@@ -49,6 +50,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{event.event_type} · {owner}{node}",
             flush=True,
         )
+        if event.event_type == "plan_declared":
+            steps = event.payload["plan"]["steps"]
+            if steps and steps[0].get("agent_label"):
+                proposal_agent = steps[0]["agent_label"]
+            print(f"{proposal_agent} propone {len(steps)} pasos", flush=True)
+        elif event.event_type == "run_updated":
+            evidence = ", ".join(event.payload["evidence"])
+            print(
+                f"{proposal_agent} replantea: {event.payload['reason']}",
+                flush=True,
+            )
+            print(
+                f"  ▸ triggered_by: {event.payload['triggered_by']} · "
+                f"evidence: {evidence}",
+                flush=True,
+            )
         print(json.dumps(event.payload, ensure_ascii=False, indent=2), flush=True)
     return 0
 

@@ -15,6 +15,7 @@
   },
   "plan": {
     "graph_revision": 1,
+    "basis": "pipeline conocido del proveedor para gestionar excepciones logísticas",
     "summary": "Validar el cambio de viaje, medir el impacto y avisar al cliente.",
     "steps": [
       {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier"},
@@ -41,6 +42,7 @@
       "artifacts": [
         {
           "artifact_type": "text",
+          "message_id": "MSG-3312",
           "name": "Vessel change MSC AURORA FE2431",
           "text_content": "From: MSC Operations <ops@msc.com>\nTo: operaciones@mueblesdelsur.mx\nDate: 29 Aug 2026 09:11 UTC\nSubject: URGENT - Vessel change MSC AURORA FE2431\n\nDear Customer,\n\nCargo rolled to MSC LIVORNO via Singapore due to overbooking. Revised ETA Manzanillo is 14-SEP-2026. The original Bill of Lading is no longer valid after the vessel change. A new Bill of Lading must be issued before cargo release.\n\nPlease update your delivery arrangements accordingly.\n\nRegards,\nMSC Operations",
           "content_type": "message/rfc822"
@@ -82,7 +84,9 @@
     {
       "verb": "replan",
       "graph_revision": 2,
-      "reason": "El transbordo invalidó el documento y convirtió el aviso automático en una decisión con costo.",
+      "reason": "El transbordo no planeado invalidó el Bill of Lading original y exige elegir una mitigación antes de avisar.",
+      "triggered_by": "reconcile-booking",
+      "evidence": ["MSG-3312"],
       "remove_nodes": [
         {"node_key": "notify-client", "reason": "No se debe enviar un aviso irreversible antes de elegir mitigación."}
       ],
@@ -173,9 +177,20 @@
         ],
         "notify-client": [
           {
+            "verb": "advance",
+            "node_key": "decide-response",
+            "update": {
+              "headline": "Jorge priorizó avisar al cliente",
+              "finding": "La decisión supervisora es comunicar la nueva ETA antes de cotizar alternativas.",
+              "message_id": "MSG-3313"
+            }
+          },
+          {
             "verb": "replan",
             "graph_revision": 3,
-            "reason": "Jorge decidió comunicar la nueva ETA de inmediato.",
+            "reason": "Jorge priorizó avisar al cliente antes de cotizar alternativas.",
+            "triggered_by": "decide-response",
+            "evidence": ["MSG-3313"],
             "remove_nodes": [
               {"node_key": "quote-carriers", "reason": "La comunicación inmediata tiene prioridad."}
             ],

@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from dataclasses import FrozenInstanceError
 from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 
@@ -56,6 +57,14 @@ def collect_with_answer(scenario: str, option_id: str) -> list[ProviderEvent]:
                 events.append(generator.send({"option_id": option_id}))
             except StopIteration:
                 return events
+
+
+def all_strings(value: object) -> list[str]:
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in all_strings(item)]
+    if isinstance(value, (list, tuple)):
+        return [text for item in value for text in all_strings(item)]
+    return [value] if isinstance(value, str) else []
 
 
 class StreamTests(unittest.TestCase):
@@ -109,6 +118,7 @@ class StreamTests(unittest.TestCase):
             "provider": {"name": "Prueba", "agents": []},
             "plan": {
                 "graph_revision": 1,
+                "basis": "flujo de prueba conocido",
                 "steps": [
                     {"node_key": "first", "label": "Primero"},
                     {"node_key": "second", "label": "Segundo"},
@@ -117,8 +127,16 @@ class StreamTests(unittest.TestCase):
             },
             "timeline": [
                 {
+                    "verb": "advance",
+                    "node_key": "first",
+                    "update": {"finding": "El primer paso exige ajustar la propuesta."},
+                },
+                {
                     "verb": "replan",
                     "graph_revision": 2,
+                    "reason": "El primer paso reveló que hacen falta dos pasos nuevos.",
+                    "triggered_by": "first",
+                    "evidence": ["MSG-TEST-1"],
                     "remove_nodes": [{"node_key": "second"}],
                     "add_nodes": [
                         {"node_key": "third", "label": "Tercero"},
@@ -174,6 +192,119 @@ class StreamTests(unittest.TestCase):
                     ["edge_added"] * len(plan["edges"]),
                     [event.event_type for event in edge_events],
                 )
+
+    def test_declared_plan_is_explicitly_a_revisable_proposal(self) -> None:
+        for scenario in list_scenarios():
+            with self.subTest(scenario=scenario):
+                declaration = next(
+                    event
+                    for event in stream(scenario, speed=0)
+                    if event.event_type == "plan_declared"
+                )
+
+                self.assertIs(True, declaration.payload["proposed"])
+                self.assertIs(True, declaration.payload["revisable"])
+                self.assertTrue(declaration.payload["basis"].strip())
+
+    def test_every_replan_is_justified_by_an_existing_prior_finding(self) -> None:
+        runs = [
+            list(stream("nauta-shipment-quiet", speed=0)),
+            list(stream("nauta-shipment-delay", speed=0)),
+            collect_with_answer("nauta-shipment-delay", "notify-client"),
+            list(stream("payments-reconciliation", speed=0)),
+        ]
+
+        for events in runs:
+            known_nodes: set[str] = set()
+            findings: set[str] = set()
+            removal_pending = False
+            for event in events:
+                if event.event_type == "node_added" and event.node_key:
+                    known_nodes.add(event.node_key)
+                elif (
+                    event.event_type == "node_updated"
+                    and event.node_key
+                    and event.payload.get("finding", "").strip()
+                ):
+                    findings.add(event.node_key)
+                elif event.event_type == "node_removed":
+                    removal_pending = True
+                elif event.event_type == "run_updated" and removal_pending:
+                    reason = event.payload["reason"]
+                    triggered_by = event.payload["triggered_by"]
+                    evidence = event.payload["evidence"]
+                    self.assertTrue(reason.strip())
+                    self.assertIn(triggered_by, known_nodes)
+                    self.assertIn(triggered_by, findings)
+                    self.assertTrue(evidence)
+                    removal_pending = False
+
+    def test_loading_replan_without_required_cause_raises(self) -> None:
+        scenario = {
+            "name": "invalid-replan",
+            "started_at": "2026-08-29T12:00:00Z",
+            "provider": {"name": "Prueba", "agents": []},
+            "plan": {
+                "graph_revision": 1,
+                "basis": "flujo de prueba conocido",
+                "steps": [{"node_key": "detect", "label": "Detectar"}],
+                "edges": [],
+            },
+            "timeline": [
+                {
+                    "verb": "advance",
+                    "node_key": "detect",
+                    "update": {"finding": "Apareció una excepción."},
+                },
+                {
+                    "verb": "replan",
+                    "graph_revision": 2,
+                    "reason": "La excepción exige cambiar de curso.",
+                    "triggered_by": "detect",
+                    "evidence": ["MSG-TEST-1"],
+                    "remove_nodes": [],
+                    "add_nodes": [],
+                },
+                {"verb": "finish", "summary": {"headline": "Listo"}},
+            ],
+        }
+
+        for missing_field in ("reason", "triggered_by", "evidence"):
+            with self.subTest(missing_field=missing_field), TemporaryDirectory() as tmp:
+                invalid = json.loads(json.dumps(scenario))
+                invalid["timeline"][1].pop(missing_field)
+                fixture_path = Path(tmp) / "invalid-replan.json"
+                fixture_path.write_text(
+                    json.dumps(invalid, ensure_ascii=False), encoding="utf-8"
+                )
+                with patch("nauta_dummy.FIXTURES_DIR", Path(tmp)):
+                    with self.assertRaisesRegex(
+                        ValueError, rf"replan.*{missing_field}"
+                    ):
+                        next(stream("invalid-replan", speed=0))
+
+    def test_cli_uses_proposal_and_learning_copy_without_va_a_hacer(self) -> None:
+        for scenario in list_scenarios():
+            output = StringIO()
+            with redirect_stdout(output):
+                main(["--scenario", scenario, "--speed", "0"])
+
+            self.assertNotIn("va a hacer", output.getvalue().lower())
+
+        delay_output = StringIO()
+        with redirect_stdout(delay_output):
+            main(["--scenario", "nauta-shipment-delay", "--speed", "0"])
+        rendered = delay_output.getvalue()
+        self.assertIn("Nina propone 5 pasos", rendered)
+        self.assertIn("Nina replantea:", rendered)
+
+        for fixture_path in Path(__file__).parents[1].joinpath("fixtures").glob("*.json"):
+            fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "va a hacer",
+                "\n".join(all_strings(fixture)).lower(),
+                fixture_path.name,
+            )
 
     def test_advance_emits_progress_findings_and_real_artifact(self) -> None:
         events = list(stream("nauta-shipment-delay", speed=0))
