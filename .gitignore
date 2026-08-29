@@ -35,3 +35,8 @@ kubeconfig
 .linode-cli
 gcloud-*.json
 *-service-account*.json
+
+# --- local tooling ---------------------------------------------------------
+__pycache__/
+*.py[cod]
+.codex-worker/

@@ -1,0 +1,236 @@
+{
+  "name": "nauta-shipment-delay",
+  "display_order": 2,
+  "started_at": "2026-08-29T11:20:00Z",
+  "provider": {
+    "name": "Nauta",
+    "agents": [
+      {"label": "Nina", "role": "Shipment Watch"},
+      {"label": "Theo", "role": "Freight Anomaly"},
+      {"label": "Marcus", "role": "Inventory Watch"},
+      {"label": "Lauren", "role": "Supplier Reliability"},
+      {"label": "Vera", "role": "Price Drift"},
+      {"label": "Alec", "role": "Contract Compliance"}
+    ]
+  },
+  "plan": {
+    "graph_revision": 1,
+    "basis": "pipeline conocido del proveedor para gestionar excepciones logísticas",
+    "summary": "Validar el cambio de viaje, medir el impacto y avisar al cliente.",
+    "steps": [
+      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier"},
+      {"node_key": "reconcile-booking", "agent_label": "Theo", "label": "Comparar contra el booking"},
+      {"node_key": "assess-impact", "agent_label": "Marcus", "label": "Calcular el impacto"},
+      {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente"},
+      {"node_key": "monitor-resolution", "agent_label": "Nina", "label": "Monitorear la resolución"}
+    ],
+    "edges": [
+      {"edge_key": "receive-to-reconcile", "source_node_key": "receive-update", "target_node_key": "reconcile-booking"},
+      {"edge_key": "reconcile-to-impact", "source_node_key": "reconcile-booking", "target_node_key": "assess-impact"},
+      {"edge_key": "impact-to-notify", "source_node_key": "assess-impact", "target_node_key": "notify-client"},
+      {"edge_key": "notify-to-monitor", "source_node_key": "notify-client", "target_node_key": "monitor-resolution"}
+    ]
+  },
+  "timeline": [
+    {
+      "verb": "advance",
+      "node_key": "receive-update",
+      "update": {
+        "headline": "MSC cambió el buque y la ruta",
+        "finding": "La carga fue enviada a Singapur para transbordar al MSC LIVORNO."
+      },
+      "artifacts": [
+        {
+          "artifact_type": "text",
+          "message_id": "MSG-3312",
+          "name": "Vessel change MSC AURORA FE2431",
+          "text_content": "From: MSC Operations <ops@msc.com>\nTo: operaciones@mueblesdelsur.mx\nDate: 29 Aug 2026 09:11 UTC\nSubject: URGENT - Vessel change MSC AURORA FE2431\n\nDear Customer,\n\nCargo rolled to MSC LIVORNO via Singapore due to overbooking. Revised ETA Manzanillo is 14-SEP-2026. The original Bill of Lading is no longer valid after the vessel change. A new Bill of Lading must be issued before cargo release.\n\nPlease update your delivery arrangements accordingly.\n\nRegards,\nMSC Operations",
+          "content_type": "message/rfc822"
+        }
+      ]
+    },
+    {
+      "verb": "advance",
+      "node_key": "reconcile-booking",
+      "update": {
+        "headline": "La actualización contradice el booking",
+        "finding": "Cambió el buque, apareció un transbordo no planeado y la ETA pasó de 05-SEP a 14-SEP.",
+        "evidence_ids": ["MSG-3312"]
+      }
+    },
+    {
+      "verb": "advance",
+      "node_key": "assess-impact",
+      "update": {
+        "headline": "Hay costo, bloqueo documental y un compromiso incumplido",
+        "finding": "El atraso de 9 días genera USD 3,780 de demurrage. El Bill of Lading quedó invalidado y la llegada rebasa por 4 días el compromiso del cliente.",
+        "metrics": {
+          "eta_delta_days": 9,
+          "estimated_cost_usd": 3780,
+          "containers_affected": 3,
+          "billable_days": 7,
+          "days_past_client_commitment": 4
+        }
+      },
+      "artifacts": [
+        {
+          "artifact_type": "file",
+          "name": "Bill of Lading BL-77120.txt",
+          "text_content": "BILL OF LADING BL-77120\nCarrier: MSC\nShipper: Muebles del Sur\nVessel/Voyage: MSC AURORA / FE2431\nPort of loading: Ho Chi Minh (VNSGN)\nPort of discharge: Manzanillo (MXZLO)\nContainers: MSCU-7741820, MSCU-7741833, MSCU-7741847\nStatus: INVALIDATED — vessel changed to MSC LIVORNO; replacement required",
+          "content_type": "text/plain"
+        }
+      ]
+    },
+    {
+      "verb": "replan",
+      "graph_revision": 2,
+      "reason": "El transbordo no planeado invalidó el Bill of Lading original y exige elegir una mitigación antes de avisar.",
+      "triggered_by": "reconcile-booking",
+      "evidence": ["MSG-3312"],
+      "remove_nodes": [
+        {"node_key": "notify-client", "reason": "No se debe enviar un aviso irreversible antes de elegir mitigación."}
+      ],
+      "remove_edges": [
+        {"edge_key": "impact-to-notify", "source_node_key": "assess-impact", "target_node_key": "notify-client"},
+        {"edge_key": "notify-to-monitor", "source_node_key": "notify-client", "target_node_key": "monitor-resolution"}
+      ],
+      "add_nodes": [
+        {"node_key": "quote-carriers", "agent_label": "Theo", "label": "Cotizar alternativas", "plan_order": 4},
+        {"node_key": "secure-new-bl", "agent_label": "Alec", "label": "Conseguir un Bill of Lading nuevo", "plan_order": 5},
+        {"node_key": "decide-response", "agent_label": "Marcus", "label": "Elegir respuesta", "plan_order": 6}
+      ],
+      "add_edges": [
+        {"edge_key": "impact-to-quotes", "source_node_key": "assess-impact", "target_node_key": "quote-carriers"},
+        {"edge_key": "impact-to-bl", "source_node_key": "assess-impact", "target_node_key": "secure-new-bl"},
+        {"edge_key": "quotes-to-decision", "source_node_key": "quote-carriers", "target_node_key": "decide-response"},
+        {"edge_key": "bl-to-decision", "source_node_key": "secure-new-bl", "target_node_key": "decide-response"},
+        {"edge_key": "decision-to-monitor", "source_node_key": "decide-response", "target_node_key": "monitor-resolution"}
+      ]
+    },
+    {
+      "verb": "ask",
+      "node_key": "decide-response",
+      "request": {
+        "type": "steer",
+        "prompt": "El siguiente paso cuesta dinero y cambia lo que verá tu cliente. ¿Cómo quieres que continúe Nauta?",
+        "default_option_id": "quote-alternatives",
+        "options": [
+          {
+            "id": "quote-alternatives",
+            "label": "Primero busca alternativas",
+            "rationale": "Conserva margen de maniobra antes de aceptar USD 3,780 de demurrage.",
+            "rank": 1,
+            "branch": "quote-alternatives",
+            "maximum_cost_usd": 3780
+          },
+          {
+            "id": "secure-new-bl",
+            "label": "Prioriza el Bill of Lading nuevo",
+            "rationale": "Desbloquea la liberación documental mientras Theo busca una alternativa.",
+            "rank": 2,
+            "branch": "quote-alternatives",
+            "document": "BL-77120"
+          },
+          {
+            "id": "notify-client",
+            "label": "Notifica al cliente ahora",
+            "rationale": "Protege la relación comercial, pero comunica una fecha antes de cerrar la mitigación.",
+            "rank": 3,
+            "branch": "notify-client",
+            "client_commitment": "10-SEP-2026"
+          }
+        ]
+      },
+      "branches": {
+        "quote-alternatives": [
+          {
+            "verb": "advance",
+            "node_key": "quote-carriers",
+            "update": {
+              "headline": "Se solicitaron tres alternativas",
+              "finding": "Theo pidió cotizaciones con llegada anterior al 10-SEP y sin aceptar todavía el demurrage."
+            },
+            "artifacts": [
+              {
+                "artifact_type": "structured_data",
+                "name": "Solicitud de alternativas",
+                "text_content": "{\"route\":\"Singapore-Manzanillo\",\"arrival_before\":\"2026-09-10\",\"quotes_requested\":3}",
+                "content_type": "application/json"
+              }
+            ]
+          },
+          {
+            "verb": "advance",
+            "node_key": "secure-new-bl",
+            "update": {
+              "headline": "MSC confirmó la reemisión del documento",
+              "finding": "Alec abrió el caso BL-77120-R y detuvo la liberación hasta recibir el original nuevo."
+            }
+          },
+          {
+            "verb": "finish",
+            "summary": {
+              "headline": "Mitigación en curso antes de avisar",
+              "detail": "Nauta cotiza rutas alternativas y exige el Bill of Lading nuevo. No se envió ningún correo al cliente."
+            }
+          }
+        ],
+        "notify-client": [
+          {
+            "verb": "advance",
+            "node_key": "decide-response",
+            "update": {
+              "headline": "Jorge priorizó avisar al cliente",
+              "finding": "La decisión supervisora es comunicar la nueva ETA antes de cotizar alternativas.",
+              "message_id": "MSG-3313"
+            }
+          },
+          {
+            "verb": "replan",
+            "graph_revision": 3,
+            "reason": "Jorge priorizó avisar al cliente antes de cotizar alternativas.",
+            "triggered_by": "decide-response",
+            "evidence": ["MSG-3313"],
+            "remove_nodes": [
+              {"node_key": "quote-carriers", "reason": "La comunicación inmediata tiene prioridad."}
+            ],
+            "remove_edges": [
+              {"edge_key": "impact-to-quotes", "source_node_key": "assess-impact", "target_node_key": "quote-carriers"},
+              {"edge_key": "quotes-to-decision", "source_node_key": "quote-carriers", "target_node_key": "decide-response"}
+            ],
+            "add_nodes": [
+              {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente", "plan_order": 7}
+            ],
+            "add_edges": [
+              {"edge_key": "decision-to-notify", "source_node_key": "decide-response", "target_node_key": "notify-client"},
+              {"edge_key": "notify-to-monitor-v2", "source_node_key": "notify-client", "target_node_key": "monitor-resolution"}
+            ]
+          },
+          {
+            "verb": "advance",
+            "node_key": "notify-client",
+            "update": {
+              "headline": "Cliente notificado",
+              "finding": "Nina envió la nueva ETA del 14-SEP y explicó el transbordo; la búsqueda del Bill of Lading continúa."
+            },
+            "artifacts": [
+              {
+                "artifact_type": "text",
+                "name": "Aviso de nueva fecha de entrega",
+                "text_content": "Asunto: Actualización urgente del pedido 4471\n\nEl carrier cambió el buque y ahora estima llegada a Manzanillo el 14 de septiembre. Ya exigimos el Bill of Lading corregido y les avisaremos en cuanto confirmemos la fecha de entrega en bodega.",
+                "content_type": "message/rfc822"
+              }
+            ]
+          },
+          {
+            "verb": "finish",
+            "summary": {
+              "headline": "Cliente avisado; documento pendiente",
+              "detail": "Se comunicó la nueva ETA. Nauta mantiene abierta la reemisión del Bill of Lading y la exposición de USD 3,780."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
