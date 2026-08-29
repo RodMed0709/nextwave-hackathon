@@ -36,11 +36,24 @@ and do not invent a second key for a step that already exists.
 A run reported in one batch at the end is worthless: the graph sits empty while
 you work, then fills in all at once. Call the tools as things actually happen.
 
-## Plans change
+## Plans change — keep the graph matching reality
 
-Discovered extra work? **add_action**. Planned work you no longer need?
-**skip_action** — do not leave it hanging. Something depends on two earlier
-steps? **add_dependency**.
+The plan you declared was a guess made before you saw any data. Fix the graph the
+moment it stops matching what you are doing:
+
+- Found work nobody planned? **add_action** (with ` + "`after`" + `, or **add_dependency**).
+- Planned step no longer needed? **skip_action** — never leave it at not_started,
+  which reads as work still to come.
+- Started something and abandoning it? **cancel_action** (not skip, which claims
+  you never began; not fail, which blames the work).
+- Stuck waiting on a person, on missing data, or on a provider outage?
+  **block_action** with the reason and what you are waiting for. Do not post
+  progress to look busy — a stuck run that looks busy is one nobody rescues.
+- Retrying a failed step, or resuming a blocked one? **start_action** again with
+  the SAME node_key. Do not invent a new key for a second attempt.
+
+Every step ends in exactly one of complete / fail / cancel / skip / block, or is
+still running.
 
 ## Someone may ask you to stop
 

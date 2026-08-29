@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/guregu/null/v6"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nextwave/donald/core/module/agent_node"
@@ -191,6 +192,12 @@ func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, arg
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
 			n.StartedAt = nullTime(&now)
+			// A retry or a resume must not inherit the last attempt's ending.
+			// Leaving finished_at set makes the UI draw a step that is running
+			// and finished at once; leaving error_message makes a succeeding
+			// retry still show the old failure.
+			n.FinishedAt = null.Time{}
+			n.ErrorMessage = null.String{}
 			if args.InputSummary != "" {
 				n.InputSummary = nullString(args.InputSummary)
 			}
@@ -236,6 +243,17 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.StatusMessage = nullString(args.Message)
 			node.ProgressPercent = nullInt64(args.Percent)
+			// Agents routinely report progress on a step they never explicitly
+			// started. Reporting progress IS a claim to be working on it, so take
+			// it at face value rather than leaving a node that is visibly
+			// progressing while drawn as not-yet-started.
+			if node.Status == enums.AGENT_NODE_STATUS_NOT_STARTED {
+				node.Status = enums.AGENT_NODE_STATUS_IN_PROGRESS
+				if !node.StartedAt.Valid {
+					now := time.Now().UTC()
+					node.StartedAt = nullTime(&now)
+				}
+			}
 			return h.updateNode(ctx, tx, node)
 		},
 	})
@@ -258,6 +276,7 @@ func (h *Handler) CompleteAction(ctx context.Context, req *mcp.CallToolRequest, 
 		message:           args.OutputSummary,
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
+			ensureStarted(n, now)
 			n.FinishedAt = nullTime(&now)
 			n.ProgressPercent = null100()
 			if args.OutputSummary != "" {
@@ -283,6 +302,7 @@ func (h *Handler) FailAction(ctx context.Context, req *mcp.CallToolRequest, args
 		message:           args.Error,
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
+			ensureStarted(n, now)
 			n.FinishedAt = nullTime(&now)
 			n.ErrorMessage = nullString(args.Error)
 		},
@@ -311,6 +331,134 @@ func (h *Handler) SkipAction(ctx context.Context, req *mcp.CallToolRequest, args
 	})
 }
 
+type CancelActionParams struct {
+	RunKey  string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey string `json:"node_key" jsonschema:"The action you were running and have abandoned"`
+	Reason  string `json:"reason,omitempty" jsonschema:"Why it was abandoned - e.g. a user asked you to stop, or the work became unnecessary"`
+}
+
+// CancelAction is for work that WAS running and has been abandoned. It is
+// distinct from skip_action (a planned step never begun) and from fail_action
+// (something broke) because those three read very differently to the person
+// watching, and conflating them makes the graph lie.
+//
+// The case that forced this tool: a user hits stop mid-action. The agent has no
+// honest status to report otherwise — "skipped" claims it never started and
+// "failed" blames the work for a decision a human made.
+func (h *Handler) CancelAction(ctx context.Context, req *mcp.CallToolRequest, args CancelActionParams) (*mcp.CallToolResult, any, error) {
+	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
+		to:                enums.AGENT_NODE_STATUS_CANCELLED,
+		idempotencySuffix: "cancel",
+		message:           args.Reason,
+		mutate: func(n *agent_node_entity.AgentNode) {
+			now := time.Now().UTC()
+			ensureStarted(n, now)
+			n.FinishedAt = nullTime(&now)
+			n.StatusMessage = nullString(args.Reason)
+		},
+	})
+}
+
+// transitionKey builds the idempotency key for a node status change.
+//
+// The previous status is part of the key on purpose — see the comment in
+// transition(). Removing it silently breaks retry.
+func transitionKey(suffix, runKey, nodeKey string, previous enums.AgentNodeStatus) string {
+	return fmt.Sprintf("%s:%s:%s:%s", suffix, runKey, nodeKey, previous.String())
+}
+
+// ensureStarted back-fills a start time for a step that reached a terminal
+// status without one. Agents forget start_action; the alternative is a node the
+// UI shows as finished but never started, and a duration it cannot compute.
+func ensureStarted(n *agent_node_entity.AgentNode, at time.Time) {
+	if !n.StartedAt.Valid {
+		n.StartedAt = nullTime(&at)
+	}
+}
+
+// ─────────────────────────────────────────────
+// Tool: block_action
+// ─────────────────────────────────────────────
+
+type BlockActionParams struct {
+	RunKey  string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey string `json:"node_key" jsonschema:"The action that cannot proceed"`
+	Reason  string `json:"reason" jsonschema:"One of: user_decision (you need a person to decide something), missing_data (something you need does not exist yet), provider_outage (an external service is down)"`
+	Message string `json:"message" jsonschema:"What exactly you are waiting for, in one line - this is what the person watching reads to know whether they can unblock you"`
+}
+
+// BlockAction reports a step that cannot proceed but has not failed.
+//
+// The three blocked states were in the schema from the first version and no
+// tool could reach any of them, which meant an agent waiting on a person had to
+// choose between lying (report_progress, "still working") and giving up
+// (fail_action). Both are wrong, and the first is worse: a run that is stuck
+// looks identical to one that is busy, so nobody comes to unblock it.
+//
+// Blocking a step also blocks the run, so a watcher scanning a list of runs can
+// see which ones need attention without opening each graph.
+//
+// To resume, call start_action on the same step.
+func (h *Handler) BlockAction(ctx context.Context, req *mcp.CallToolRequest, args BlockActionParams) (*mcp.CallToolResult, any, error) {
+	var to enums.AgentNodeStatus
+	switch strings.TrimSpace(strings.ToLower(args.Reason)) {
+	case "user_decision", "user":
+		to = enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION
+	case "missing_data", "data":
+		to = enums.AGENT_NODE_STATUS_BLOCKED_ON_MISSING_DATA
+	case "provider_outage", "outage", "provider":
+		to = enums.AGENT_NODE_STATUS_BLOCKED_ON_PROVIDER_OUTAGE
+	default:
+		return nil, nil, fmt.Errorf("reason must be user_decision, missing_data or provider_outage (got %q)", args.Reason)
+	}
+	if strings.TrimSpace(args.Message) == "" {
+		return nil, nil, fmt.Errorf("message is required - a blocked step with no explanation cannot be unblocked by anyone")
+	}
+
+	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
+		to:                to,
+		idempotencySuffix: "block",
+		message:           args.Message,
+		mutate: func(n *agent_node_entity.AgentNode) {
+			n.StatusMessage = nullString(args.Message)
+			// Deliberately NOT setting finished_at: the step is not over, it is
+			// waiting, and the UI should keep showing it as live.
+		},
+	})
+}
+
+// runStatusFor maps a node status change onto the run, for the two cases where
+// one step's state is really the whole run's state: a step blocking blocks the
+// run, and resuming it puts the run back to work.
+//
+// It deliberately does NOT propagate failure — one failed step does not mean the
+// run failed, since the agent may recover or carry on. Only finish_run decides
+// that.
+func runStatusFor(previous, next enums.AgentNodeStatus) (enums.AgentRunStatus, bool) {
+	switch next {
+	case enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION:
+		return enums.AGENT_RUN_STATUS_BLOCKED_ON_USER_DECISION, true
+	case enums.AGENT_NODE_STATUS_BLOCKED_ON_MISSING_DATA:
+		return enums.AGENT_RUN_STATUS_BLOCKED_ON_MISSING_DATA, true
+	case enums.AGENT_NODE_STATUS_BLOCKED_ON_PROVIDER_OUTAGE:
+		return enums.AGENT_RUN_STATUS_BLOCKED_ON_PROVIDER_OUTAGE, true
+	}
+	if isBlocked(previous) && next == enums.AGENT_NODE_STATUS_IN_PROGRESS {
+		return enums.AGENT_RUN_STATUS_IN_PROGRESS, true
+	}
+	return 0, false
+}
+
+func isBlocked(s enums.AgentNodeStatus) bool {
+	switch s {
+	case enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION,
+		enums.AGENT_NODE_STATUS_BLOCKED_ON_MISSING_DATA,
+		enums.AGENT_NODE_STATUS_BLOCKED_ON_PROVIDER_OUTAGE:
+		return true
+	}
+	return false
+}
+
 type transitionSpec struct {
 	to                enums.AgentNodeStatus
 	idempotencySuffix string
@@ -335,12 +483,33 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 	}
 
 	previous := node.Status
+	if previous == spec.to && spec.to != enums.AGENT_NODE_STATUS_IN_PROGRESS {
+		// Already in the target state. Report the run's current cursor rather
+		// than appending a second identical event.
+		return jsonResult(result{
+			OK: true, RunKey: run.RunKey, NodeKey: node.NodeKey,
+			Sequence: run.LastEventSequence, GraphRevision: run.GraphRevision,
+			Note: "already " + spec.to.String(),
+		})
+	}
+
+	// The idempotency key includes the status we are moving FROM.
+	//
+	// Keying on (tool, run, node) alone was wrong: it made a retry invisible.
+	// An agent that starts a step, fails it, then retries calls start_action a
+	// second time — same tool, same node — and the already-recorded key made
+	// commit() short-circuit, so the node stayed failed while the agent was told
+	// it succeeded. Retry is a normal path, not an edge case.
+	//
+	// Including the previous status keeps genuine duplicates deduplicated (two
+	// sends of the same call see the same previous status) while letting a real
+	// second transition through.
 	seq, rev, err := h.commit(ctx, mutation{
 		runUUID:        run.UUID,
 		eventType:      enums.AGENT_EVENT_TYPE_NODE_STATUS_CHANGED,
 		nodeUUID:       &node.UUID,
 		agentLabel:     node.AgentLabel.String,
-		idempotencyKey: fmt.Sprintf("%s:%s:%s", spec.idempotencySuffix, run.RunKey, node.NodeKey),
+		idempotencyKey: transitionKey(spec.idempotencySuffix, run.RunKey, node.NodeKey, previous),
 		payload: payload_entity.AgentEventPayload{
 			PreviousStatus: previous,
 			NewStatus:      spec.to,
@@ -351,7 +520,18 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 			if spec.mutate != nil {
 				spec.mutate(&node)
 			}
-			return h.updateNode(ctx, tx, node)
+			if err := h.updateNode(ctx, tx, node); err != nil {
+				return err
+			}
+			// A blocked step blocks the run, and resuming it unblocks the run.
+			// Without this the run-level blocked_on_* statuses in the schema are
+			// unreachable, and a run sitting on a blocked step still claims to be
+			// in_progress.
+			if next, ok := runStatusFor(previous, spec.to); ok && run.Status != next {
+				run.Status = next
+				return h.updateRun(ctx, tx, run)
+			}
+			return nil
 		},
 	})
 	if err != nil {

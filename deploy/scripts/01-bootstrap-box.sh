@@ -27,7 +27,12 @@ free -h
 echo "==> apt packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io rsync
+# docker-buildx is NOT optional: the generated Dockerfile uses BuildKit cache
+# mounts (RUN --mount=type=cache,...), and Ubuntu's docker.io ships without the
+# buildx plugin. Without it the legacy builder fails at the first cache mount
+# with "the --mount option requires BuildKit", and DOCKER_BUILDKIT=1 then fails
+# with "BuildKit is enabled but the buildx component is missing".
+apt-get install -y -qq docker.io docker-buildx rsync
 systemctl enable --now docker
 
 echo "==> microk8s"

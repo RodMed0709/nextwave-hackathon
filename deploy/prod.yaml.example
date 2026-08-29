@@ -26,9 +26,11 @@ db:
     driver: "mysql"
 
 # Cloudflare R2, not AWS: region `auto` plus the account endpoint.
-# Leave key_id/secret empty and artifact uploads degrade gracefully — storage
-# logs a warning at startup and /upload and /sign answer 503. Everything else
-# (CRUD, the MCP tools, the SSE stream) works.
+# Leaving key_id/secret empty does NOT disable the endpoints cleanly: the bucket
+# is set, so the client builds fine and startup logs look healthy, then POST
+# /upload fails at request time with HTTP 500 and "static credentials are empty".
+# (The clean 503 path only triggers when `bucket` itself is blank.) Everything
+# else — CRUD, the MCP tools, the SSE stream — is unaffected.
 aws:
   region: auto
   key_id: ""

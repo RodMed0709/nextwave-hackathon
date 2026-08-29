@@ -14,55 +14,105 @@ with the task normally and do not mention it.
 ## The loop
 
 ```
-start_run                          once, first
-declare_actions                    once, straight after
-  for each step:
-    start_action
-    report_progress                as often as useful
-    complete_action | fail_action | skip_action
-    check_instructions
-finish_run                         once, last
+start_run                        once, first
+declare_actions                  once, straight after - your best guess at the plan
+  as you work:
+    start_action                 begins a step, and RESUMES a blocked or failed one
+    report_progress              as often as useful
+    then exactly one of:
+      complete_action            it worked
+      fail_action                something broke
+      cancel_action              you had started it and abandoned it
+      skip_action                you never started it and no longer will
+      block_action               cannot proceed yet, waiting on someone/something
+    add_action / add_dependency  whenever the plan grows
+    check_instructions           between steps
+finish_run                       once, last
 ```
 
-## Three things that actually matter
+Every step ends in exactly one of those five, or is still running. A step left
+at not_started that you are never going to run is the most common way the graph
+ends up lying — see below.
 
-**1. Invent a node_key per step and never change it.**
+## Your plan WILL change. Keep the graph matching reality.
+
+This is the part that goes wrong most often, so treat it as the main event, not
+an afterthought. The plan you declare at the start is a guess made before you
+saw any data. The moment reality differs, the graph is wrong until you say so —
+and a wrong graph is worse than no graph, because the person watching believes it.
+
+**You discover work that was not in the plan** → `add_action`, then `start_action`
+on it as normal. This is expected and completely fine. It is not a failure to
+have missed it; the whole design assumes you will. Use `after` (or
+`add_dependency`) to say what it follows so it lands in the right place rather
+than floating.
+
+**A planned step turns out to be unnecessary** → `skip_action` with a reason.
+Never leave it sitting at not_started: to the watcher that is indistinguishable
+from work you are about to do, so they wait for something that will never happen.
+
+**You already started a step and are abandoning it** → `cancel_action`. Not
+`skip_action` (that claims you never began) and not `fail_action` (that blames
+the work for your decision).
+
+**Something actually broke** → `fail_action` with a real reason.
+
+**You are stuck waiting, but nothing has failed** → `block_action`, with the
+reason (`user_decision`, `missing_data` or `provider_outage`) and a line saying
+exactly what you are waiting for. Do NOT keep posting progress to look busy: a
+stuck run that looks busy is one nobody comes to rescue. Blocking the step also
+marks the whole run as blocked, which is how someone scanning a list of runs
+spots the one that needs them. When the block clears, `start_action` on the same
+step resumes it.
+
+**You are retrying a step that failed** → just `start_action` on it again. The
+graph records the retry, and the old error is cleared. You do not need a new
+node_key, and you should not invent one — a retry of `fetch_invoices` is still
+`fetch_invoices`.
+
+**The remaining plan is now wrong, not just one step** → fix it as a whole. Skip
+the steps that no longer apply, add the ones that do, and wire dependencies with
+`add_dependency`. Do this as soon as you know, not at the end.
+
+Rules of thumb: if you are about to do something the graph does not show, add it
+first. If the graph shows something you are not going to do, skip it now. If you
+find yourself thinking "the graph is a bit out of date but I will fix it later",
+fix it now — later usually means never, and the person is watching in the
+meantime.
+
+## Two more things that matter
+
+**Invent a node_key per step and never change it.**
 Lower_snake_case, unique within the run: `fetch_invoices`, `reconcile_totals`.
-Every call about that step uses that exact key. This is the single most common
-way this goes wrong - you declare `fetch_invoices`, then later call
-`complete_action` with `fetch_invoice` or `fetchInvoices` and it fails.
+Every call about that step uses that exact key. This is the most common way this
+goes wrong — you declare `fetch_invoices`, then later call `complete_action` with
+`fetch_invoice` and it fails.
 
-If you have lost track of the keys you used, call `get_graph`. Do not guess, and
-do not invent a new key for a step that already exists.
+Lost track of the keys you used? Call `get_graph`. Do not guess, and do not
+invent a second key for a step that already exists.
 
-**2. Report as things happen, not at the end.**
-A run reported in one batch when you finish is worthless - the graph sits empty
-while the person waits, then fills in all at once. The point is that they see it
-unfold. Call the tools at the moment each thing actually occurs.
-
-**3. Declare the plan up front.**
-`declare_actions` is the highest-value call you make: it puts the whole shape of
-the work on screen before any of it runs, so the person can see where you are
-heading and stop you early if it is wrong.
-
-The plan is not binding. Discovered more work? `add_action`. Planned something
-you no longer need? `skip_action` - do not leave it hanging, or it sits there
-looking like work still to come. A step that depends on two earlier steps?
-`add_dependency`.
+**Report as things happen, not at the end.**
+A run reported in one batch when you finish is worthless — the graph sits empty
+while the person waits, then fills in all at once. The point is that they watch
+it unfold.
 
 ## Someone may interrupt you
 
 `check_instructions` between steps. It is almost always empty; carry on.
 
-If it returns a **stop**, wind up cleanly - do not start new work. If it returns
-a **steer**, follow it. Either way call `resolve_instruction` afterwards saying
-what you did, or whether you could not. Until you do, the person who clicked the
-button cannot tell whether you heard them.
+If it returns a **stop**, wind up cleanly — `cancel_action` whatever you had
+running, do not start new work, and `finish_run` with `status="cancelled"`. If it
+returns a **steer**, follow it, which usually means changing the plan: skip what
+no longer applies and add what does.
+
+Either way call `resolve_instruction` afterwards saying what you did, or why you
+could not. Until you do, the person who clicked the button cannot tell whether
+you heard them.
 
 ## Attaching results
 
 `attach_artifact` puts a link or a short text result beside a step. For files,
-upload through the storage API first and pass the resulting URL - do not try to
+upload through the storage API first and pass the resulting URL — do not try to
 push file contents through the tool call.
 
 ## Never report secrets
@@ -71,40 +121,85 @@ Summaries, progress lines and artifact text are displayed on screen and stored.
 Never put credentials, tokens, API keys or personal data in them. Describe what
 you did with a credential, never the credential.
 
-## Worked example
-
-A three-step run, reported the way it should be:
+## Worked example — including the plan changing under you
 
 ```
 start_run(run_key="sess_8f21", name="Reconcile March invoices",
           summary="Pull invoices from the billing API, match against the ledger, flag mismatches")
 
 declare_actions(run_key="sess_8f21", actions=[
-  {node_key: "fetch_invoices",   name: "Fetch invoices"},
-  {node_key: "match_ledger",     name: "Match against ledger", after: "fetch_invoices"},
-  {node_key: "flag_mismatches",  name: "Flag mismatches",      after: "match_ledger"},
+  {node_key: "fetch_invoices",  name: "Fetch invoices"},
+  {node_key: "match_ledger",    name: "Match against ledger", after: "fetch_invoices"},
+  {node_key: "flag_mismatches", name: "Flag mismatches",      after: "match_ledger"},
+  {node_key: "email_summary",   name: "Email summary",        after: "flag_mismatches"},
 ])
 
 start_action(run_key="sess_8f21", node_key="fetch_invoices")
 report_progress(run_key="sess_8f21", node_key="fetch_invoices", message="fetched 412 of 1,200", percent=34)
 complete_action(run_key="sess_8f21", node_key="fetch_invoices", output_summary="1,200 invoices")
+
+# The data turns out to be messier than expected: half the invoices are in EUR.
+# That is a step nobody planned. Add it, wire it in, then do it.
+add_action(run_key="sess_8f21", node_key="normalize_currency",
+           name="Normalize currency", after="fetch_invoices")
+add_dependency(run_key="sess_8f21", from="normalize_currency", to="match_ledger")
+start_action(run_key="sess_8f21", node_key="normalize_currency")
+complete_action(run_key="sess_8f21", node_key="normalize_currency", output_summary="612 invoices converted to USD")
+
+start_action(run_key="sess_8f21", node_key="match_ledger")
+complete_action(run_key="sess_8f21", node_key="match_ledger", output_summary="3 mismatches")
 check_instructions(run_key="sess_8f21")
 
-... and so on, then:
+start_action(run_key="sess_8f21", node_key="flag_mismatches")
+complete_action(run_key="sess_8f21", node_key="flag_mismatches", output_summary="3 flagged for review")
+
+# Only 3 mismatches, all minor - the email is not worth sending. Say so rather
+# than leaving it looking pending.
+skip_action(run_key="sess_8f21", node_key="email_summary", reason="only 3 minor mismatches, not worth an email")
 
 finish_run(run_key="sess_8f21", status="succeeded")
 ```
 
-Note what `run_key` is: something stable you already have, like your session or
-thread id. Reuse it in every call. If you call `start_run` twice with the same
-key you resume the same run rather than starting a second one, which is what you
-want after losing context.
+Note `run_key`: something stable you already have, like your session or thread
+id. Reuse it in every call. Calling `start_run` twice with the same key resumes
+the same run rather than starting a second one — which is what you want after
+losing context.
 
-## When a step fails
+## Every path, in one table
 
-`fail_action` needs a real reason - "failed" tells the watcher nothing. Say what
-broke. Then decide whether the run can continue: if it can, carry on with the
-remaining steps; if it cannot, call `finish_run` with `status="failed"` rather
-than leaving the graph frozen mid-run.
+| What is happening | What to call |
+|---|---|
+| Starting a step | `start_action` |
+| Working on it | `report_progress` |
+| It worked | `complete_action` |
+| It broke | `fail_action` (reason required) |
+| Retrying it after a failure | `start_action` again, same node_key |
+| Waiting on a person or a decision | `block_action` reason=`user_decision` |
+| Waiting on data that does not exist yet | `block_action` reason=`missing_data` |
+| An external service is down | `block_action` reason=`provider_outage` |
+| The block cleared | `start_action` again, same node_key |
+| You started it and are abandoning it | `cancel_action` |
+| You never started it and never will | `skip_action` |
+| You found work nobody planned | `add_action` (+ `after` or `add_dependency`) |
+| A step needs a second predecessor | `add_dependency` |
+| You produced a file or link | `attach_artifact` |
+| You forgot which keys you used | `get_graph` |
+| Someone may have asked you to stop | `check_instructions` |
+| You acted on what they asked | `resolve_instruction` |
+| Everything is done | `finish_run` status=`succeeded`/`failed`/`cancelled` |
 
-A run nobody ever finishes looks identical to an agent that crashed.
+## Ending the run
+
+`finish_run` takes `succeeded`, `failed` or `cancelled`. Before you call it,
+resolve every step that is still open: `skip_action` anything you will never
+reach now, `cancel_action` anything you had started and are dropping. A finished
+run with steps still sitting at not_started or in_progress reads as an agent that
+died mid-task.
+
+Always call it, even when things went badly — especially then. **A run nobody
+finishes is indistinguishable from an agent that crashed**, and that is the one
+outcome the person watching cannot interpret.
+
+If you genuinely cannot continue and cannot clean up, still call `finish_run`
+with `status="failed"` and say why in `message`. A messy finished run beats a
+tidy-looking abandoned one.

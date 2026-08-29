@@ -67,37 +67,21 @@ No secret is in this directory. Passwords are generated on the box into
 root-only `/etc/donald/credentials.env` and flow from there into the `donald-db`
 Secret and the config overlay.
 
-## SSH access — read this first
+## SSH access
 
-**The laptop this was authored on cannot SSH to the box on port 22.** TCP
-connects (a full 41 ms round trip, so it really is the box answering) and then no
-SSH banner ever arrives — a raw socket read times out after 90 s. Meanwhile ports
-80/443/12345 on the same host return an immediate RST, and `github.com:22` and
-`gitlab.com:22` hand back their banners instantly. The other Linode box in the
-account (`69.164.192.246`) behaves identically. So the port-22 payload
-specifically is dropped somewhere on the path between this network and Linode,
-and it is not fixable from the laptop.
+`ssh root@45.33.12.143` on **port 22** with `~/.ssh/id_ed25519`. That is what
+`deploy.sh` uses.
 
-The workaround is to run sshd on **2222** as well:
-
-1. Linode Cloud Manager → the `donald` Linode → **Launch LISH Console**, log in as root.
-2. Paste the contents of `scripts/00-open-ssh-2222.sh`.
-3. `ssh -p 2222 root@45.33.12.143` should now work.
-
-(Ubuntu 24.04 socket-activates sshd, so adding a `Port` line alone is not enough —
-the script hands the listener back to `ssh.service`, which is why it is a script
-and not one line.)
-
-Alternative, if a clean slate is preferable (the box is fresh) — this **wipes the
-box**, so only run it knowing that:
-
-```sh
-linode-cli linodes rebuild 103888230 \
-  --image linode/ubuntu24.04 \
-  --root_pass "$(openssl rand -base64 24)" \
-  --authorized_keys "$(cat ~/.ssh/id_ed25519.pub)" \
-  --metadata.user_data "$(base64 -i scripts/linode-cloud-config.yaml | tr -d '\n')"
-```
+For a while during authoring, port 22 to Linode was unreachable from the laptop's
+network — the TCP handshake completed and the SSH banner never arrived, on this
+box and on the account's other one, while `github.com:22` answered instantly.
+That has since cleared. If it ever comes back, the fallback is to put sshd on a
+second port from the LISH console: `scripts/00-open-ssh-2222.sh` does that
+(Ubuntu 24.04 socket-activates sshd, so adding a `Port` line alone is not enough
+— the script hands the listener back to `ssh.service`), and `deploy.sh` takes
+`SSH_PORT=2222`. `scripts/linode-cloud-config.yaml` is the same thing as
+cloud-init for a rebuild — note a rebuild **wipes the box**, including the
+authorized key.
 
 ## Deploying
 
@@ -130,6 +114,14 @@ What it does:
 ```sh
 cd deploy && ./deploy.sh --skip-bootstrap
 ```
+
+**A redeploy fails safe.** If the app does not compile, `docker build` exits
+non-zero, `02-build-image.sh` stops, and `deploy.sh` aborts before helm is
+touched — the running pods keep serving the previous image. Observed, not
+assumed: a redeploy attempted mid-edit failed on
+`app/mcp/nodes.go:198: undefined: null` and the cluster stayed on its existing
+tag with zero restarts. Nothing is rolled forward until there is a working
+binary, so it is safe to retry whenever the tree builds again.
 
 ### Images — no registry, so mind the tag
 
@@ -191,13 +183,38 @@ overlay is mandatory. `params: "parseTime=true&interpolateParams=true&charset=ut
 — **`parseTime=true` is not optional**: every entity has `created_at`/`updated_at`
 and the driver cannot scan DATETIME without it.
 
-### Known gap: R2 credentials
+### Known gap: R2 credentials — uploads are non-functional
 
 `R2_KEY_ID` and `R2_SECRET` in `/etc/donald/credentials.env` are **empty** — nobody
-supplied them. This is not a crash: `storage.NewClient` errors on an unconfigured
-bucket, `storage.Register` logs a warning, and `/upload` and `/sign` answer
-**503**. CRUD, the MCP tools and the SSE stream all work. To enable artifact
-uploads, fill the two values on the box and re-run `03-deploy.sh`.
+supplied them.
+
+Measured behaviour on the live box, not assumed. The bucket name *is* set, so
+`storage.NewClient` succeeds and `storage.Register` logs the cheerful
+`storage: mounted /upload and /sign on the http port`; the failure happens at
+request time instead:
+
+```
+POST /upload -> HTTP 500   {"error":"upload failed"}
+log: operation error S3: PutObject, get identity: get credentials:
+     failed to refresh cached credentials, static credentials are empty
+```
+
+So it is **500, not 503** — the 503 path only applies when the bucket itself is
+blank. Everything else is unaffected: CRUD, all 13 MCP tools and the SSE stream
+work. Artifact *rows* can be created; only the bytes have nowhere to go.
+
+Fixing it is a config edit plus a restart, **not** a redeploy:
+
+```sh
+ssh root@45.33.12.143
+vi /etc/donald/credentials.env          # fill R2_KEY_ID and R2_SECRET
+/opt/donald/scripts/03-deploy.sh        # rewrites the overlay + reinstalls
+microk8s kubectl -n donald rollout restart deploy/donald-api deploy/donald-mcp
+```
+
+(Editing `/etc/config/nuzur/donald/prod.yaml` directly and restarting the two
+deployments works too — the overlay is a hostPath file, so no image rebuild and
+no new tag are involved.)
 
 ## Health probes
 
@@ -294,6 +311,19 @@ microk8s helm3 -n donald list
 microk8s kubectl -n donald logs deploy/donald-mcp -f
 microk8s ctr images ls -q | grep donald
 ```
+
+## Demo data left in the database
+
+Verifying the deploy end to end wrote one real run through the public MCP
+endpoint, so the database is not empty:
+
+- `client`: 1 row, `Donald demo tenant` (created on demand by `app/mcp/handler.go`)
+- `agent_run`: 1 row, `run_key = deploy-verify-1`
+- `agent_node`: 2 rows (`build`, `deploy`), `agent_event`: 3 rows
+
+Harmless, and handy for the frontend to render against. To clear it:
+`DELETE FROM agent_run WHERE run_key = 'deploy-verify-1';` (nodes, edges and
+events cascade).
 
 ## Caveats
 

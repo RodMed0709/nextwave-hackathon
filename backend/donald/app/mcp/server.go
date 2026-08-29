@@ -165,6 +165,18 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	}, h.SkipAction)
 
 	addTool(server, logger, &mcp.Tool{
+		Name:        "block_action",
+		Description: "Report that a step cannot proceed but has not failed - you are waiting on a person to decide, on data that does not exist yet, or on an external service that is down. Say exactly what you are waiting for; that message is what tells the watcher whether they can unblock you. Call start_action on the same step to resume.",
+		Annotations: idempotent,
+	}, h.BlockAction)
+
+	addTool(server, logger, &mcp.Tool{
+		Name:        "cancel_action",
+		Description: "Mark a step you had already started and have now abandoned - typically because a person asked you to stop, or the work stopped being necessary. Use skip_action instead for a planned step you never began, and fail_action if something actually broke.",
+		Annotations: idempotent,
+	}, h.CancelAction)
+
+	addTool(server, logger, &mcp.Tool{
 		Name:        "check_instructions",
 		Description: "Ask whether a person watching has asked you to stop or change course. Call this between steps. It is normally empty, and an empty answer means carry on. If it returns something, act on it and then call resolve_instruction.",
 		Annotations: readOnly,

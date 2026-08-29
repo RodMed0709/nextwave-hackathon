@@ -36,9 +36,11 @@ if [ ! -f "$CREDS" ]; then
   {
     echo "MYSQL_ROOT_PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 28)"
     echo "MYSQL_APP_PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 28)"
-    # Cloudflare R2. Empty on purpose — nobody supplied them. Fill in and re-run
-    # to enable artifact uploads; until then /upload and /sign answer 503 and
-    # everything else works.
+    # Cloudflare R2. Empty on purpose — nobody supplied them. Until they are
+    # filled in, POST /upload returns HTTP 500 ("static credentials are empty")
+    # rather than a clean 503, because the bucket name is set and only the
+    # credentials are missing. Everything else works. Fill these in and re-run
+    # this script, then restart the two app deployments.
     echo "R2_KEY_ID="
     echo "R2_SECRET="
   } > "$CREDS"
