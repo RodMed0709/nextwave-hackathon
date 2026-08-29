@@ -332,3 +332,47 @@ events cascade).
   reachable, but nothing enforces that — add a firewall if this outlives the demo.
 - Auth is disabled by design (hackathon demo). `api.` and `mcp.` are open to the
   internet, and `/v1/mcp` lets any caller write runs into the demo tenant.
+
+
+## Deploying the web app
+
+Separate from the backend deploy on purpose — the frontend and backend are worked
+on by different people, and neither should have to rebuild the other to ship.
+
+```sh
+cd deploy && ./deploy-web.sh
+```
+
+It rsyncs `../frontend` (minus `node_modules`/`.next`, which are large and
+platform-specific), builds `web.Dockerfile` on the box, imports the image into
+containerd, and upgrades the `donald-web` release.
+
+**The Dockerfile lives in `deploy/`, not `frontend/`** — the frontend tree is
+actively edited by others, and a build file dropped in there is a merge conflict
+waiting to happen. The build context is still the frontend directory.
+
+**`NEXT_PUBLIC_DONALD_API` is baked in at BUILD time**, so pointing the app at a
+different API is a rebuild, not a restart. It currently defaults to EMPTY, which
+makes the app play its recorded fixture — a working demo. Setting it today would
+ship a broken site, because `lib/donald/source.ts`'s `apiSource` targets
+endpoints that do not exist (`agent_events`, `sequence_gt`). Once that is
+rewritten against the real endpoints:
+
+```sh
+API=https://api.donald.todes.mx ./deploy-web.sh
+```
+
+Endpoints the web app should use (all live now):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/runs` | run list, newest first |
+| `GET /v1/runs/{run_key}` | snapshot: run + nodes + edges, plus `last_sequence` |
+| `GET /v1/runs/{run_key}/stream?after=N` | SSE deltas after a cursor |
+| `POST /v1/runs/{run_key}/interventions` | raise stop/steer — `{type, node_key?, prompt}` |
+
+Verified on the box: the image builds, runs as the unprivileged `node` user,
+serves `/` and `/api/donald-recording`, is ready in ~350ms, and inlines the API
+base into the client bundle. Image is ~990 MB because it carries `node_modules`;
+switching `next.config.mjs` to `output: 'standalone'` would cut that
+substantially, and is worth doing once the frontend settles.
