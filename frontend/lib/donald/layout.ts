@@ -1,11 +1,24 @@
 import type { RunEdge, RunNode } from './types'
 
 export type LayoutPosition = { x: number; y: number; depth: number }
+export type LayoutBounds = { x: number; y: number; width: number; height: number }
 
 const COLUMN_GAP = 340
 const ROW_GAP = 230
 const ORIGIN_X = 48
 const ORIGIN_Y = 280
+export const NODE_WIDTH = 272
+export const NODE_HEIGHT = 200
+
+export function getLayoutBounds(positions: Record<string, LayoutPosition>): LayoutBounds | null {
+  const values = Object.values(positions)
+  if (values.length === 0) return null
+  const left = Math.min(...values.map((position) => position.x))
+  const top = Math.min(...values.map((position) => position.y))
+  const right = Math.max(...values.map((position) => position.x + NODE_WIDTH))
+  const bottom = Math.max(...values.map((position) => position.y + NODE_HEIGHT))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
 
 export function layoutGraph(
   nodes: Record<string, RunNode>,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { layoutGraph } from '../../lib/donald/layout'
+import { getLayoutBounds, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -61,4 +61,13 @@ test('nodes keep their position when siblings appear and removed nodes still hav
   const removed = { ...initialNodes.alpha, removed: true }
   const withRemoved = layoutGraph({ ...initialNodes, alpha: removed }, initialEdges, after)
   assert.deepEqual(withRemoved.alpha, before.alpha)
+})
+
+test('getLayoutBounds covers every authored-by-layout node card', () => {
+  const bounds = getLayoutBounds({
+    alpha: { x: 48, y: 100, depth: 0 },
+    beta: { x: 388, y: 330, depth: 1 },
+  })
+
+  assert.deepEqual(bounds, { x: 48, y: 100, width: 612, height: 430 })
 })
