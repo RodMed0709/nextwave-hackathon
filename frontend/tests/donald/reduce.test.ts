@@ -96,3 +96,69 @@ test('the complete recording rewires the graph and closes the intervention', () 
   const removalIndex = values.findIndex((value) => isDonaldEvent(value) && value.event_type === 'node_removed')
   assert.ok(replanIndex < removalIndex, 'the replan event must precede its structural changes')
 })
+
+test('a declared plan materialises its nodes AND its edges', () => {
+  // Donald declares a plan as ONE event rather than a burst of node_added /
+  // edge_added. Reading only the summary left the graph with no edges, so every
+  // run rendered as a straight line whatever shape the agent declared — the
+  // fan-outs and joins were in the payload and dropped on the floor.
+  const state = applyEvent(createInitialRunState('run-1'), {
+    sequence: 2,
+    event_type: 'plan_declared',
+    occurred_at: '2026-08-29T11:20:00Z',
+    agent_label: null,
+    node_key: null,
+    idempotency_key: 'plan',
+    payload: {
+      plan: {
+        steps: [
+          { node_key: 'a', label: 'Ingest', agent_label: 'Nina', planned: true, plan_order: 1 },
+          { node_key: 'b', label: 'Extract', agent_label: 'Theo', planned: true, plan_order: 2 },
+          { node_key: 'c', label: 'Reconcile', agent_label: 'Theo', planned: true, plan_order: 3 },
+        ],
+        edges: [
+          { edge_key: 'a->b', source_node_key: 'a', target_node_key: 'b' },
+          { edge_key: 'a->c', source_node_key: 'a', target_node_key: 'c' },
+          { edge_key: 'b->c', source_node_key: 'b', target_node_key: 'c' },
+        ],
+      },
+    },
+  })
+
+  assert.deepEqual(Object.keys(state.nodes).sort(), ['a', 'b', 'c'])
+  assert.equal(state.nodes.a.label, 'Ingest')
+  // agent_label drives the swimlanes; it comes off the step, not the event.
+  assert.equal(state.nodes.b.agent_label, 'Theo')
+  assert.equal(state.nodes.c.plan_order, 3)
+
+  // The join is the point: 'c' waits on both 'a' and 'b'.
+  assert.deepEqual(Object.keys(state.edges).sort(), ['a->b', 'a->c', 'b->c'])
+  const intoC = Object.values(state.edges).filter((edge) => edge.target_node_key === 'c')
+  assert.equal(intoC.length, 2, 'c is a join and must keep both incoming edges')
+})
+
+test('a plan declaration does not clobber a node that already reported', () => {
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, {
+    sequence: 1,
+    event_type: 'node_status_changed',
+    occurred_at: '2026-08-29T11:20:00Z',
+    agent_label: 'Nina',
+    node_key: 'a',
+    idempotency_key: 'start-a',
+    payload: { status: 'in_progress' },
+  })
+  state = applyEvent(state, {
+    sequence: 2,
+    event_type: 'plan_declared',
+    occurred_at: '2026-08-29T11:20:01Z',
+    agent_label: null,
+    node_key: null,
+    idempotency_key: 'plan',
+    payload: { plan: { steps: [{ node_key: 'a', label: 'Ingest', plan_order: 1 }], edges: [] } },
+  })
+
+  // Out-of-order arrival must not reset progress to not_started.
+  assert.equal(state.nodes.a.status, 'in_progress')
+  assert.equal(state.nodes.a.label, 'Ingest')
+})

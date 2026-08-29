@@ -139,6 +139,71 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
           plan_summary: (plan && stringValue(plan.summary)) ?? next.run.plan_summary,
         },
       }
+
+      // A declared plan MATERIALISES its graph.
+      //
+      // Donald declares a plan as one atomic event rather than a burst of
+      // node_added/edge_added, because the whole plan is one decision by the
+      // agent. Reading only `summary` here left the reducer with no edges at
+      // all, so every run rendered as a straight line of nodes whatever shape
+      // the agent actually declared — the fan-outs and joins were in the payload
+      // and silently dropped.
+      //
+      // node_added/edge_added are still handled below and still apply: they are
+      // how work DISCOVERED mid-run arrives. This case covers the up-front plan.
+      const steps = Array.isArray(plan?.steps) ? plan.steps : []
+      for (const raw of steps) {
+        const step = objectValue(raw)
+        const key = step && stringValue(step.node_key)
+        if (!step || !key) continue
+        const existing = next.nodes[key]
+        next = {
+          ...next,
+          nodes: {
+            ...next.nodes,
+            [key]: {
+              ...(existing ?? {
+                node_key: key,
+                status: 'not_started' as const,
+                progress_percent: 0,
+                started_at: null,
+                finished_at: null,
+                input_summary: null,
+                output_summary: null,
+                artifacts: [],
+                removed: false,
+              }),
+              label: stringValue(step.label) ?? existing?.label ?? key,
+              agent_label: stringValue(step.agent_label) ?? existing?.agent_label ?? null,
+              planned: booleanValue(step.planned) ?? true,
+              plan_order: numberValue(step.plan_order) ?? existing?.plan_order ?? null,
+              estimated_seconds: numberValue(step.estimated_seconds) ?? existing?.estimated_seconds ?? null,
+            } as RunNode,
+          },
+        }
+      }
+
+      const planEdges = Array.isArray(plan?.edges) ? plan.edges : []
+      for (const raw of planEdges) {
+        const edge = objectValue(raw)
+        const source = edge && stringValue(edge.source_node_key)
+        const target = edge && stringValue(edge.target_node_key)
+        if (!edge || !source || !target) continue
+        const edgeKey = stringValue(edge.edge_key) ?? `${source}->${target}`
+        next = {
+          ...next,
+          edges: {
+            ...next.edges,
+            [edgeKey]: {
+              edge_key: edgeKey,
+              source_node_key: source,
+              target_node_key: target,
+              status: 'pending',
+              planned: true,
+            },
+          },
+        }
+      }
       break
     }
     case 'node_added':
