@@ -2,7 +2,9 @@ package app
 
 import (
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
+	donaldmcp "github.com/nextwave/donald/app/mcp"
 	"github.com/nextwave/donald/core"
 	restserver "github.com/nextwave/donald/rest/server"
 )
@@ -49,14 +51,15 @@ import (
 // parseListParams, <entity>Declarations — are unexported, so a custom handler
 // writes its own JSON. Match the generated error shape (RFC 7807 problem+json:
 // type/title/status/detail) if you want one error format across the API.
-func ProvideCustomRoutes(coreImpl *core.Implementation) restserver.CustomRoutesFn {
+func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) restserver.CustomRoutesFn {
 	return func(r chi.Router) {
-		// Example — add "net/http" to the imports and uncomment:
+		// Everything Donald adds on top of the generated CRUD lives in app/mcp:
+		// the MCP server the client's agents report through, and the SSE stream
+		// the web app subscribes to. Which of the two this process serves is
+		// decided by DONALD_ROLE (api | mcp | all) so the same image can run as
+		// two isolated deployments.
 		//
-		// r.Get("/v1/custom/ping", func(w http.ResponseWriter, req *http.Request) {
-		// 	w.WriteHeader(http.StatusOK)
-		// 	_, _ = w.Write([]byte("pong"))
-		// })
-		_ = coreImpl
+		// Note the full "/v1/..." paths used inside — see the contract above.
+		donaldmcp.Register(r, coreImpl, logger)
 	}
 }
