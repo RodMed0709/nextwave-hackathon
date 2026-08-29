@@ -1,0 +1,47 @@
+**Hecho**
+
+- Implementado [nauta_dummy](/C:/Users/medro/Documents/_PERSONAL_PROJECTS/nextwave-donald/backend/nauta_dummy/__init__.py): `PipelineEvent`, seis etapas, payloads derivados, jitter reproducible y stream finito.
+- Añadidos roster de agentes, CLI, README y 10 pruebas `unittest`.
+- Sin dependencias externas. Fixtures incluidos y cachés Python ignorados.
+
+**Verificación**
+
+```text
+python -m unittest discover -s backend/nauta_dummy/tests
+..........
+Ran 10 tests in 0.007s
+OK
+```
+
+Desde `backend/`:
+
+```text
+python -m nauta_dummy --scenario run-B --speed 8
+Exit code: 0
+[1/6] INGEST ... [6/6] PLAN
+IMPACT: estimated_cost_usd=3780
+PLAN: 3 opciones
+```
+
+```text
+python -m nauta_dummy --scenario run-A --speed 8
+Exit code: 0
+[1/6] INGEST ... [6/6] PLAN
+IMPACT: estimated_cost_usd=0
+PLAN: 1 opción
+```
+
+Timing real con semilla 23:
+
+```text
+gaps_s= [0.412, 0.42, 0.402, 0.129, 0.301]
+unique= 5
+```
+
+**Commit**
+
+- `31e19e0 feat: add Nauta pipeline simulator`
+
+**Pendiente / riesgos**
+
+- Ninguno. Rama `nauta-dummy` limpia y conservada sin push.
