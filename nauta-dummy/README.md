@@ -12,8 +12,9 @@ python -m nauta_dummy --scenario nauta-shipment-delay --speed 4
 python -m nauta_dummy --scenario payments-reconciliation --speed 0 --json
 ```
 
-`--json` emite un objeto por línea para conectarlo a un runner. `speed=0` elimina las pausas;
-`seed=23` fija el ritmo para ensayos. Todo stream es finito y termina en `run_finished`.
+`--json` emite un objeto por línea para conectarlo a un runner. El ritmo sale de la duración
+declarada por cada paso: `speed` la escala, `speed=0` omite las esperas y `seed=23` fija su
+variación para ensayos. Todo stream es finito y termina en `run_finished`.
 
 ## 2. Entiende los cinco verbos
 
@@ -45,6 +46,22 @@ python -m nauta_dummy --scenario payments-reconciliation --speed 0 --json
 **No le cambiamos nada al proveedor.** Sus etapas, su lógica y sus acciones quedan intactas; solo le pedimos que exponga su intención actual y avise cuando cambia.
 
 La propuesta viene completa en el fixture. Python no infiere etapas, nombres, agentes ni dominio.
+
+### La duración es la ventana de intervención
+
+**La duración es la ventana de intervención.** Solo puedes detener algo que todavía está pasando.
+Si los pasos brincan instantáneos, el botón de stop es decorativo.
+
+Cada paso declara `estimated_seconds`: cuánto cree que va a tardar. `plan_declared` lleva esos
+estimados y `total_estimated_seconds`, para mostrar desde el inicio “Nina propone 5 pasos · ~40s”.
+El `node_status_changed` que inicia la acción lleva el estimado y `started_at`; el simulador de
+verdad espera y emite `node_updated.progress_percent` aproximadamente cada 15%.
+
+Al completar, el nodo reporta `actual_seconds`. Si tarda más de 50% sobre su estimado, emite
+`agent_message` con el estimado y el tiempo transcurrido: “se está tardando” es una razón legítima
+para que el humano intervenga.
+
+Estimados, variación, frecuencia de progreso y umbral de lentitud son datos del escenario, no código.
 
 El enum exacto del contrato `agent_event` es:
 
@@ -87,6 +104,11 @@ Copia un JSON dentro de `nauta_dummy/fixtures/`. El CLI lo descubre por su campo
   "name": "mi-caso",
   "display_order": 4,
   "started_at": "2026-08-29T12:00:00Z",
+  "timing": {
+    "duration_jitter_percent": 25,
+    "progress_interval_percent": 15,
+    "slow_threshold_percent": 50
+  },
   "provider": {
     "name": "Mi proveedor",
     "agents": [{"label": "Ana", "role": "Revisión"}]
@@ -96,7 +118,7 @@ Copia un JSON dentro de `nauta_dummy/fixtures/`. El CLI lo descubre por su campo
     "basis": "pipeline conocido del proveedor",
     "summary": "Revisar y cerrar.",
     "steps": [
-      {"node_key": "review", "agent_label": "Ana", "label": "Revisar"}
+      {"node_key": "review", "agent_label": "Ana", "label": "Revisar", "estimated_seconds": 45}
     ],
     "edges": []
   },
@@ -115,7 +137,8 @@ Copia un JSON dentro de `nauta_dummy/fixtures/`. El CLI lo descubre por su campo
 ```
 
 Para REPLAN agrega `reason`, `triggered_by`, `evidence`, `remove_nodes`, `remove_edges`,
-`add_nodes`, `add_edges` y una revisión mayor. El loader rechaza la causa incompleta.
+`add_nodes`, `add_edges` y una revisión mayor. Todo nodo agregado también requiere
+`estimated_seconds`; el loader rechaza estimados o causas incompletas.
 Para ASK agrega `request` (`type`, `prompt`, `options`, `default_option_id`) y `branches`.
 Los artefactos aceptan `file`, `image`, `video`, `audio`, `link`, `text` o `structured_data`, con
 `name`, `content_type` y uno de `text_content` o `url`.
