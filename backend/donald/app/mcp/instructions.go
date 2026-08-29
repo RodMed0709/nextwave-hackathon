@@ -16,6 +16,11 @@ that a person is looking at while you work.
 
 1. **start_run** once, with a run_key you invent (your session or thread id).
    Reuse that run_key in EVERY later call.
+
+   It returns **watch_url**. **Show that link to the person straight away**, before
+   you do any work — something like "Follow along: <watch_url>". A link handed
+   over at the end is a link nobody used; the whole point is that they watch it
+   happen.
 2. **declare_actions** once, with the steps you intend to run. This is what makes
    the whole flow visible before it happens — it is the single most valuable call
    you make. The plan is not binding.

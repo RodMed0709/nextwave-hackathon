@@ -63,6 +63,11 @@ type result struct {
 	GraphRevision int64  `json:"graph_revision"`
 	Note          string `json:"note,omitempty"`
 
+	// WatchURL is where a person can follow this run. Returned by start_run so
+	// the agent can surface it immediately — a link that arrives at the end is a
+	// link nobody used.
+	WatchURL string `json:"watch_url,omitempty"`
+
 	// PendingInstructions is how many stop/steer requests are waiting for this
 	// agent right now.
 	//

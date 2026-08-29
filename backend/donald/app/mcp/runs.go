@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -40,7 +42,8 @@ func (h *Handler) StartRun(ctx context.Context, req *mcp.CallToolRequest, args S
 		return jsonResult(result{
 			OK: true, RunKey: runKey,
 			Sequence: existing.LastEventSequence, GraphRevision: existing.GraphRevision,
-			Note: "run already exists; resuming it",
+			WatchURL: watchURL(runKey),
+			Note:     "run already exists; resuming it",
 		})
 	}
 
@@ -102,6 +105,19 @@ func (h *Handler) StartRun(ctx context.Context, req *mcp.CallToolRequest, args S
 		OK: true, RunKey: runKey, Sequence: seq, GraphRevision: rev,
 		Note: "run created; declare your planned actions next with declare_actions",
 	})
+}
+
+// watchURL is the page a person opens to follow a run.
+//
+// Built from the run_key rather than a uuid, which is what makes it predictable:
+// an agent knows its own watch link the moment it picks a run_key, before the
+// run has produced a single event.
+func watchURL(runKey string) string {
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("DONALD_WEB_URL")), "/")
+	if base == "" {
+		base = "https://donald.todes.mx"
+	}
+	return base + "/runs/" + url.PathEscape(runKey)
 }
 
 // ─────────────────────────────────────────────

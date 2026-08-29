@@ -83,26 +83,26 @@ func TestRoleFromEnv(t *testing.T) {
 // Retry is a normal path. The previous status is what separates a real second
 // transition from a duplicate send.
 func TestTransitionKeyDistinguishesRetry(t *testing.T) {
-	firstStart := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_NOT_STARTED)
-	retryStart := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_FAILED)
+	firstStart := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_NOT_STARTED, 0)
+	retryStart := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_FAILED, 1)
 	if firstStart == retryStart {
 		t.Fatalf("a retry after failure must not reuse the first start's key; both were %q", firstStart)
 	}
 
 	// A genuine duplicate — the same call sent twice from the same state — must
 	// still deduplicate, or every retransmit becomes a second event.
-	if transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_NOT_STARTED) != firstStart {
+	if transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_NOT_STARTED, 0) != firstStart {
 		t.Error("the same transition from the same state must produce a stable key")
 	}
 
 	// Resuming a blocked step is also a second start and must get through.
-	resume := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION)
+	resume := transitionKey("start", "run1", "fetch", enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION, 1)
 	if resume == firstStart {
 		t.Error("resuming a blocked step must not reuse the first start's key")
 	}
 
 	// Different nodes and different runs must never collide.
-	if transitionKey("start", "run1", "fetch", 0) == transitionKey("start", "run2", "fetch", 0) {
+	if transitionKey("start", "run1", "fetch", 0, 0) == transitionKey("start", "run2", "fetch", 0, 0) {
 		t.Error("keys must be scoped to the run")
 	}
 }
@@ -206,5 +206,23 @@ func TestEveryDocumentedToolIsRegistered(t *testing.T) {
 		if !documented[tool.Name] {
 			t.Errorf("tool %q is registered but not in the documented contract — document it or remove it", tool.Name)
 		}
+	}
+}
+
+// TestTransitionKeySeparatesAttempts guards the bug that stranded a re-run node.
+//
+// A node that ran once, was re-started, and then completed again had its second
+// complete swallowed: the key carried only the previous status, and
+// "complete:...:in_progress" had already been recorded in the first cycle. The
+// node stayed in_progress while the caller was told it succeeded.
+func TestTransitionKeySeparatesAttempts(t *testing.T) {
+	firstComplete := transitionKey("complete", "run1", "fetch", enums.AGENT_NODE_STATUS_IN_PROGRESS, 1)
+	secondComplete := transitionKey("complete", "run1", "fetch", enums.AGENT_NODE_STATUS_IN_PROGRESS, 2)
+	if firstComplete == secondComplete {
+		t.Fatalf("a second attempt must not reuse the first attempt's completion key; both were %q", firstComplete)
+	}
+	// Within one attempt, a duplicate send must still deduplicate.
+	if transitionKey("complete", "run1", "fetch", enums.AGENT_NODE_STATUS_IN_PROGRESS, 1) != firstComplete {
+		t.Error("a duplicate send inside one attempt must produce a stable key")
 	}
 }

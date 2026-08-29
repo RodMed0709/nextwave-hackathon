@@ -391,10 +391,32 @@ func (h *Handler) CancelAction(ctx context.Context, req *mcp.CallToolRequest, ar
 
 // transitionKey builds the idempotency key for a node status change.
 //
-// The previous status is part of the key on purpose — see the comment in
-// transition(). Removing it silently breaks retry.
-func transitionKey(suffix, runKey, nodeKey string, previous enums.AgentNodeStatus) string {
-	return fmt.Sprintf("%s:%s:%s:%s", suffix, runKey, nodeKey, previous.String())
+// Two discriminators, and both are load-bearing:
+//
+//   - previous status, so a retry after a failure is not mistaken for a repeat
+//     of the original call;
+//   - attempt, so a SECOND start→complete cycle gets its own keys.
+//
+// The attempt was added after a real failure: a node that had already run once
+// could be re-started (previous status differed, so the key was new) but could
+// never be completed again, because `complete:<run>:<node>:in_progress` had been
+// recorded during the first cycle. commit() short-circuited on it and returned
+// the original sequence, so the caller was told it succeeded while the node sat
+// in_progress forever. Retrying a whole step is normal; it has to converge.
+//
+// attempt counts start events, which is what makes duplicates still dedupe: two
+// sends of the same complete happen within one attempt and produce the same key.
+func transitionKey(suffix, runKey, nodeKey string, previous enums.AgentNodeStatus, attempt int) string {
+	return fmt.Sprintf("%s:%s:%s:%s:%d", suffix, runKey, nodeKey, previous.String(), attempt)
+}
+
+// attemptCount is how many times this node has been started.
+func (h *Handler) attemptCount(ctx context.Context, runUUID uuid.UUID, nodeKey string) (int, error) {
+	var n int
+	err := h.core.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM `agent_event` WHERE `run_uuid` = ? AND `idempotency_key` LIKE ?",
+		runUUID.String(), "start:%:"+nodeKey+":%").Scan(&n)
+	return n, err
 }
 
 // ensureStarted back-fills a start time for a step that reached a terminal
@@ -512,6 +534,12 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 		return nil, nil, err
 	}
 
+	// Which attempt this is, so a second start→complete cycle gets its own keys.
+	attempt, err := h.attemptCount(ctx, run.UUID, node.NodeKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	previous := node.Status
 	if previous == spec.to && spec.to != enums.AGENT_NODE_STATUS_IN_PROGRESS {
 		// Already in the target state. Report the run's current cursor rather
@@ -539,7 +567,7 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 		eventType:      enums.AGENT_EVENT_TYPE_NODE_STATUS_CHANGED,
 		nodeUUID:       &node.UUID,
 		agentLabel:     node.AgentLabel.String,
-		idempotencyKey: transitionKey(spec.idempotencySuffix, run.RunKey, node.NodeKey, previous),
+		idempotencyKey: transitionKey(spec.idempotencySuffix, run.RunKey, node.NodeKey, previous, attempt),
 		payload: payload_entity.AgentEventPayload{
 			PreviousStatus: previous,
 			NewStatus:      spec.to,
@@ -614,6 +642,30 @@ type nodeFields struct {
 // converge on the same graph rather than fail.
 func (h *Handler) upsertNode(ctx context.Context, tx *sql.Tx, runUUID uuid.UUID, key string, f nodeFields) (uuid.UUID, error) {
 	if existing, err := h.resolveNode(ctx, runUUID, key); err == nil {
+		// The node already exists, so its live state (status, timings) is
+		// authoritative and must not be clobbered by a re-declared plan. But
+		// FILL IN blanks: a node first seen through start_action carries no
+		// label, lane or plan order, and a later declare_actions is exactly
+		// where those arrive. Ignoring the whole call left such nodes unlabelled
+		// forever, which is how a graph ends up with no swimlanes.
+		changed := false
+		if !existing.AgentLabel.Valid && f.AgentLabel != "" {
+			existing.AgentLabel = nullString(f.AgentLabel)
+			changed = true
+		}
+		if !existing.PlanOrder.Valid && f.PlanOrder != nil {
+			existing.PlanOrder = nullInt64(f.PlanOrder)
+			changed = true
+		}
+		if !existing.Description.Valid && f.Description != "" {
+			existing.Description = nullString(f.Description)
+			changed = true
+		}
+		if changed {
+			if err := h.updateNode(ctx, tx, existing); err != nil {
+				return uuid.UUID{}, err
+			}
+		}
 		return existing.UUID, nil
 	}
 	id, err := uuid.NewV4()

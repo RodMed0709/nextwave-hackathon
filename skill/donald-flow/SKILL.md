@@ -11,10 +11,22 @@ watching that graph. Your job is to keep it honest and current.
 Report through the Donald MCP tools. If they are not available to you, carry on
 with the task normally and do not mention it.
 
+## Share the link first
+
+**start_run** returns a **watch_url**. Show it to the person immediately, before
+any work starts:
+
+> Follow along: https://donald.todes.mx/runs/<your-run-key>
+
+Do this as the FIRST thing after starting the run. The graph is only useful to
+someone who is looking at it while it happens — a link produced at the end is a
+link nobody opened. The URL is built from your run_key, so it is stable and you
+can share it before a single step has run.
+
 ## The loop
 
 ```
-start_run                        once, first
+start_run                        once, first — SHOW the watch_url it returns
 declare_actions                  once, straight after - your best guess at the plan
   as you work:
     start_action                 begins a step, and RESUMES a blocked or failed one
@@ -157,6 +169,10 @@ you did with a credential, never the credential.
 ```
 start_run(run_key="sess_8f21", name="Reconcile March invoices",
           summary="Pull invoices from the billing API, match against the ledger, flag mismatches")
+→ {"ok": true, "watch_url": "https://donald.todes.mx/runs/sess_8f21", ...}
+
+# Tell the person, right now, before doing anything else:
+#   "Follow along: https://donald.todes.mx/runs/sess_8f21"
 
 declare_actions(run_key="sess_8f21", actions=[
   {node_key: "fetch_invoices",  name: "Fetch invoices",       agent_label: "Nina"},

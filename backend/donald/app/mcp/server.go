@@ -120,7 +120,7 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 
 	addTool(server, logger, &mcp.Tool{
 		Name:        "start_run",
-		Description: "Begin reporting a flow. Call this once, before anything else. You invent a run_key and reuse it in every later call; calling start_run again with the same key resumes the same run rather than creating a second one.",
+		Description: "Begin reporting a flow. Call this once, before anything else. You invent a run_key and reuse it in every later call; calling start_run again with the same key resumes the same run rather than creating a second one. Returns watch_url — SHOW IT to the person immediately, before you start working, so they can follow along from the beginning.",
 		Annotations: idempotent,
 	}, h.StartRun)
 
