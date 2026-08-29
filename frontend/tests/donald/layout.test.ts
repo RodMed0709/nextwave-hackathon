@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getLayoutBounds, layoutGraph } from '../../lib/donald/layout'
+import { CARD_GAP, getLayoutBounds, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -75,4 +75,66 @@ test('getLayoutBounds covers every authored-by-layout node card', () => {
   })
 
   assert.deepEqual(bounds, { x: 48, y: 100, width: 612, height: 430 })
+})
+
+test('layoutGraph leaves a minimum gap around an expanded card', () => {
+  const nodes = {
+    root: node('root', 1),
+    alpha: node('alpha', 2),
+    beta: node('beta', 3),
+    leaf: node('leaf', 4),
+  }
+  const positions = layoutGraph(
+    nodes,
+    {
+      a: edge('a', 'root', 'alpha'),
+      b: edge('b', 'root', 'beta'),
+      c: edge('c', 'alpha', 'leaf'),
+    },
+    {},
+    {
+      root: { width: 300, height: 176 },
+      alpha: { width: 430, height: 510 },
+      beta: { width: 300, height: 176 },
+      leaf: { width: 300, height: 176 },
+    },
+  )
+
+  assert.ok(positions.alpha.y + 510 + CARD_GAP <= positions.beta.y)
+  assert.ok(positions.root.x + 300 + CARD_GAP <= positions.alpha.x)
+  assert.ok(positions.alpha.x + 430 + CARD_GAP <= positions.leaf.x)
+})
+
+test('removed nodes retain their graph depth and participate in packing', () => {
+  const removed = node('removed', 2)
+  removed.removed = true
+  const positions = layoutGraph(
+    { root: node('root', 1), removed, replacement: node('replacement', 3) },
+    { replacement: edge('replacement', 'root', 'replacement') },
+    { removed: { x: 388, y: 280, depth: 1 } },
+    {
+      root: { width: 300, height: 176 },
+      removed: { width: 300, height: 260 },
+      replacement: { width: 300, height: 176 },
+    },
+  )
+
+  assert.equal(positions.removed.depth, 1)
+  assert.equal(positions.replacement.depth, 1)
+  assert.ok(positions.removed.y + 260 + CARD_GAP <= positions.replacement.y)
+})
+
+test('getLayoutBounds uses the rendered size of each card', () => {
+  const bounds = getLayoutBounds(
+    {
+      alpha: { x: 48, y: 100, depth: 0 },
+      beta: { x: 420, y: 220, depth: 1 },
+    },
+    {
+      alpha: { width: 300, height: 176 },
+      beta: { width: 430, height: 510 },
+    },
+  )
+
+  assert.deepEqual(bounds, { x: 48, y: 100, width: 802, height: 630 })
 })

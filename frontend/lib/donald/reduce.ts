@@ -14,10 +14,11 @@ const booleanValue = (value: unknown): boolean | null => typeof value === 'boole
 const objectValue = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
 
-export function createInitialRunState(runKey = '3482'): RunState {
+export function createInitialRunState(runKey = 'latest'): RunState {
   return {
     run: {
       key: runKey,
+      name: null,
       status: 'not_started',
       graph_revision: 0,
       plan_summary: null,
@@ -88,7 +89,15 @@ function interventionOptions(value: unknown): InterventionOption[] {
     const id = option ? stringValue(option.id) : null
     const label = option ? stringValue(option.label) : null
     if (!option || !id || !label) return []
-    return [{ id, label, rationale: stringValue(option.rationale), rank: numberValue(option.rank) }]
+    return [{
+      id,
+      label,
+      rationale: stringValue(option.rationale),
+      rank: numberValue(option.rank),
+      maximum_cost_usd: numberValue(option.maximum_cost_usd),
+      client_commitment: stringValue(option.client_commitment),
+      document: stringValue(option.document),
+    }]
   })
 }
 
@@ -110,7 +119,15 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
 
   switch (event.event_type) {
     case 'run_started':
-      next = { ...next, run: { ...next.run, status: 'running' } }
+      next = {
+        ...next,
+        run: {
+          ...next.run,
+          key: stringValue(event.payload.run_key) ?? next.run.key,
+          name: stringValue(event.payload.name) ?? next.run.name,
+          status: 'running',
+        },
+      }
       break
     case 'plan_declared': {
       const plan = objectValue(event.payload.plan)

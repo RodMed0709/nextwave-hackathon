@@ -4,9 +4,16 @@ import {
   EDGE_LAND_DELAY_MS,
   NODE_STAGGER_MS,
   getGraphPresentation,
+  getInstructionLifecycle,
   getLatestNodeStatus,
+  getLatestReplan,
+  getLatestRecalculation,
+  getPrimaryMetric,
   getPlanRevealDurationMs,
+  getRunRequest,
   getVisiblyActiveNodeKey,
+  metricRows,
+  keepStillRemovedKeys,
 } from '../../lib/donald/presentation'
 import type { DonaldEvent, RunNode } from '../../lib/donald/types'
 
@@ -122,4 +129,110 @@ test('live status prefers event copy and otherwise narrates progress without a p
     key: 'event-4',
     text: 'Reconciling against booking BK-3341',
   })
+})
+
+test('live status surfaces the latest node-scoped agent message', () => {
+  const activeNode = node('reconcile-booking', 'in_progress', 1)
+  const events = [
+    event(1, 'node_updated', activeNode.node_key, { progress_percent: 60 }),
+    event(2, 'agent_message', activeNode.node_key, { message: 'Theo is taking longer than expected.' }),
+  ]
+
+  assert.deepEqual(getLatestNodeStatus(activeNode, events), {
+    key: 'event-2',
+    text: 'Theo is taking longer than expected.',
+  })
+})
+
+test('hidden presentation keys are released when an element is re-added', () => {
+  const hidden = new Set(['still-removed', 're-added'])
+
+  assert.deepEqual(keepStillRemovedKeys(hidden, ['still-removed']), new Set(['still-removed']))
+  assert.equal(keepStillRemovedKeys(hidden, ['still-removed', 're-added']), hidden)
+})
+
+test('the operator request comes from run state and falls back to the run key', () => {
+  const run = {
+    key: 'OP-4471',
+    status: 'running' as const,
+    graph_revision: 1,
+    name: 'Resolve the delayed OP-4471 shipment',
+    plan_summary: 'Validate the change',
+    summary_headline: null,
+    summary_detail: null,
+  }
+
+  assert.equal(getRunRequest(run), 'Resolve the delayed OP-4471 shipment')
+  assert.equal(getRunRequest({ ...run, name: null }), 'Validate the change')
+  assert.equal(getRunRequest({ ...run, name: null, plan_summary: null }), 'OP-4471')
+})
+
+test('metrics put money before days and render operational labels', () => {
+  const rows = metricRows({ affected_containers: 3, delay_days: 9, estimated_cost_usd: 3780 })
+
+  assert.deepEqual(rows, [
+    { key: 'estimated_cost_usd', label: 'Estimated cost', value: '$3,780 USD', severity: 3 },
+    { key: 'delay_days', label: 'Delay', value: '9 days', severity: 2 },
+    { key: 'affected_containers', label: 'Affected containers', value: '3', severity: 1 },
+  ])
+  assert.deepEqual(getPrimaryMetric({ affected_containers: 3, estimated_cost_usd: 3780 }), rows[0])
+})
+
+test('the latest replan exposes its cause and evidence from the event', () => {
+  const replan = event(9, 'run_updated', null, {
+    graph_revision: 2,
+    reason: 'The original Bill of Lading is invalid.',
+    triggered_by: 'reconcile-booking',
+    evidence: ['MSG-3312'],
+  })
+
+  assert.deepEqual(getLatestReplan([replan]), {
+    key: 'event-9',
+    revision: 2,
+    reason: 'The original Bill of Lading is invalid.',
+    triggeredBy: 'reconcile-booking',
+    evidenceIds: ['MSG-3312'],
+  })
+})
+
+test('a single mid-run node addition triggers a smaller recalculation notice', () => {
+  const events = [
+    event(1, 'node_added', 'alpha', { label: 'Initial step' }),
+    event(2, 'node_status_changed', 'alpha', { status: 'in_progress' }),
+    event(3, 'node_added', 'delta', { label: 'Validate new document' }),
+  ]
+
+  assert.deepEqual(getLatestRecalculation(events), {
+    key: 'event-3',
+    kind: 'addition',
+    reason: null,
+    evidenceIds: [],
+  })
+})
+
+test('instruction lifecycle is reconstructed only from node-scoped events', () => {
+  const events = [
+    event(10, 'operator_instruction_queued', 'decide-response', {
+      instruction_id: 'instruction-10',
+      instruction: 'Prioritize documentation.',
+      option_id: 'secure-new-bl',
+    }, '2026-08-29T11:20:10.000Z'),
+    event(11, 'operator_instruction_delivered', 'decide-response', {
+      instruction_id: 'instruction-10',
+    }, '2026-08-29T11:20:11.000Z'),
+    event(12, 'operator_instruction_resolved', 'decide-response', {
+      instruction_id: 'instruction-10',
+    }, '2026-08-29T11:20:12.000Z'),
+  ]
+
+  assert.deepEqual(getInstructionLifecycle(events, 'decide-response'), {
+    id: 'instruction-10',
+    instruction: 'Prioritize documentation.',
+    optionId: 'secure-new-bl',
+    status: 'resolved',
+    queuedAt: '2026-08-29T11:20:10.000Z',
+    deliveredAt: '2026-08-29T11:20:11.000Z',
+    resolvedAt: '2026-08-29T11:20:12.000Z',
+  })
+  assert.equal(getInstructionLifecycle(events, 'another-node'), null)
 })

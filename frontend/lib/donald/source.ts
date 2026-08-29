@@ -18,6 +18,16 @@ type SourceOptions = {
   wait?: Wait
 }
 
+export type OperatorInstructionInput = {
+  nodeKey: string
+  instruction: string
+  optionId?: string | null
+  currentSequence: number
+}
+
+// Keep the backend write contract in one place until the Donald API publishes a typed client.
+export const OPERATOR_INSTRUCTIONS_PATH = 'operator_instructions'
+
 const defaultWait: Wait = (milliseconds, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
     reject(signal.reason)
@@ -85,7 +95,7 @@ function eventsFromApi(value: unknown): DonaldEvent[] {
   return [...candidate].sort((left, right) => left.sequence - right.sequence)
 }
 
-export function apiSource(baseUrl: string, runKey: string, options: SourceOptions = {}): DonaldEventSource {
+export function apiSource(baseUrl: string, runKey: string | null, options: SourceOptions = {}): DonaldEventSource {
   const fetcher = options.fetch ?? fetch
   const wait = options.wait ?? defaultWait
   let lastSequence = 0
@@ -95,7 +105,7 @@ export function apiSource(baseUrl: string, runKey: string, options: SourceOption
     async next(readOptions = {}) {
       while (buffer.length === 0) {
         const endpoint = new URL('agent_events', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
-        endpoint.searchParams.set('run_uuid', runKey)
+        if (runKey) endpoint.searchParams.set('run_uuid', runKey)
         endpoint.searchParams.set('sequence_gt', String(lastSequence))
         const response = await fetcher(endpoint, { signal: readOptions.signal })
         if (!response.ok) throw new Error(`Donald API request failed with ${response.status}`)
@@ -117,4 +127,31 @@ export function apiSource(baseUrl: string, runKey: string, options: SourceOption
     },
   }
   return source
+}
+
+export async function postOperatorInstruction(
+  baseUrl: string | null,
+  runKey: string,
+  input: OperatorInstructionInput,
+  options: Pick<SourceOptions, 'fetch'> = {},
+): Promise<DonaldEvent> {
+  const fetcher = options.fetch ?? fetch
+  const endpoint = baseUrl
+    ? new URL(OPERATOR_INSTRUCTIONS_PATH, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
+    : '/api/donald-recording'
+  const response = await fetcher(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      run_uuid: runKey,
+      node_key: input.nodeKey,
+      instruction: input.instruction,
+      option_id: input.optionId ?? null,
+      current_sequence: input.currentSequence,
+    }),
+  })
+  if (!response.ok) throw new Error(`Operator instruction failed with ${response.status}`)
+  const value: unknown = await response.json()
+  if (!isDonaldEvent(value)) throw new Error('Invalid operator instruction response')
+  return value
 }

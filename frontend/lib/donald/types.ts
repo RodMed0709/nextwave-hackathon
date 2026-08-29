@@ -71,6 +71,9 @@ export type InterventionOption = {
   label: string
   rationale: string | null
   rank: number | null
+  maximum_cost_usd: number | null
+  client_commitment: string | null
+  document: string | null
 }
 
 export type OpenIntervention = {
@@ -84,6 +87,7 @@ export type OpenIntervention = {
 export type RunState = {
   run: {
     key: string
+    name: string | null
     status: RunStatus
     graph_revision: number
     plan_summary: string | null

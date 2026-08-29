@@ -40,6 +40,38 @@ test('unknown events remain visible in the ordered log without throwing', () => 
   assert.equal(state.event_log[0].event_type, 'provider_debugged')
 })
 
+test('run and intervention display metadata are retained from event payloads', () => {
+  const started = event(1, 'run_started', {
+    run_key: 'OP-4471',
+    name: 'Resolve the delayed OP-4471 shipment',
+  })
+  const requested = event(2, 'intervention_requested', {
+    prompt: 'Choose the response.',
+    options: [{
+      id: 'secure-new-bl',
+      label: 'Prioritize documentation',
+      rank: 2,
+      maximum_cost_usd: 3780,
+      client_commitment: '10-SEP-2026',
+      document: 'BL-77120',
+    }],
+  }, 'decide-response')
+
+  const state = applyEvents(createInitialRunState(), [started, requested])
+
+  assert.equal(state.run.key, 'OP-4471')
+  assert.equal(state.run.name, 'Resolve the delayed OP-4471 shipment')
+  assert.deepEqual(state.open_intervention?.options[0], {
+    id: 'secure-new-bl',
+    label: 'Prioritize documentation',
+    rationale: null,
+    rank: 2,
+    maximum_cost_usd: 3780,
+    client_commitment: '10-SEP-2026',
+    document: 'BL-77120',
+  })
+})
+
 test('the complete recording rewires the graph and closes the intervention', () => {
   const lines = readFileSync('lib/donald/events.recorded.jsonl', 'utf8').trim().split(/\r?\n/)
   const values: unknown[] = lines.map((line) => JSON.parse(line) as unknown)
@@ -48,6 +80,8 @@ test('the complete recording rewires the graph and closes the intervention', () 
   const state = applyEvents(createInitialRunState('3482'), values)
 
   assert.equal(state.event_log.length, 80)
+  assert.equal(state.run.key, 'OP-4471')
+  assert.equal(state.run.name, 'Resolve the delayed OP-4471 shipment')
   assert.equal(Object.keys(state.nodes).length, 8)
   assert.equal(Object.values(state.nodes).filter((node) => !node.removed).length, 7)
   assert.equal(state.nodes['notify-client'].removed, true)
@@ -58,4 +92,7 @@ test('the complete recording rewires the graph and closes the intervention', () 
   assert.equal(state.run.graph_revision, 2)
   assert.equal(state.run.status, 'finished')
   assert.equal(state.open_intervention, null)
+  const replanIndex = values.findIndex((value) => isDonaldEvent(value) && value.event_type === 'run_updated')
+  const removalIndex = values.findIndex((value) => isDonaldEvent(value) && value.event_type === 'node_removed')
+  assert.ok(replanIndex < removalIndex, 'the replan event must precede its structural changes')
 })

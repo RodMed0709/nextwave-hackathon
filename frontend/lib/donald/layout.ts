@@ -2,28 +2,37 @@ import type { RunEdge, RunNode } from './types'
 
 export type LayoutPosition = { x: number; y: number; depth: number }
 export type LayoutBounds = { x: number; y: number; width: number; height: number }
+export type NodeSize = { width: number; height: number }
 
-const COLUMN_GAP = 340
-const ROW_GAP = 230
+const COLUMN_GAP = 68
 const ORIGIN_X = 48
 const ORIGIN_Y = 280
 export const NODE_WIDTH = 272
 export const NODE_HEIGHT = 200
+export const CARD_GAP = 48
 
-export function getLayoutBounds(positions: Record<string, LayoutPosition>): LayoutBounds | null {
-  const values = Object.values(positions)
-  if (values.length === 0) return null
-  const left = Math.min(...values.map((position) => position.x))
-  const top = Math.min(...values.map((position) => position.y))
-  const right = Math.max(...values.map((position) => position.x + NODE_WIDTH))
-  const bottom = Math.max(...values.map((position) => position.y + NODE_HEIGHT))
+function sizeFor(key: string, sizes: Record<string, NodeSize>): NodeSize {
+  return sizes[key] ?? { width: NODE_WIDTH, height: NODE_HEIGHT }
+}
+
+export function getLayoutBounds(
+  positions: Record<string, LayoutPosition>,
+  sizes: Record<string, NodeSize> = {},
+): LayoutBounds | null {
+  const entries = Object.entries(positions)
+  if (entries.length === 0) return null
+  const left = Math.min(...entries.map(([, position]) => position.x))
+  const top = Math.min(...entries.map(([, position]) => position.y))
+  const right = Math.max(...entries.map(([key, position]) => position.x + sizeFor(key, sizes).width))
+  const bottom = Math.max(...entries.map(([key, position]) => position.y + sizeFor(key, sizes).height))
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
 export function layoutGraph(
   nodes: Record<string, RunNode>,
   edges: Record<string, RunEdge>,
-  _previous: Record<string, LayoutPosition> = {},
+  previous: Record<string, LayoutPosition> = {},
+  sizes: Record<string, NodeSize> = {},
 ): Record<string, LayoutPosition> {
   const keys = Object.keys(nodes)
   const usableEdges = Object.values(edges).filter((edge) =>
@@ -49,8 +58,20 @@ export function layoutGraph(
 
   const byDepth = new Map<number, string[]>()
   for (const key of keys) {
-    const depth = depths.get(key) ?? 0
+    const depth = nodes[key].removed && previous[key]
+      ? previous[key].depth
+      : depths.get(key) ?? 0
     byDepth.set(depth, [...(byDepth.get(depth) ?? []), key])
+  }
+
+  const columnX = new Map<number, number>()
+  const maximumDepth = Math.max(0, ...byDepth.keys())
+  let nextX = ORIGIN_X
+  for (let depth = 0; depth <= maximumDepth; depth += 1) {
+    columnX.set(depth, nextX)
+    const siblings = byDepth.get(depth) ?? []
+    const widest = Math.max(NODE_WIDTH, ...siblings.map((key) => sizeFor(key, sizes).width))
+    nextX += widest + COLUMN_GAP
   }
 
   const result: Record<string, LayoutPosition> = {}
@@ -58,12 +79,16 @@ export function layoutGraph(
     siblings.sort((left, right) =>
       (nodes[left].plan_order ?? Number.MAX_SAFE_INTEGER) - (nodes[right].plan_order ?? Number.MAX_SAFE_INTEGER) || left.localeCompare(right),
     )
-    for (const [index, key] of siblings.entries()) {
+    const totalHeight = siblings.reduce((total, key) => total + sizeFor(key, sizes).height, 0) +
+      Math.max(0, siblings.length - 1) * CARD_GAP
+    let nextY = ORIGIN_Y + NODE_HEIGHT / 2 - totalHeight / 2
+    for (const key of siblings) {
       result[key] = {
-        x: ORIGIN_X + depth * COLUMN_GAP,
-        y: ORIGIN_Y + (index - (siblings.length - 1) / 2) * ROW_GAP,
+        x: columnX.get(depth) ?? ORIGIN_X,
+        y: nextY,
         depth,
       }
+      nextY += sizeFor(key, sizes).height + CARD_GAP
     }
   }
   return result
