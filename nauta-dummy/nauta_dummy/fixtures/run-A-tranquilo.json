@@ -2,6 +2,11 @@
   "name": "nauta-shipment-quiet",
   "display_order": 1,
   "started_at": "2026-08-29T11:20:00Z",
+  "timing": {
+    "duration_jitter_percent": 25,
+    "progress_interval_percent": 15,
+    "slow_threshold_percent": 50
+  },
   "provider": {
     "name": "Nauta",
     "agents": [
@@ -18,10 +23,10 @@
     "basis": "pipeline conocido del proveedor para monitoreo de embarques",
     "summary": "Verificar la actualización del viaje y mantener el seguimiento.",
     "steps": [
-      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier"},
-      {"node_key": "verify-itinerary", "agent_label": "Theo", "label": "Comparar contra el booking"},
-      {"node_key": "assess-impact", "agent_label": "Theo", "label": "Calcular el impacto"},
-      {"node_key": "keep-monitoring", "agent_label": "Nina", "label": "Mantener el seguimiento"}
+      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier", "estimated_seconds": 5},
+      {"node_key": "verify-itinerary", "agent_label": "Theo", "label": "Comparar contra el booking", "estimated_seconds": 18},
+      {"node_key": "assess-impact", "agent_label": "Theo", "label": "Calcular el impacto", "estimated_seconds": 15},
+      {"node_key": "keep-monitoring", "agent_label": "Nina", "label": "Mantener el seguimiento", "estimated_seconds": 12}
     ],
     "edges": [
       {"edge_key": "receive-to-verify", "source_node_key": "receive-update", "target_node_key": "verify-itinerary"},

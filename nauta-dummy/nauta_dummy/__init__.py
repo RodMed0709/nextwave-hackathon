@@ -102,6 +102,7 @@ class ProviderEvent:
 class _Emitter:
     def __init__(self, scenario: dict[str, Any], speed: float, seed: int | None):
         self.scenario_name = scenario["name"]
+        self.timing = scenario["timing"]
         self.speed = speed
         self.rng = random.Random(seed)
         self.occurred_at = datetime.fromisoformat(
@@ -119,11 +120,6 @@ class _Emitter:
     ) -> ProviderEvent:
         if event_type not in EVENT_TYPES:
             raise ValueError(f"event_type no soportado: {event_type!r}")
-        if self.sequence:
-            gap = self.rng.uniform(0.8, 3.5)
-            if self.speed:
-                time.sleep(gap / self.speed)
-            self.occurred_at += timedelta(seconds=gap)
         self.sequence += 1
         detached_payload = deepcopy(payload)
         identity = json.dumps(
@@ -149,6 +145,11 @@ class _Emitter:
             payload=detached_payload,
         )
 
+    def wait(self, seconds: float) -> None:
+        if self.speed:
+            time.sleep(seconds / self.speed)
+        self.occurred_at += timedelta(seconds=seconds)
+
 
 def _fixture_scenarios() -> list[tuple[int, str, Path]]:
     scenarios: list[tuple[int, str, Path]] = []
@@ -163,6 +164,57 @@ def _fixture_scenarios() -> list[tuple[int, str, Path]]:
 def list_scenarios() -> list[str]:
     """Discover scenario names from fixture data."""
     return [name for _, name, _ in _fixture_scenarios()]
+
+
+def _validate_step(scenario_name: str, node: dict[str, Any], location: str) -> None:
+    estimate = node.get("estimated_seconds")
+    if (
+        isinstance(estimate, bool)
+        or not isinstance(estimate, int | float)
+        or estimate <= 0
+    ):
+        raise ValueError(
+            f"Escenario {scenario_name!r}: paso en {location} requiere "
+            "estimated_seconds numérico mayor que cero"
+        )
+    duration_range = node.get("duration_multiplier_range")
+    if duration_range is not None:
+        if (
+            not isinstance(duration_range, list)
+            or len(duration_range) != 2
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or value <= 0
+                for value in duration_range
+            )
+            or duration_range[0] > duration_range[1]
+        ):
+            raise ValueError(
+                f"Escenario {scenario_name!r}: paso en {location} requiere "
+                "duration_multiplier_range [mínimo, máximo] válido"
+            )
+
+
+def _validate_timing(scenario_name: str, timing: Any) -> None:
+    if not isinstance(timing, dict):
+        raise ValueError(f"Escenario {scenario_name!r}: requiere timing")
+    constraints = {
+        "duration_jitter_percent": lambda value: 0 <= value < 100,
+        "progress_interval_percent": lambda value: 0 < value <= 100,
+        "slow_threshold_percent": lambda value: value > 0,
+    }
+    for field, constraint in constraints.items():
+        value = timing.get(field)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or (field == "progress_interval_percent" and not isinstance(value, int))
+            or not constraint(value)
+        ):
+            raise ValueError(
+                f"Escenario {scenario_name!r}: timing requiere {field} válido"
+            )
 
 
 def _validate_actions(
@@ -205,9 +257,13 @@ def _validate_actions(
                     f"Escenario {scenario_name!r}: replan en {action_location} señala "
                     f"triggered_by {triggered_by!r}, pero ese nodo aún no reportó un finding"
                 )
-            known_nodes.update(
-                node["node_key"] for node in action.get("add_nodes", [])
-            )
+            for node_index, node in enumerate(action.get("add_nodes", [])):
+                _validate_step(
+                    scenario_name,
+                    node,
+                    f"{action_location}.add_nodes[{node_index}]",
+                )
+                known_nodes.add(node["node_key"])
         elif verb == "ask":
             for branch_id, branch in action.get("branches", {}).items():
                 _validate_actions(
@@ -221,14 +277,16 @@ def _validate_actions(
 
 def _validate_scenario(scenario: dict[str, Any]) -> None:
     scenario_name = scenario.get("name", "<sin nombre>")
+    _validate_timing(scenario_name, scenario.get("timing"))
     basis = scenario.get("plan", {}).get("basis")
     if not isinstance(basis, str) or not basis.strip():
         raise ValueError(
             f"Escenario {scenario_name!r}: plan requiere basis no vacío"
         )
-    known_nodes = {
-        node["node_key"] for node in scenario["plan"].get("steps", [])
-    }
+    steps = scenario["plan"].get("steps", [])
+    for index, node in enumerate(steps):
+        _validate_step(scenario_name, node, f"plan.steps[{index}]")
+    known_nodes = {node["node_key"] for node in steps}
     _validate_actions(
         scenario_name,
         scenario.get("timeline", []),
@@ -288,6 +346,9 @@ def _declare(
             "revisable": True,
             "basis": plan["basis"],
             "plan": plan,
+            "total_estimated_seconds": sum(
+                node["estimated_seconds"] for node in plan["steps"]
+            ),
         },
     )
     for plan_order, node in enumerate(plan["steps"], start=1):
@@ -309,12 +370,61 @@ def _advance(
 ) -> Iterable[ProviderEvent]:
     node_key = action["node_key"]
     agent_label = action.get("agent_label") or _agent_for(node_key, nodes)
+    node = nodes[node_key]
+    estimated_seconds = node["estimated_seconds"]
+    jitter_percent = emitter.timing["duration_jitter_percent"]
+    duration_range = node.get(
+        "duration_multiplier_range",
+        [1 - jitter_percent / 100, 1 + jitter_percent / 100],
+    )
+    actual_seconds = round(
+        estimated_seconds * emitter.rng.uniform(*duration_range), 3
+    )
+    started_at = emitter.occurred_at
     yield emitter.emit(
         "node_status_changed",
         agent_label=agent_label,
         node_key=node_key,
-        payload={"status": "in_progress"},
+        payload={
+            "status": "in_progress",
+            "estimated_seconds": estimated_seconds,
+            "started_at": started_at.isoformat(),
+        },
     )
+    progress_interval = emitter.timing["progress_interval_percent"]
+    progress_points = list(range(progress_interval, 100, progress_interval)) + [100]
+    slow_after = estimated_seconds * (
+        1 + emitter.timing["slow_threshold_percent"] / 100
+    )
+    elapsed_seconds = 0.0
+    slow_message_emitted = False
+    for progress_percent in progress_points:
+        next_elapsed = actual_seconds * progress_percent / 100
+        emitter.wait(next_elapsed - elapsed_seconds)
+        elapsed_seconds = next_elapsed
+        yield emitter.emit(
+            "node_updated",
+            agent_label=agent_label,
+            node_key=node_key,
+            payload={
+                "progress_percent": progress_percent,
+                "elapsed_seconds": round(elapsed_seconds, 3),
+            },
+        )
+        if not slow_message_emitted and elapsed_seconds > slow_after:
+            slow_message_emitted = True
+            yield emitter.emit(
+                "agent_message",
+                agent_label=agent_label,
+                node_key=node_key,
+                payload={
+                    "message": (
+                        f"{agent_label or 'El agente'} está tardando más de lo esperado."
+                    ),
+                    "estimated_seconds": estimated_seconds,
+                    "elapsed_seconds": round(elapsed_seconds, 3),
+                },
+            )
     if "update" in action:
         yield emitter.emit(
             "node_updated",
@@ -338,7 +448,11 @@ def _advance(
         "node_status_changed",
         agent_label=agent_label,
         node_key=node_key,
-        payload={"status": action.get("status", "succeeded")},
+        payload={
+            "status": action.get("status", "succeeded"),
+            "estimated_seconds": estimated_seconds,
+            "actual_seconds": actual_seconds,
+        },
     )
 
 

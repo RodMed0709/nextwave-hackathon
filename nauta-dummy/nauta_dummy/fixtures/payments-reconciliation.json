@@ -2,6 +2,11 @@
   "name": "payments-reconciliation",
   "display_order": 3,
   "started_at": "2026-08-29T16:05:00Z",
+  "timing": {
+    "duration_jitter_percent": 25,
+    "progress_interval_percent": 15,
+    "slow_threshold_percent": 50
+  },
   "provider": {
     "name": "Cobre Payments",
     "agents": [
@@ -15,9 +20,9 @@
     "basis": "pipeline conocido del proveedor para conciliación de pagos",
     "summary": "Conciliar el depósito del PSP contra el ledger y contabilizarlo.",
     "steps": [
-      {"node_key": "read-settlement", "agent_label": "Mara", "label": "Leer liquidación del PSP"},
-      {"node_key": "match-ledger", "agent_label": "Iker", "label": "Cruzar pagos contra el ledger"},
-      {"node_key": "post-settlement", "agent_label": "Celia", "label": "Contabilizar la liquidación"}
+      {"node_key": "read-settlement", "agent_label": "Mara", "label": "Leer liquidación del PSP", "estimated_seconds": 6},
+      {"node_key": "match-ledger", "agent_label": "Iker", "label": "Cruzar pagos contra el ledger", "estimated_seconds": 20},
+      {"node_key": "post-settlement", "agent_label": "Celia", "label": "Contabilizar la liquidación", "estimated_seconds": 10}
     ],
     "edges": [
       {"edge_key": "read-to-match", "source_node_key": "read-settlement", "target_node_key": "match-ledger"},
@@ -69,8 +74,8 @@
         {"edge_key": "match-to-post", "source_node_key": "match-ledger", "target_node_key": "post-settlement"}
       ],
       "add_nodes": [
-        {"node_key": "trace-chargebacks", "agent_label": "Iker", "label": "Rastrear contracargos", "plan_order": 3},
-        {"node_key": "decide-adjustment", "agent_label": "Celia", "label": "Decidir el ajuste contable", "plan_order": 4}
+        {"node_key": "trace-chargebacks", "agent_label": "Iker", "label": "Rastrear contracargos", "estimated_seconds": 18, "plan_order": 3},
+        {"node_key": "decide-adjustment", "agent_label": "Celia", "label": "Decidir el ajuste contable", "estimated_seconds": 10, "plan_order": 4}
       ],
       "add_edges": [
         {"edge_key": "match-to-trace", "source_node_key": "match-ledger", "target_node_key": "trace-chargebacks"},
