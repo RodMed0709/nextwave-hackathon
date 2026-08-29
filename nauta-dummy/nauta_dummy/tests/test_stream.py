@@ -18,11 +18,28 @@ from nauta_dummy import EVENT_TYPES, ProviderEvent, list_scenarios, stream  # no
 from nauta_dummy.__main__ import main  # noqa: E402
 
 
-SCENARIOS = (
+REQUIRED_SCENARIOS = (
     "nauta-shipment-quiet",
     "nauta-shipment-delay",
     "payments-reconciliation",
 )
+EXPECTED_EVENT_TYPES = {
+    "run_started",
+    "plan_declared",
+    "node_added",
+    "node_updated",
+    "node_status_changed",
+    "node_removed",
+    "edge_added",
+    "edge_updated",
+    "edge_removed",
+    "artifact_added",
+    "intervention_requested",
+    "intervention_resolved",
+    "run_updated",
+    "run_finished",
+    "agent_message",
+}
 
 
 def collect_with_answer(scenario: str, option_id: str) -> list[ProviderEvent]:
@@ -43,9 +60,10 @@ def collect_with_answer(scenario: str, option_id: str) -> list[ProviderEvent]:
 
 class StreamTests(unittest.TestCase):
     def test_every_scenario_has_a_valid_finite_envelope(self) -> None:
-        self.assertEqual(SCENARIOS, tuple(list_scenarios()))
+        scenarios = tuple(list_scenarios())
+        self.assertTrue(set(REQUIRED_SCENARIOS).issubset(scenarios))
 
-        for scenario in SCENARIOS:
+        for scenario in scenarios:
             with self.subTest(scenario=scenario):
                 events = list(stream(scenario=scenario, speed=0, seed=7))
 
@@ -57,6 +75,9 @@ class StreamTests(unittest.TestCase):
                 )
                 self.assertTrue(all(event.event_type in EVENT_TYPES for event in events))
                 self.assertTrue(all(isinstance(event, ProviderEvent) for event in events))
+
+    def test_event_type_enum_matches_the_database_exactly(self) -> None:
+        self.assertEqual(EXPECTED_EVENT_TYPES, EVENT_TYPES)
 
     def test_provider_event_matches_database_row_and_is_frozen(self) -> None:
         event = next(stream("nauta-shipment-quiet", speed=0))
@@ -75,10 +96,51 @@ class StreamTests(unittest.TestCase):
         )
         with self.assertRaises(FrozenInstanceError):
             event.sequence = 99  # type: ignore[misc]
+        with self.assertRaises(TypeError):
+            event.payload["provider"] = "otro"
+        with self.assertRaises(TypeError):
+            event.payload["agents"][0]["label"] = "otra"
         json.dumps(event.to_dict())
 
+    def test_replan_assigns_unique_orders_when_fixture_omits_them(self) -> None:
+        scenario = {
+            "name": "order-regression",
+            "started_at": "2026-08-29T12:00:00Z",
+            "provider": {"name": "Prueba", "agents": []},
+            "plan": {
+                "graph_revision": 1,
+                "steps": [
+                    {"node_key": "first", "label": "Primero"},
+                    {"node_key": "second", "label": "Segundo"},
+                ],
+                "edges": [],
+            },
+            "timeline": [
+                {
+                    "verb": "replan",
+                    "graph_revision": 2,
+                    "remove_nodes": [{"node_key": "second"}],
+                    "add_nodes": [
+                        {"node_key": "third", "label": "Tercero"},
+                        {"node_key": "fourth", "label": "Cuarto"},
+                    ],
+                },
+                {"verb": "finish", "summary": {"headline": "Listo"}},
+            ],
+        }
+
+        with patch("nauta_dummy._load_scenario", return_value=scenario):
+            events = list(stream("order-regression", speed=0))
+
+        orders = [
+            event.payload["plan_order"]
+            for event in events
+            if event.event_type == "node_added"
+        ]
+        self.assertEqual([1, 2, 2, 3], orders)
+
     def test_declare_emits_plan_then_each_node_then_edges(self) -> None:
-        for scenario in SCENARIOS:
+        for scenario in list_scenarios():
             with self.subTest(scenario=scenario):
                 events = list(stream(scenario, speed=0))
                 declaration_index = next(
@@ -251,7 +313,9 @@ class StreamTests(unittest.TestCase):
             list_exit = main(["--list"])
 
         self.assertEqual(0, list_exit)
-        self.assertEqual(list(SCENARIOS), listing.getvalue().splitlines())
+        listed = listing.getvalue().splitlines()
+        self.assertTrue(set(REQUIRED_SCENARIOS).issubset(listed))
+        self.assertEqual(len(listed), len(set(listed)))
 
         output = StringIO()
         with redirect_stdout(output):
@@ -275,9 +339,9 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(len(lines), len(decoded))
 
     def test_invalid_inputs_fail_clearly(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Unknown scenario"):
+        with self.assertRaisesRegex(ValueError, "Escenario desconocido"):
             next(stream("missing", speed=0))
-        with self.assertRaisesRegex(ValueError, "non-negative"):
+        with self.assertRaisesRegex(ValueError, "no puede ser negativo"):
             next(stream("nauta-shipment-quiet", speed=-1))
 
 

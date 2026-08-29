@@ -42,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.json:
             print(json.dumps(event.to_dict(), ensure_ascii=False), flush=True)
             continue
-        owner = event.agent_label or "provider"
+        owner = event.agent_label or "proveedor"
         node = f" · {event.node_key}" if event.node_key else ""
         print(
             f"[{event.sequence}] {event.occurred_at.isoformat()} · "

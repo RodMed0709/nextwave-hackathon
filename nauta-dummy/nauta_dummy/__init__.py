@@ -8,7 +8,7 @@ import random
 import time
 from collections.abc import Generator, Iterable
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,39 @@ FIXTURES_DIR = Path(__file__).with_name("fixtures")
 Answer = dict[str, Any] | None
 
 
+class _FrozenDict(dict[str, Any]):
+    """JSON-compatible dictionary that rejects mutation at every event boundary."""
+
+    @staticmethod
+    def _immutable(*_args: Any, **_kwargs: Any) -> None:
+        raise TypeError("Los payloads de ProviderEvent son inmutables")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+    __ior__ = _immutable
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _FrozenDict((key, _freeze(item)) for key, item in value.items())
+    if isinstance(value, list | tuple):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True)
 class ProviderEvent:
     sequence: int
@@ -50,11 +83,20 @@ class ProviderEvent:
     idempotency_key: str
     payload: dict[str, Any]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", _freeze(deepcopy(self.payload)))
+
     def to_dict(self) -> dict[str, Any]:
         """Return a detached representation ready for an agent_event insert."""
-        event = asdict(self)
-        event["occurred_at"] = self.occurred_at.isoformat()
-        return event
+        return {
+            "sequence": self.sequence,
+            "event_type": self.event_type,
+            "occurred_at": self.occurred_at.isoformat(),
+            "agent_label": self.agent_label,
+            "node_key": self.node_key,
+            "idempotency_key": self.idempotency_key,
+            "payload": _thaw(self.payload),
+        }
 
 
 class _Emitter:
@@ -76,7 +118,7 @@ class _Emitter:
         node_key: str | None = None,
     ) -> ProviderEvent:
         if event_type not in EVENT_TYPES:
-            raise ValueError(f"Unsupported event_type {event_type!r}")
+            raise ValueError(f"event_type no soportado: {event_type!r}")
         if self.sequence:
             gap = self.rng.uniform(0.8, 3.5)
             if self.speed:
@@ -129,7 +171,7 @@ def _load_scenario(name: str) -> dict[str, Any]:
             with path.open(encoding="utf-8") as fixture_file:
                 return json.load(fixture_file)
     choices = ", ".join(list_scenarios())
-    raise ValueError(f"Unknown scenario {name!r}; expected one of: {choices}")
+    raise ValueError(f"Escenario desconocido {name!r}; opciones: {choices}")
 
 
 def _node_payload(node: dict[str, Any], plan_order: int) -> dict[str, Any]:
@@ -168,12 +210,14 @@ def _declare(
         payload={"graph_revision": plan.get("graph_revision", 1), "plan": plan},
     )
     for plan_order, node in enumerate(plan["steps"], start=1):
-        nodes[node["node_key"]] = deepcopy(node)
+        resolved_node = deepcopy(node)
+        resolved_node["plan_order"] = node.get("plan_order", plan_order)
+        nodes[node["node_key"]] = resolved_node
         yield emitter.emit(
             "node_added",
             agent_label=node.get("agent_label"),
             node_key=node["node_key"],
-            payload=_node_payload(node, plan_order),
+            payload=_node_payload(resolved_node, plan_order),
         )
     for edge in plan.get("edges", []):
         yield emitter.emit("edge_added", payload={**deepcopy(edge), "planned": True})
@@ -200,9 +244,9 @@ def _advance(
     for artifact in action.get("artifacts", []):
         artifact_type = artifact.get("artifact_type")
         if artifact_type not in ARTIFACT_TYPES:
-            raise ValueError(f"Unsupported artifact_type {artifact_type!r}")
+            raise ValueError(f"artifact_type no soportado: {artifact_type!r}")
         if "text_content" not in artifact and "url" not in artifact:
-            raise ValueError("An artifact requires text_content or url")
+            raise ValueError("Un artefacto requiere text_content o url")
         yield emitter.emit(
             "artifact_added",
             agent_label=agent_label,
@@ -222,21 +266,30 @@ def _replan(
 ) -> Iterable[ProviderEvent]:
     for removed in action.get("remove_nodes", []):
         node_key = removed["node_key"]
+        agent_label = _agent_for(node_key, nodes)
+        nodes.pop(node_key, None)
         yield emitter.emit(
             "node_removed",
-            agent_label=_agent_for(node_key, nodes),
+            agent_label=agent_label,
             node_key=node_key,
             payload={key: value for key, value in removed.items() if key != "node_key"},
         )
     for edge in action.get("remove_edges", []):
         yield emitter.emit("edge_removed", payload=edge)
-    for plan_order, node in enumerate(action.get("add_nodes", []), start=1):
-        nodes[node["node_key"]] = deepcopy(node)
+    next_plan_order = max(
+        (node.get("plan_order", 0) for node in nodes.values()), default=0
+    ) + 1
+    for node in action.get("add_nodes", []):
+        plan_order = node.get("plan_order", next_plan_order)
+        next_plan_order = max(next_plan_order, plan_order + 1)
+        resolved_node = deepcopy(node)
+        resolved_node["plan_order"] = plan_order
+        nodes[node["node_key"]] = resolved_node
         yield emitter.emit(
             "node_added",
             agent_label=node.get("agent_label"),
             node_key=node["node_key"],
-            payload=_node_payload(node, plan_order),
+            payload=_node_payload(resolved_node, plan_order),
         )
     for edge in action.get("add_edges", []):
         yield emitter.emit("edge_added", payload={**deepcopy(edge), "planned": True})
@@ -281,12 +334,14 @@ def _execute(
             )
             options = {option["id"]: option for option in request["options"]}
             if option_id not in options:
-                raise ValueError(f"Unknown option_id {option_id!r}")
+                raise ValueError(f"option_id desconocido: {option_id!r}")
             branch_id = options[option_id].get("branch", option_id)
             try:
                 branch = action["branches"][branch_id]
             except KeyError as error:
-                raise ValueError(f"No branch {branch_id!r} for option {option_id!r}") from error
+                raise ValueError(
+                    f"No existe la rama {branch_id!r} para la opción {option_id!r}"
+                ) from error
             yield emitter.emit(
                 "intervention_resolved",
                 agent_label=action.get("agent_label") or _agent_for(node_key, nodes),
@@ -301,7 +356,7 @@ def _execute(
         elif verb == "finish":
             yield emitter.emit("run_finished", payload={"summary": action["summary"]})
         else:
-            raise ValueError(f"Unsupported verb {verb!r}")
+            raise ValueError(f"Verbo no soportado: {verb!r}")
 
 
 def stream(
@@ -311,7 +366,7 @@ def stream(
 ) -> Generator[ProviderEvent, Answer, None]:
     """Yield one finite provider run, accepting a decision after ASK."""
     if speed < 0:
-        raise ValueError("speed must be non-negative")
+        raise ValueError("speed no puede ser negativo")
     scenario_data = _load_scenario(scenario)
     emitter = _Emitter(scenario_data, speed, seed)
     nodes: dict[str, dict[str, Any]] = {}
