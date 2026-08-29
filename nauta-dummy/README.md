@@ -19,13 +19,32 @@ python -m nauta_dummy --scenario payments-reconciliation --speed 0 --json
 
 | Verbo | Lo que declara el proveedor | Eventos principales |
 |---|---|---|
-| DECLARE | Este es mi plan | `run_started`, `plan_declared`, `node_added`, `edge_added` |
+| DECLARE | Esta es mi propuesta actual | `run_started`, `plan_declared`, `node_added`, `edge_added` |
 | ADVANCE | Estoy aquí y esto encontré | `node_status_changed`, `node_updated`, `artifact_added` |
-| REPLAN | El hallazgo cambió mi plan | `node_removed`, `edge_removed`, `node_added`, `edge_added`, `run_updated` |
+| REPLAN | Aprendí algo y por eso replanteo | `node_removed`, `edge_removed`, `node_added`, `edge_added`, `run_updated` |
 | ASK | Necesito una decisión | `intervention_requested`, `intervention_resolved` |
 | FINISH | Terminé y esto ocurrió | `run_finished` |
 
-El plan viene completo en el fixture. Python no infiere etapas, nombres, agentes ni dominio.
+### Propuesta, no compromiso
+
+**Lo que le pedimos al proveedor es una PROPUESTA, no un compromiso.** *“Sabemos que tienes mucho trabajo. Solo danos una propuesta de tu plan — aunque cambie.”*
+
+**Por qué propuesta y no plan.** Un agente real no conoce todos sus pasos de antemano: descubre sobre la marcha. Pedirle un compromiso sería pedirle que adivine.
+
+**REPLAN no es una falla, es que el agente aprendió algo.** Si el plan nunca cambiara, la interfaz nunca se reconstruiría y no habría nada que demostrar. **El plan cambiando es el mejor momento del producto.**
+
+**Por eso todo replan carga su causa.** `reason`, `triggered_by` y `evidence`. Sin eso, el cambio se lee como que alguien se equivocó; con eso, se lee como que el sistema aprendió. El simulador **rechaza** cualquier escenario cuyo replan no traiga causa.
+
+```text
+❌  "el plan cambió"
+✅  "Nina replantea: el transbordo no planeado invalida el BL original"  ▸ MSG-3312
+```
+
+**Cómo se dice en pantalla.** “Nina propone 6 pasos”, nunca “va a hacer”. Y en el replan, “Nina replantea: `<reason>`”, nunca “el plan falló”.
+
+**No le cambiamos nada al proveedor.** Sus etapas, su lógica y sus acciones quedan intactas; solo le pedimos que exponga su intención actual y avise cuando cambia.
+
+La propuesta viene completa en el fixture. Python no infiere etapas, nombres, agentes ni dominio.
 
 El enum exacto del contrato `agent_event` es:
 
@@ -74,6 +93,7 @@ Copia un JSON dentro de `nauta_dummy/fixtures/`. El CLI lo descubre por su campo
   },
   "plan": {
     "graph_revision": 1,
+    "basis": "pipeline conocido del proveedor",
     "summary": "Revisar y cerrar.",
     "steps": [
       {"node_key": "review", "agent_label": "Ana", "label": "Revisar"}
@@ -94,7 +114,8 @@ Copia un JSON dentro de `nauta_dummy/fixtures/`. El CLI lo descubre por su campo
 }
 ```
 
-Para REPLAN agrega `remove_nodes`, `remove_edges`, `add_nodes`, `add_edges` y una revisión mayor.
+Para REPLAN agrega `reason`, `triggered_by`, `evidence`, `remove_nodes`, `remove_edges`,
+`add_nodes`, `add_edges` y una revisión mayor. El loader rechaza la causa incompleta.
 Para ASK agrega `request` (`type`, `prompt`, `options`, `default_option_id`) y `branches`.
 Los artefactos aceptan `file`, `image`, `video`, `audio`, `link`, `text` o `structured_data`, con
 `name`, `content_type` y uno de `text_content` o `url`.
