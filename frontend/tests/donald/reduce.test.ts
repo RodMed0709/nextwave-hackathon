@@ -42,7 +42,7 @@ test('unknown events remain visible in the ordered log without throwing', () => 
 
 test('run and intervention display metadata are retained from event payloads', () => {
   const started = event(1, 'run_started', {
-    run_key: 'OP-4471',
+    run_uuid: 'OP-4471',
     name: 'Resolve the delayed OP-4471 shipment',
   })
   const requested = event(2, 'intervention_requested', {

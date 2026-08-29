@@ -210,6 +210,23 @@ test('a single mid-run node addition triggers a smaller recalculation notice', (
   })
 })
 
+test('a later standalone addition supersedes an older completed replan notice', () => {
+  const events = [
+    event(1, 'node_status_changed', 'alpha', { status: 'in_progress' }),
+    event(2, 'run_updated', null, { graph_revision: 2, reason: 'Route changed.' }),
+    event(3, 'node_added', 'replan-step', { label: 'Replan step' }),
+    event(4, 'node_status_changed', 'replan-step', { status: 'in_progress' }),
+    event(5, 'node_added', 'standalone', { label: 'Standalone validation' }),
+  ]
+
+  assert.deepEqual(getLatestRecalculation(events), {
+    key: 'event-5',
+    kind: 'addition',
+    reason: null,
+    evidenceIds: [],
+  })
+})
+
 test('instruction lifecycle is reconstructed only from node-scoped events', () => {
   const events = [
     event(10, 'operator_instruction_queued', 'decide-response', {

@@ -379,7 +379,7 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
           <p>{node.removal_reason}</p>
         </section>
       )}
-      {blocked && <InstructionBox data={data} />}
+      {(blocked || data.instructionLifecycle) && <InstructionBox data={data} />}
     </div>
   )
 }

@@ -123,7 +123,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
         ...next,
         run: {
           ...next.run,
-          key: stringValue(event.payload.run_key) ?? next.run.key,
+          key: stringValue(event.payload.run_key) ?? stringValue(event.payload.run_uuid) ?? next.run.key,
           name: stringValue(event.payload.name) ?? next.run.name,
           status: 'running',
         },
