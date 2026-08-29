@@ -44,7 +44,7 @@ test('layoutGraph derives columns from longest-path depth', () => {
   assert.equal(positions.leaf.depth, 2)
 })
 
-test('nodes keep their position when siblings appear and removed nodes still have a position', () => {
+test('siblings recenter when nodes appear and close the gap after removal', () => {
   const initialNodes = { root: node('root', 1), alpha: node('alpha', 2), beta: node('beta', 3) }
   const initialEdges = { a: edge('a', 'root', 'alpha'), b: edge('b', 'root', 'beta') }
   const before = layoutGraph(initialNodes, initialEdges)
@@ -54,13 +54,18 @@ test('nodes keep their position when siblings appear and removed nodes still hav
     before,
   )
 
-  assert.deepEqual(after.alpha, before.alpha)
-  assert.deepEqual(after.beta, before.beta)
+  assert.notEqual(after.alpha.y, before.alpha.y)
+  assert.notEqual(after.beta.y, before.beta.y)
   assert.ok(after.gamma)
+  assert.equal((after.alpha.y + after.beta.y + after.gamma.y) / 3, 280)
 
-  const removed = { ...initialNodes.alpha, removed: true }
-  const withRemoved = layoutGraph({ ...initialNodes, alpha: removed }, initialEdges, after)
-  assert.deepEqual(withRemoved.alpha, before.alpha)
+  const closed = layoutGraph(
+    { root: initialNodes.root, beta: initialNodes.beta, gamma: node('gamma', 4) },
+    { b: initialEdges.b, c: edge('c', 'root', 'gamma') },
+    after,
+  )
+  assert.equal((closed.beta.y + closed.gamma.y) / 2, 280)
+  assert.notEqual(closed.beta.y, after.beta.y)
 })
 
 test('getLayoutBounds covers every authored-by-layout node card', () => {

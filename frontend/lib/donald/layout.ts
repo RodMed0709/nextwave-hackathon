@@ -23,7 +23,7 @@ export function getLayoutBounds(positions: Record<string, LayoutPosition>): Layo
 export function layoutGraph(
   nodes: Record<string, RunNode>,
   edges: Record<string, RunEdge>,
-  previous: Record<string, LayoutPosition> = {},
+  _previous: Record<string, LayoutPosition> = {},
 ): Record<string, LayoutPosition> {
   const keys = Object.keys(nodes)
   const usableEdges = Object.values(edges).filter((edge) =>
@@ -58,21 +58,12 @@ export function layoutGraph(
     siblings.sort((left, right) =>
       (nodes[left].plan_order ?? Number.MAX_SAFE_INTEGER) - (nodes[right].plan_order ?? Number.MAX_SAFE_INTEGER) || left.localeCompare(right),
     )
-    const retained = siblings.filter((key) => previous[key]?.depth === depth)
-    const occupied = new Set(retained.map((key) => previous[key].y))
-    for (const key of retained) result[key] = previous[key]
-
-    const fresh = siblings.filter((key) => !result[key])
-    const centered = fresh.map((_, index) => ORIGIN_Y + (index - (fresh.length - 1) / 2) * ROW_GAP)
-    for (const [index, key] of fresh.entries()) {
-      let y = centered[index]
-      let offset = 0
-      while (occupied.has(y)) {
-        offset += 1
-        y = ORIGIN_Y + (offset % 2 === 0 ? -1 : 1) * Math.ceil(offset / 2) * ROW_GAP
+    for (const [index, key] of siblings.entries()) {
+      result[key] = {
+        x: ORIGIN_X + depth * COLUMN_GAP,
+        y: ORIGIN_Y + (index - (siblings.length - 1) / 2) * ROW_GAP,
+        depth,
       }
-      occupied.add(y)
-      result[key] = { x: ORIGIN_X + depth * COLUMN_GAP, y, depth }
     }
   }
   return result
