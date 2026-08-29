@@ -1,0 +1,21 @@
+{
+  "identifier": "donald",
+  "go_module": "github.com/nextwave/donald",
+  "db": "mysql",
+  "events": "disabled",
+  "proto_enabled": false,
+  "grpc_server_enabled": false,
+  "rest_enabled": true,
+  "grpc_port": "6009",
+  "http_port": "8080",
+  "auth": "disabled",
+  "dockerfile": true,
+  "helm": false,
+  "github_actions": false,
+  "monitoring": false,
+  "validation_disabled": false,
+  "custom_enabled": true,
+  "custom_dir": "app",
+  "storage_enabled": true,
+  "object_store": "d771462e-66d1-4ff5-8a8b-3153d134eb22"
+}
