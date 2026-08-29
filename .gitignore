@@ -40,3 +40,6 @@ gcloud-*.json
 __pycache__/
 *.py[cod]
 .codex-worker/
+
+# macOS Finder metadata
+.DS_Store
