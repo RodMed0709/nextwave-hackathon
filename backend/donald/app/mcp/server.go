@@ -84,7 +84,6 @@ func Register(r chi.Router, coreImpl *core.Implementation, logger *zap.Logger) {
 		// Purpose-built endpoints for the web app; see web_api.go for why the
 		// generated CRUD is not enough on its own.
 		handler.registerWebAPI(r)
-		handler.registerWebEvents(r)
 	}
 
 	logger.Info("donald custom routes mounted",
