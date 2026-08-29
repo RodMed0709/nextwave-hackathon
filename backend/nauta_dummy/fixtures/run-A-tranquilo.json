@@ -1,0 +1,79 @@
+{
+  "_comment": "Lo que Nauta nos entrega. Caso A: desviacion menor, el agente lo resuelve solo.",
+  "delivered_at": "2026-08-29T11:20:00Z",
+  "source": "nauta.operations.v1",
+
+  "operation": {
+    "operation_id": "OP-4471",
+    "client": { "id": "CLI-88", "name": "Muebles del Sur", "contact": "compras@mueblesdelsur.mx" },
+    "status": "in_transit",
+    "incoterm": "FOB",
+
+    "voyage": {
+      "carrier": "MSC",
+      "vessel": "MSC Aurora",
+      "voyage_number": "FE2431",
+      "port_of_loading": { "code": "VNSGN", "name": "Ho Chi Minh" },
+      "port_of_discharge": { "code": "MXZLO", "name": "Manzanillo" },
+      "etd": "2026-08-02",
+      "eta": "2026-09-06",
+      "eta_previous": "2026-09-05",
+      "eta_changed_at": "2026-08-29T09:14:00Z",
+      "transshipments": []
+    },
+
+    "containers": [
+      {
+        "container_id": "MSCU-7741820",
+        "type": "40HC",
+        "status": "in_transit",
+        "free_days_total": 7,
+        "free_days_left": 7,
+        "demurrage_rate_usd_day": 180
+      },
+      {
+        "container_id": "MSCU-7741833",
+        "type": "40HC",
+        "status": "in_transit",
+        "free_days_total": 7,
+        "free_days_left": 7,
+        "demurrage_rate_usd_day": 180
+      }
+    ],
+
+    "documents": [
+      { "type": "purchase_order",        "doc_id": "PO-9912",  "status": "ok" },
+      { "type": "booking_confirmation",  "doc_id": "BK-3341",  "status": "ok" },
+      { "type": "bill_of_lading",        "doc_id": "BL-77120", "status": "ok" },
+      { "type": "commercial_invoice",    "doc_id": "INV-4471", "status": "ok" },
+      { "type": "packing_list",          "doc_id": "PL-4471",  "status": "ok" }
+    ],
+
+    "recent_messages": [
+      {
+        "message_id": "MSG-3301",
+        "from": "ops@msc.com",
+        "subject": "Schedule update - MSC AURORA FE2431",
+        "received_at": "2026-08-29T09:12:00Z",
+        "excerpt": "Please note revised ETA Manzanillo 06-SEP-2026 (previously 05-SEP). No change to routing."
+      }
+    ]
+  },
+
+  "alerts": [
+    {
+      "alert_id": "ALR-1001",
+      "type": "eta_slip",
+      "severity": "low",
+      "detected_at": "2026-08-29T09:14:00Z",
+      "detail": "ETA se recorrio 1 dia por congestion en puerto de origen. Sin cambio de ruta.",
+      "impact": {
+        "days_delta": 1,
+        "free_days_at_risk": false,
+        "estimated_cost_usd": 0,
+        "reversible": true
+      },
+      "evidence": ["MSG-3301"]
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "_comment": "Lo que Nauta nos entrega. Caso B: transbordo no planeado. El agente NO puede decidir solo.",
+  "delivered_at": "2026-08-29T11:20:00Z",
+  "source": "nauta.operations.v1",
+
+  "operation": {
+    "operation_id": "OP-4471",
+    "client": { "id": "CLI-88", "name": "Muebles del Sur", "contact": "compras@mueblesdelsur.mx" },
+    "status": "in_transit",
+    "incoterm": "FOB",
+
+    "voyage": {
+      "carrier": "MSC",
+      "vessel": "MSC Aurora",
+      "voyage_number": "FE2431",
+      "port_of_loading": { "code": "VNSGN", "name": "Ho Chi Minh" },
+      "port_of_discharge": { "code": "MXZLO", "name": "Manzanillo" },
+      "etd": "2026-08-02",
+      "eta": "2026-09-14",
+      "eta_previous": "2026-09-05",
+      "eta_changed_at": "2026-08-29T09:14:00Z",
+      "transshipments": [
+        {
+          "port": { "code": "SGSIN", "name": "Singapur" },
+          "planned": false,
+          "reason": "Reasignacion de buque por sobrecupo",
+          "new_vessel": "MSC Livorno",
+          "added_days": 9
+        }
+      ]
+    },
+
+    "containers": [
+      {
+        "container_id": "MSCU-7741820",
+        "type": "40HC",
+        "status": "in_transit",
+        "free_days_total": 7,
+        "free_days_left": 2,
+        "demurrage_rate_usd_day": 180
+      },
+      {
+        "container_id": "MSCU-7741833",
+        "type": "40HC",
+        "status": "in_transit",
+        "free_days_total": 7,
+        "free_days_left": 2,
+        "demurrage_rate_usd_day": 180
+      },
+      {
+        "container_id": "MSCU-7741847",
+        "type": "40HC",
+        "status": "in_transit",
+        "free_days_total": 7,
+        "free_days_left": 2,
+        "demurrage_rate_usd_day": 180
+      }
+    ],
+
+    "documents": [
+      { "type": "purchase_order",        "doc_id": "PO-9912",  "status": "ok" },
+      { "type": "booking_confirmation",  "doc_id": "BK-3341",  "status": "ok" },
+      { "type": "bill_of_lading",        "doc_id": null,       "status": "missing" },
+      { "type": "commercial_invoice",    "doc_id": "INV-4471", "status": "ok" },
+      { "type": "packing_list",          "doc_id": "PL-4471",  "status": "ok" }
+    ],
+
+    "recent_messages": [
+      {
+        "message_id": "MSG-3312",
+        "from": "ops@msc.com",
+        "subject": "URGENT - Vessel change MSC AURORA FE2431",
+        "received_at": "2026-08-29T09:11:00Z",
+        "excerpt": "Cargo rolled to MSC LIVORNO via Singapore due to overbooking. Revised ETA Manzanillo 14-SEP-2026. New BL to be issued."
+      },
+      {
+        "message_id": "MSG-3315",
+        "from": "compras@mueblesdelsur.mx",
+        "subject": "Re: Pedido 4471 - fecha de entrega",
+        "received_at": "2026-08-28T18:40:00Z",
+        "excerpt": "Necesitamos la mercancia en bodega antes del 10 de septiembre, tenemos entrega comprometida con nuestro cliente."
+      }
+    ]
+  },
+
+  "alerts": [
+    {
+      "alert_id": "ALR-2001",
+      "type": "eta_slip",
+      "severity": "high",
+      "detected_at": "2026-08-29T09:14:00Z",
+      "detail": "Transbordo no planeado en Singapur por sobrecupo. ETA se recorre 9 dias, del 05-SEP al 14-SEP.",
+      "impact": {
+        "days_delta": 9,
+        "free_days_at_risk": true,
+        "containers_affected": 3,
+        "billable_days": 7,
+        "estimated_cost_usd": 3780,
+        "reversible": false
+      },
+      "evidence": ["MSG-3312"]
+    },
+    {
+      "alert_id": "ALR-2002",
+      "type": "document_missing",
+      "severity": "high",
+      "detected_at": "2026-08-29T09:15:00Z",
+      "detail": "El Bill of Lading original queda invalidado por el cambio de buque. Sin BL nuevo no se libera la carga en Manzanillo.",
+      "impact": {
+        "blocks_release": true,
+        "reversible": false
+      },
+      "evidence": ["MSG-3312"]
+    },
+    {
+      "alert_id": "ALR-2003",
+      "type": "client_commitment_at_risk",
+      "severity": "high",
+      "detected_at": "2026-08-29T09:16:00Z",
+      "detail": "El cliente comprometio entrega a su propio cliente antes del 10-SEP. La nueva ETA es 14-SEP.",
+      "impact": {
+        "days_past_commitment": 4,
+        "reversible": false
+      },
+      "evidence": ["MSG-3315"]
+    }
+  ]
+}
