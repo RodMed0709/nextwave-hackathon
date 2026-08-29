@@ -55,7 +55,7 @@ import {
 } from '@/lib/donald/presentation'
 import { applyEvent, createInitialRunState } from '@/lib/donald/reduce'
 import {
-  apiSource,
+  liveSource,
   postOperatorInstruction,
   recordedSource,
   type DonaldEventSource,
@@ -99,7 +99,7 @@ const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
 function createSource(runKey: string | null): DonaldEventSource {
-  return API_BASE_URL ? apiSource(API_BASE_URL, runKey) : recordedSource()
+  return API_BASE_URL ? liveSource(API_BASE_URL, runKey) : recordedSource()
 }
 
 function displayStatus(node: RunNode): DisplayStatus {
