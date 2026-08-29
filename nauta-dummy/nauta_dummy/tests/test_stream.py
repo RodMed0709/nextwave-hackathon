@@ -5,166 +5,280 @@ import random
 import sys
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import FrozenInstanceError
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-PACKAGE_DIR = BACKEND_DIR / "nauta_dummy"
-sys.path.insert(0, str(BACKEND_DIR))
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PACKAGE_ROOT))
 
-from nauta_dummy import PipelineEvent, stream  # noqa: E402
+from nauta_dummy import EVENT_TYPES, ProviderEvent, list_scenarios, stream  # noqa: E402
 from nauta_dummy.__main__ import main  # noqa: E402
 
 
-EXPECTED_STAGES = [
-    "INGEST",
-    "EXTRACT",
-    "RECONCILE",
-    "DETECT",
-    "IMPACT",
-    "PLAN",
-]
+SCENARIOS = (
+    "nauta-shipment-quiet",
+    "nauta-shipment-delay",
+    "payments-reconciliation",
+)
+
+
+def collect_with_answer(scenario: str, option_id: str) -> list[ProviderEvent]:
+    generator = stream(scenario=scenario, speed=0, seed=23)
+    events: list[ProviderEvent] = []
+    while True:
+        try:
+            event = next(generator)
+        except StopIteration:
+            return events
+        events.append(event)
+        if event.event_type == "intervention_requested":
+            try:
+                events.append(generator.send({"option_id": option_id}))
+            except StopIteration:
+                return events
 
 
 class StreamTests(unittest.TestCase):
-    def load_fixture(self, name: str) -> dict:
-        fixture_path = PACKAGE_DIR / "fixtures" / name
-        with fixture_path.open(encoding="utf-8") as fixture_file:
-            return json.load(fixture_file)
+    def test_every_scenario_has_a_valid_finite_envelope(self) -> None:
+        self.assertEqual(SCENARIOS, tuple(list_scenarios()))
 
-    def test_each_scenario_emits_the_six_pipeline_stages(self) -> None:
-        for scenario in ("run-A", "run-B"):
+        for scenario in SCENARIOS:
             with self.subTest(scenario=scenario):
                 events = list(stream(scenario=scenario, speed=0, seed=7))
 
-                self.assertEqual(EXPECTED_STAGES, [event.stage for event in events])
-                self.assertEqual(list(range(1, 7)), [event.seq for event in events])
-                self.assertTrue(all(isinstance(event, PipelineEvent) for event in events))
+                self.assertEqual("run_started", events[0].event_type)
+                self.assertEqual("run_finished", events[-1].event_type)
+                self.assertEqual(
+                    list(range(1, len(events) + 1)),
+                    [event.sequence for event in events],
+                )
+                self.assertTrue(all(event.event_type in EVENT_TYPES for event in events))
+                self.assertTrue(all(isinstance(event, ProviderEvent) for event in events))
 
-    def test_impact_cost_matches_each_fixture(self) -> None:
-        expected_costs = {"run-A": 0, "run-B": 3780}
+    def test_provider_event_matches_database_row_and_is_frozen(self) -> None:
+        event = next(stream("nauta-shipment-quiet", speed=0))
 
-        for scenario, expected_cost in expected_costs.items():
+        self.assertEqual(
+            {
+                "sequence",
+                "event_type",
+                "occurred_at",
+                "agent_label",
+                "node_key",
+                "idempotency_key",
+                "payload",
+            },
+            set(event.to_dict()),
+        )
+        with self.assertRaises(FrozenInstanceError):
+            event.sequence = 99  # type: ignore[misc]
+        json.dumps(event.to_dict())
+
+    def test_declare_emits_plan_then_each_node_then_edges(self) -> None:
+        for scenario in SCENARIOS:
             with self.subTest(scenario=scenario):
-                impact = list(stream(scenario=scenario, speed=0))[4]
-                self.assertEqual(expected_cost, impact.data["estimated_cost_usd"])
+                events = list(stream(scenario, speed=0))
+                declaration_index = next(
+                    index
+                    for index, event in enumerate(events)
+                    if event.event_type == "plan_declared"
+                )
+                plan = events[declaration_index].payload["plan"]
+                declared_nodes = events[
+                    declaration_index + 1 : declaration_index + 1 + len(plan["steps"])
+                ]
 
-    def test_every_evidence_id_exists_in_its_fixture(self) -> None:
-        fixtures = {
-            "run-A": self.load_fixture("run-A-tranquilo.json"),
-            "run-B": self.load_fixture("run-B-problema.json"),
-        }
+                self.assertEqual(
+                    ["node_added"] * len(plan["steps"]),
+                    [event.event_type for event in declared_nodes],
+                )
+                self.assertEqual(
+                    list(range(1, len(plan["steps"]) + 1)),
+                    [event.payload["plan_order"] for event in declared_nodes],
+                )
+                self.assertTrue(all(event.payload["planned"] for event in declared_nodes))
+                edge_events = events[
+                    declaration_index
+                    + 1
+                    + len(plan["steps"]) : declaration_index
+                    + 1
+                    + len(plan["steps"])
+                    + len(plan["edges"])
+                ]
+                self.assertEqual(
+                    ["edge_added"] * len(plan["edges"]),
+                    [event.event_type for event in edge_events],
+                )
 
-        for scenario, fixture in fixtures.items():
-            valid_ids = {
-                message["message_id"]
-                for message in fixture["operation"]["recent_messages"]
-            }
-            with self.subTest(scenario=scenario):
-                for event in stream(scenario=scenario, speed=0):
-                    self.assertTrue(set(event.evidence).issubset(valid_ids))
+    def test_advance_emits_progress_findings_and_real_artifact(self) -> None:
+        events = list(stream("nauta-shipment-delay", speed=0))
 
-    def test_speed_zero_never_calls_sleep(self) -> None:
+        statuses = [
+            event.payload["status"]
+            for event in events
+            if event.event_type == "node_status_changed"
+        ]
+        self.assertIn("in_progress", statuses)
+        self.assertIn("succeeded", statuses)
+        self.assertTrue(any(event.event_type == "node_updated" for event in events))
+        email = next(
+            event
+            for event in events
+            if event.event_type == "artifact_added"
+            and event.payload["name"] == "Vessel change MSC AURORA FE2431"
+        )
+        self.assertEqual("text", email.payload["artifact_type"])
+        self.assertEqual("message/rfc822", email.payload["content_type"])
+        self.assertIn("Cargo rolled to MSC LIVORNO", email.payload["text_content"])
+
+    def test_replan_removes_before_adding_and_increments_revision(self) -> None:
+        events = list(stream("nauta-shipment-delay", speed=0))
+        removed_index = next(
+            index for index, event in enumerate(events) if event.event_type == "node_removed"
+        )
+        added_index = next(
+            index
+            for index, event in enumerate(events[removed_index + 1 :], removed_index + 1)
+            if event.event_type == "node_added"
+        )
+        revision = next(
+            event.payload["graph_revision"]
+            for event in events[added_index + 1 :]
+            if event.event_type == "run_updated"
+        )
+
+        self.assertLess(removed_index, added_index)
+        self.assertEqual(2, revision)
+        self.assertTrue(
+            any(
+                event.event_type == "edge_removed"
+                for event in events[removed_index:added_index]
+            )
+        )
+
+    def test_two_send_answers_select_visibly_different_tails(self) -> None:
+        quote_events = collect_with_answer("nauta-shipment-delay", "quote-alternatives")
+        notify_events = collect_with_answer("nauta-shipment-delay", "notify-client")
+        quote_request = next(
+            index
+            for index, event in enumerate(quote_events)
+            if event.event_type == "intervention_requested"
+        )
+        notify_request = next(
+            index
+            for index, event in enumerate(notify_events)
+            if event.event_type == "intervention_requested"
+        )
+        quote_tail = [
+            (event.event_type, event.node_key, event.payload)
+            for event in quote_events[quote_request + 1 :]
+        ]
+        notify_tail = [
+            (event.event_type, event.node_key, event.payload)
+            for event in notify_events[notify_request + 1 :]
+        ]
+
+        self.assertNotEqual(quote_tail, notify_tail)
+        self.assertTrue(any(event.node_key == "quote-carriers" for event in quote_events))
+        self.assertTrue(any(event.node_key == "notify-client" for event in notify_events))
+        self.assertEqual("run_finished", quote_events[-1].event_type)
+        self.assertEqual("run_finished", notify_events[-1].event_type)
+
+    def test_plain_iteration_uses_the_default_branch(self) -> None:
+        events = list(stream("nauta-shipment-delay", speed=0))
+        resolution = next(
+            event for event in events if event.event_type == "intervention_resolved"
+        )
+
+        self.assertEqual("quote-alternatives", resolution.payload["option_id"])
+        self.assertTrue(resolution.payload["used_default"])
+
+    def test_idempotency_keys_and_timestamps_are_stable_with_same_seed(self) -> None:
+        first = list(stream("nauta-shipment-delay", speed=0, seed=23))
+        second = list(stream("nauta-shipment-delay", speed=0, seed=23))
+
+        self.assertEqual(
+            [event.idempotency_key for event in first],
+            [event.idempotency_key for event in second],
+        )
+        self.assertEqual(
+            [event.occurred_at for event in first],
+            [event.occurred_at for event in second],
+        )
+        self.assertEqual(len(first), len(set(event.idempotency_key for event in first)))
+
+    def test_speed_zero_does_not_sleep(self) -> None:
         with patch(
             "nauta_dummy.time.sleep",
             side_effect=AssertionError("speed=0 must not sleep"),
         ):
-            events = list(stream(scenario="run-B", speed=0, seed=11))
+            list(stream("payments-reconciliation", speed=0, seed=11))
 
-        self.assertEqual(6, len(events))
-
-    def test_positive_speed_divides_each_seeded_jitter_gap(self) -> None:
+    def test_positive_speed_scales_seeded_variable_jitter(self) -> None:
+        events = list(stream("nauta-shipment-quiet", speed=0, seed=23))
         rng = random.Random(23)
-        expected_sleeps = [rng.uniform(0.8, 3.5) / 8 for _ in range(5)]
+        expected = [rng.uniform(0.8, 3.5) / 8 for _ in range(len(events) - 1)]
 
         with patch("nauta_dummy.time.sleep") as sleep:
-            list(stream(scenario="run-B", speed=8, seed=23))
+            list(stream("nauta-shipment-quiet", speed=8, seed=23))
 
-        self.assertEqual(
-            expected_sleeps,
-            [call.args[0] for call in sleep.call_args_list],
+        self.assertEqual(expected, [call.args[0] for call in sleep.call_args_list])
+        self.assertTrue(all(0.8 / 8 <= value <= 3.5 / 8 for value in expected))
+        self.assertGreater(len(set(expected)), 1)
+
+    def test_payments_uses_the_generic_protocol_with_different_agents(self) -> None:
+        payments = list(stream("payments-reconciliation", speed=0))
+        logistics = list(stream("nauta-shipment-delay", speed=0))
+
+        payment_agents = {event.agent_label for event in payments if event.agent_label}
+        logistics_agents = {event.agent_label for event in logistics if event.agent_label}
+        self.assertIn("Mara", payment_agents)
+        self.assertTrue(payment_agents.isdisjoint(logistics_agents))
+        self.assertTrue(
+            any(
+                event.event_type == "intervention_requested"
+                and "PSP" in event.payload["prompt"]
+                for event in payments
+            )
         )
 
-    def test_seed_makes_variable_simulated_gaps_reproducible(self) -> None:
-        first = list(stream(scenario="run-B", speed=0, seed=23))
-        second = list(stream(scenario="run-B", speed=0, seed=23))
-        gaps = [
-            (current.ts - previous.ts).total_seconds()
-            for previous, current in zip(first, first[1:])
-        ]
+    def test_cli_lists_scenarios_and_streams_json_lines(self) -> None:
+        listing = StringIO()
+        with redirect_stdout(listing):
+            list_exit = main(["--list"])
 
-        self.assertEqual([event.ts for event in first], [event.ts for event in second])
-        self.assertEqual(5, len(gaps))
-        self.assertTrue(all(0.8 <= gap <= 3.5 for gap in gaps))
-        self.assertGreater(len(set(gaps)), 1)
+        self.assertEqual(0, list_exit)
+        self.assertEqual(list(SCENARIOS), listing.getvalue().splitlines())
 
-    def test_run_a_is_thinner_than_run_b(self) -> None:
-        run_a = list(stream(scenario="run-A", speed=0))
-        run_b = list(stream(scenario="run-B", speed=0))
-
-        self.assertEqual(1, len(run_a[3].data["alerts"]))
-        self.assertEqual("low", run_a[3].data["alerts"][0]["severity"])
-        self.assertEqual(3, len(run_b[3].data["alerts"]))
-        self.assertEqual({"high"}, {alert["severity"] for alert in run_b[3].data["alerts"]})
-        self.assertEqual(1, len(run_a[5].data["options"]))
-        self.assertEqual(3, len(run_b[5].data["options"]))
-
-    def test_stage_payloads_expose_the_required_fields(self) -> None:
-        events = list(stream(scenario="run-B", speed=0))
-
-        self.assertEqual(
-            {"from", "subject", "received_at", "excerpt"},
-            set(events[0].data),
-        )
-        self.assertEqual(
-            {"carrier", "vessel", "eta", "eta_previous", "transshipment"},
-            set(events[1].data),
-        )
-        self.assertEqual(
-            {"booking_on_file", "received_update", "agree"},
-            set(events[2].data),
-        )
-        self.assertEqual(
-            {
-                "days_delta",
-                "containers_affected",
-                "billable_days",
-                "estimated_cost_usd",
-                "reversible",
-                "bill_of_lading_blocks_release",
-                "client_commitment_missed",
-            },
-            set(events[4].data),
-        )
-        for rank, option in enumerate(events[5].data["options"], start=1):
-            self.assertEqual(rank, option["rank"])
-            self.assertEqual(
-                {"id", "label", "cost_usd", "eta", "rationale", "rank"},
-                set(option),
+        output = StringIO()
+        with redirect_stdout(output):
+            run_exit = main(
+                [
+                    "--scenario",
+                    "payments-reconciliation",
+                    "--speed",
+                    "0",
+                    "--seed",
+                    "23",
+                    "--json",
+                ]
             )
 
-    def test_to_dict_is_json_serializable(self) -> None:
-        event = next(stream(scenario="run-A", speed=0))
+        lines = output.getvalue().splitlines()
+        decoded = [json.loads(line) for line in lines]
+        self.assertEqual(0, run_exit)
+        self.assertEqual("run_started", decoded[0]["event_type"])
+        self.assertEqual("run_finished", decoded[-1]["event_type"])
+        self.assertEqual(len(lines), len(decoded))
 
-        serialized = event.to_dict()
-
-        self.assertIsInstance(serialized["ts"], str)
-        json.dumps(serialized)
-
-    def test_cli_prints_six_events_and_exits_for_each_scenario(self) -> None:
-        for scenario in ("run-A", "run-B"):
-            with self.subTest(scenario=scenario):
-                output = StringIO()
-                with redirect_stdout(output):
-                    exit_code = main(
-                        ["--scenario", scenario, "--speed", "0", "--seed", "23"]
-                    )
-
-                self.assertEqual(0, exit_code)
-                self.assertEqual(6, output.getvalue().count("\n["))
-                self.assertIn("[6/6]", output.getvalue())
+    def test_invalid_inputs_fail_clearly(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unknown scenario"):
+            next(stream("missing", speed=0))
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            next(stream("nauta-shipment-quiet", speed=-1))
 
 
 if __name__ == "__main__":

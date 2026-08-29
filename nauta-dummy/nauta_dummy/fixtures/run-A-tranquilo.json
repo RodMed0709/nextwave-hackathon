@@ -1,79 +1,81 @@
 {
-  "_comment": "Lo que Nauta nos entrega. Caso A: desviacion menor, el agente lo resuelve solo.",
-  "delivered_at": "2026-08-29T11:20:00Z",
-  "source": "nauta.operations.v1",
-
-  "operation": {
-    "operation_id": "OP-4471",
-    "client": { "id": "CLI-88", "name": "Muebles del Sur", "contact": "compras@mueblesdelsur.mx" },
-    "status": "in_transit",
-    "incoterm": "FOB",
-
-    "voyage": {
-      "carrier": "MSC",
-      "vessel": "MSC Aurora",
-      "voyage_number": "FE2431",
-      "port_of_loading": { "code": "VNSGN", "name": "Ho Chi Minh" },
-      "port_of_discharge": { "code": "MXZLO", "name": "Manzanillo" },
-      "etd": "2026-08-02",
-      "eta": "2026-09-06",
-      "eta_previous": "2026-09-05",
-      "eta_changed_at": "2026-08-29T09:14:00Z",
-      "transshipments": []
-    },
-
-    "containers": [
-      {
-        "container_id": "MSCU-7741820",
-        "type": "40HC",
-        "status": "in_transit",
-        "free_days_total": 7,
-        "free_days_left": 7,
-        "demurrage_rate_usd_day": 180
-      },
-      {
-        "container_id": "MSCU-7741833",
-        "type": "40HC",
-        "status": "in_transit",
-        "free_days_total": 7,
-        "free_days_left": 7,
-        "demurrage_rate_usd_day": 180
-      }
-    ],
-
-    "documents": [
-      { "type": "purchase_order",        "doc_id": "PO-9912",  "status": "ok" },
-      { "type": "booking_confirmation",  "doc_id": "BK-3341",  "status": "ok" },
-      { "type": "bill_of_lading",        "doc_id": "BL-77120", "status": "ok" },
-      { "type": "commercial_invoice",    "doc_id": "INV-4471", "status": "ok" },
-      { "type": "packing_list",          "doc_id": "PL-4471",  "status": "ok" }
-    ],
-
-    "recent_messages": [
-      {
-        "message_id": "MSG-3301",
-        "from": "ops@msc.com",
-        "subject": "Schedule update - MSC AURORA FE2431",
-        "received_at": "2026-08-29T09:12:00Z",
-        "excerpt": "Please note revised ETA Manzanillo 06-SEP-2026 (previously 05-SEP). No change to routing."
-      }
+  "name": "nauta-shipment-quiet",
+  "display_order": 1,
+  "started_at": "2026-08-29T11:20:00Z",
+  "provider": {
+    "name": "Nauta",
+    "agents": [
+      {"label": "Nina", "role": "Shipment Watch"},
+      {"label": "Theo", "role": "Freight Anomaly"},
+      {"label": "Marcus", "role": "Inventory Watch"},
+      {"label": "Lauren", "role": "Supplier Reliability"},
+      {"label": "Vera", "role": "Price Drift"},
+      {"label": "Alec", "role": "Contract Compliance"}
     ]
   },
-
-  "alerts": [
+  "plan": {
+    "graph_revision": 1,
+    "summary": "Verificar la actualización del viaje y mantener el seguimiento.",
+    "steps": [
+      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier"},
+      {"node_key": "verify-itinerary", "agent_label": "Theo", "label": "Comparar contra el booking"},
+      {"node_key": "assess-impact", "agent_label": "Theo", "label": "Calcular el impacto"},
+      {"node_key": "keep-monitoring", "agent_label": "Nina", "label": "Mantener el seguimiento"}
+    ],
+    "edges": [
+      {"edge_key": "receive-to-verify", "source_node_key": "receive-update", "target_node_key": "verify-itinerary"},
+      {"edge_key": "verify-to-impact", "source_node_key": "verify-itinerary", "target_node_key": "assess-impact"},
+      {"edge_key": "impact-to-monitor", "source_node_key": "assess-impact", "target_node_key": "keep-monitoring"}
+    ]
+  },
+  "timeline": [
     {
-      "alert_id": "ALR-1001",
-      "type": "eta_slip",
-      "severity": "low",
-      "detected_at": "2026-08-29T09:14:00Z",
-      "detail": "ETA se recorrio 1 dia por congestion en puerto de origen. Sin cambio de ruta.",
-      "impact": {
-        "days_delta": 1,
-        "free_days_at_risk": false,
-        "estimated_cost_usd": 0,
-        "reversible": true
+      "verb": "advance",
+      "node_key": "receive-update",
+      "update": {
+        "headline": "MSC recorrió la llegada un día",
+        "finding": "La nueva ETA es 06-SEP-2026 y no cambió la ruta."
       },
-      "evidence": ["MSG-3301"]
+      "artifacts": [
+        {
+          "artifact_type": "text",
+          "name": "Schedule update MSC AURORA FE2431",
+          "text_content": "From: ops@msc.com\nSubject: Schedule update - MSC AURORA FE2431\n\nPlease note revised ETA Manzanillo 06-SEP-2026 (previously 05-SEP). No change to routing.",
+          "content_type": "message/rfc822"
+        }
+      ]
+    },
+    {
+      "verb": "advance",
+      "node_key": "verify-itinerary",
+      "update": {
+        "headline": "El booking sigue vigente",
+        "finding": "Buque, ruta y documentos coinciden; solo cambió la ETA."
+      }
+    },
+    {
+      "verb": "advance",
+      "node_key": "assess-impact",
+      "update": {
+        "headline": "Sin impacto financiero",
+        "finding": "La desviación es reversible, quedan 7 días libres y el costo estimado es USD 0.",
+        "metrics": {"eta_delta_days": 1, "estimated_cost_usd": 0, "free_days_left": 7}
+      }
+    },
+    {
+      "verb": "advance",
+      "node_key": "keep-monitoring",
+      "update": {
+        "headline": "Seguimiento automático activo",
+        "finding": "No hace falta interrumpir a Jorge."
+      }
+    },
+    {
+      "verb": "finish",
+      "summary": {
+        "headline": "Embarque estable",
+        "detail": "La ETA cambió un día, sin costo ni riesgo documental. Nauta continúa monitoreando."
+      }
     }
   ]
 }
