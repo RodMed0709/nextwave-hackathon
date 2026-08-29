@@ -35,3 +35,4 @@ kubeconfig
 .linode-cli
 gcloud-*.json
 *-service-account*.json
+.DS_Store
