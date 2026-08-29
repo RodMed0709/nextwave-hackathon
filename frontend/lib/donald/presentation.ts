@@ -1,7 +1,8 @@
 import type { DonaldEvent, RunNode } from './types'
 
 export const NODE_STAGGER_MS = 120
-export const EDGE_LAND_DELAY_MS = 220
+export const EDGE_LAND_DELAY_MS = 340
+const EDGE_DRAW_MS = 340
 
 export type NodePresentation = {
   delayMs: number
@@ -33,6 +34,20 @@ const STRUCTURAL_EVENT_TYPES = new Set([
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+export function getPlanRevealDurationMs(event: DonaldEvent): number {
+  if (event.event_type !== 'plan_declared') return 0
+  const plan = recordValue(event.payload.plan)
+  const steps = plan && Array.isArray(plan.steps) ? plan.steps.length : 0
+  if (steps === 0) return 0
+  return Math.max(0, steps - 1) * NODE_STAGGER_MS + EDGE_LAND_DELAY_MS + EDGE_DRAW_MS
 }
 
 export function getGraphPresentation(events: readonly DonaldEvent[]): GraphPresentation {

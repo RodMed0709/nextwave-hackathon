@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -28,6 +28,14 @@ import {
 } from '@xyflow/react'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
 import { getLayoutBounds, layoutGraph, NODE_HEIGHT, NODE_WIDTH, type LayoutPosition } from '@/lib/donald/layout'
+import {
+  getGraphPresentation,
+  getLatestNodeStatus,
+  getPlanRevealDurationMs,
+  getVisiblyActiveNodeKey,
+  type LiveNodeStatus,
+  type NodePresentation,
+} from '@/lib/donald/presentation'
 import { applyEvent, createInitialRunState } from '@/lib/donald/reduce'
 import { apiSource, recordedSource, type DonaldEventSource } from '@/lib/donald/source'
 import type { DonaldEvent, NodeStatus, RunEdge, RunNode, RunState } from '@/lib/donald/types'
@@ -55,6 +63,8 @@ type FlowNodeData = {
   nextTask: string
   selected: boolean
   visiblyActive: boolean
+  appearance: NodePresentation
+  liveStatus: LiveNodeStatus | null
   onSelect: () => void
 }
 
@@ -133,7 +143,7 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
 
 function FlowCard({ data }: { data: FlowNodeData }) {
   const { runtimeNode: node } = data
-  const proposed = node.planned && node.status === 'not_started'
+  const proposed = node.planned && data.displayStatus === 'WAITING'
   const classes = [
     'flow-card',
     statusClass(data.displayStatus),
@@ -151,10 +161,9 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <div className="task-meta">
           <span>TASK</span>
           {data.visiblyActive && <ArcBeacon />}
-          <b>{Math.round(node.progress_percent)}%</b>
+          <b className="task-state">{data.displayStatus}</b>
         </div>
         <div className="task-title">{node.label}</div>
-        <div className="node-progress-line"><i style={{ width: `${node.progress_percent}%` }} /></div>
         <div className="next-task">
           {data.nextTask === 'COMPLETE' ? <b>COMPLETE</b> : <><span>NEXT TASK</span><b>{data.nextTask}</b></>}
         </div>
@@ -164,8 +173,53 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   )
 }
 
+type StatusTransitionItem = LiveNodeStatus & { leaving: boolean }
+
+function LiveStatusLabel({ status }: { status: LiveNodeStatus | null }) {
+  const [items, setItems] = useState<StatusTransitionItem[]>(() => status ? [{ ...status, leaving: false }] : [])
+  const latestKey = useRef(status?.key ?? null)
+
+  useEffect(() => {
+    const nextKey = status?.key ?? null
+    if (nextKey === latestKey.current) return
+    latestKey.current = nextKey
+    setItems((current) => [
+      ...current.filter((item) => !item.leaving).map((item) => ({ ...item, leaving: true })),
+      ...(status ? [{ ...status, leaving: false }] : []),
+    ])
+    const timer = window.setTimeout(() => {
+      setItems(status ? [{ ...status, leaving: false }] : [])
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180)
+    return () => window.clearTimeout(timer)
+  }, [status])
+
+  if (items.length === 0) return null
+  return (
+    <div className="live-status-anchor" aria-live="polite">
+      {items.map((item) => (
+        <div className={`live-status-label ${item.leaving ? 'leaving' : 'entering'}`} key={item.key}>
+          <span className="live-status-dot" aria-hidden="true" />
+          {item.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function FlowNodeRenderer(props: NodeProps) {
-  return <FlowCard data={props.data as unknown as FlowNodeData} />
+  const data = props.data as unknown as FlowNodeData
+  const style = { '--node-enter-delay': `${data.appearance.delayMs}ms` } as CSSProperties
+  const classes = [
+    'flow-node-shell',
+    'born',
+    data.appearance.discovered ? 'discovered' : '',
+  ].filter(Boolean).join(' ')
+  return (
+    <div className={classes} style={style}>
+      <FlowCard data={data} />
+      <LiveStatusLabel status={data.liveStatus} />
+    </div>
+  )
 }
 
 function formatTime(iso: string | null): string {
@@ -195,9 +249,8 @@ function eventDescription(event: DonaldEvent): string {
     case 'edge_removed': return 'Flow connection removed'
     case 'node_status_changed': return `${actor} changed ${event.node_key ?? 'node'} status`
     case 'node_updated': {
-      const progress = typeof event.payload.progress_percent === 'number' ? ` · ${event.payload.progress_percent}%` : ''
       const headline = typeof event.payload.headline === 'string' ? ` · ${event.payload.headline}` : ''
-      return `${actor} updated ${event.node_key ?? 'node'}${progress}${headline}`
+      return `${actor} updated ${event.node_key ?? 'node'}${headline}`
     }
     case 'artifact_added': return `${actor} added evidence`
     case 'agent_message': return typeof event.payload.message === 'string' ? event.payload.message : `${actor} sent a message`
@@ -240,10 +293,13 @@ export default function Page() {
   const [running, setRunning] = useState(true)
   const [streamOpen, setStreamOpen] = useState(true)
   const [sourceError, setSourceError] = useState<string | null>(null)
+  const [planRevealing, setPlanRevealing] = useState(false)
   const [hiddenRemoved, setHiddenRemoved] = useState<Set<string>>(() => new Set())
+  const [hiddenRemovedEdges, setHiddenRemovedEdges] = useState<Set<string>>(() => new Set())
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const planRevealTimerRef = useRef<number | null>(null)
   const readPromiseRef = useRef<Promise<DonaldEvent | null> | null>(null)
   const layoutRef = useRef<Record<string, LayoutPosition>>({})
   if (!sourceRef.current) sourceRef.current = createSource()
@@ -264,6 +320,16 @@ export default function Page() {
         }
         const event = result.value
         setState((current) => applyEvent(current, event))
+        if (event.event_type === 'plan_declared') {
+          if (planRevealTimerRef.current !== null) window.clearTimeout(planRevealTimerRef.current)
+          const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          const duration = reduceMotion ? 0 : getPlanRevealDurationMs(event)
+          setPlanRevealing(duration > 0)
+          planRevealTimerRef.current = window.setTimeout(() => {
+            setPlanRevealing(false)
+            planRevealTimerRef.current = null
+          }, duration)
+        }
         if (event.node_key) {
           setSelectedKey((current) => current ?? event.node_key)
           if (event.event_type === 'node_status_changed' || event.event_type === 'intervention_requested') {
@@ -299,7 +365,10 @@ export default function Page() {
     return () => { cancelled = true }
   }, [readNext, running, state.open_intervention])
 
-  useEffect(() => () => abortRef.current?.abort(), [])
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    if (planRevealTimerRef.current !== null) window.clearTimeout(planRevealTimerRef.current)
+  }, [])
 
   useEffect(() => {
     const timers = Object.values(state.nodes)
@@ -310,25 +379,45 @@ export default function Page() {
     return () => timers.forEach(window.clearTimeout)
   }, [hiddenRemoved, state.nodes])
 
+  useEffect(() => {
+    const timers = Object.values(state.edges)
+      .filter((edge) => {
+        const exiting = edge.status === 'removed' ||
+          state.nodes[edge.source_node_key]?.removed ||
+          state.nodes[edge.target_node_key]?.removed
+        return exiting && !hiddenRemovedEdges.has(edge.edge_key)
+      })
+      .map((edge) => window.setTimeout(() => {
+        setHiddenRemovedEdges((current) => new Set(current).add(edge.edge_key))
+      }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 420))
+    return () => timers.forEach(window.clearTimeout)
+  }, [hiddenRemovedEdges, state.edges, state.nodes])
+
   const visibleNodes = useMemo(() => Object.fromEntries(
     Object.entries(state.nodes).filter(([key]) => !hiddenRemoved.has(key)),
   ), [hiddenRemoved, state.nodes])
 
   const structuralSignature = useMemo(() => [
-    ...Object.keys(visibleNodes).sort(),
+    ...Object.values(visibleNodes).map((node) => `${node.node_key}:${node.removed}`).sort(),
     ...Object.values(state.edges).map((edge) => `${edge.edge_key}:${edge.status}`).sort(),
   ].join('|'), [state.edges, visibleNodes])
 
   const layout = useMemo(() => {
-    const next = layoutGraph(visibleNodes, state.edges, layoutRef.current)
-    layoutRef.current = { ...layoutRef.current, ...next }
-    return next
+    const retainedNodes = Object.fromEntries(Object.entries(visibleNodes).filter(([, node]) => !node.removed))
+    const next = layoutGraph(retainedNodes, state.edges, layoutRef.current)
+    const exiting = Object.fromEntries(Object.values(visibleNodes)
+      .filter((node) => node.removed && layoutRef.current[node.node_key])
+      .map((node) => [node.node_key, layoutRef.current[node.node_key]]))
+    const withExiting = { ...next, ...exiting }
+    layoutRef.current = { ...layoutRef.current, ...withExiting }
+    return withExiting
   }, [structuralSignature])
 
-  const visiblyActiveKey = useMemo(() => Object.values(visibleNodes)
-    .filter((node) => node.status === 'in_progress' && !node.removed)
-    .sort((left, right) => (right.plan_order ?? 0) - (left.plan_order ?? 0))[0]?.node_key ?? null,
-  [visibleNodes])
+  const graphPresentation = useMemo(() => getGraphPresentation(state.event_log), [state.event_log])
+  const visiblyActiveKey = useMemo(
+    () => planRevealing ? null : getVisiblyActiveNodeKey(visibleNodes, state.event_log),
+    [planRevealing, state.event_log, visibleNodes],
+  )
 
   const selectNode = useCallback((node: RunNode) => {
     setSelectedKey(node.node_key)
@@ -346,20 +435,25 @@ export default function Page() {
     height: NODE_HEIGHT,
     data: {
       runtimeNode: node,
-      displayStatus: displayStatus(node.status),
+      displayStatus: displayStatus(
+        node.status === 'in_progress' && node.node_key !== visiblyActiveKey ? 'not_started' : node.status,
+      ),
       capability: capabilityFor(node),
       nextTask: nextTaskFor(node.node_key, state.nodes, state.edges),
       selected: selectedKey === node.node_key,
       visiblyActive: visiblyActiveKey === node.node_key,
+      appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
+      liveStatus: visiblyActiveKey === node.node_key ? getLatestNodeStatus(node, state.event_log) : null,
       onSelect: () => selectNode(node),
     } satisfies FlowNodeData,
-  })), [layout, selectNode, selectedKey, state.edges, state.nodes, visibleNodes, visiblyActiveKey])
+  })), [graphPresentation.nodes, layout, planRevealing, selectNode, selectedKey, state.edges, state.event_log, state.nodes, visibleNodes, visiblyActiveKey])
 
   const visualEdges: Edge[] = useMemo(() => Object.values(state.edges)
-    .filter((edge) => edge.status !== 'removed' && visibleNodes[edge.source_node_key] && visibleNodes[edge.target_node_key])
+    .filter((edge) => !hiddenRemovedEdges.has(edge.edge_key) && visibleNodes[edge.source_node_key] && visibleNodes[edge.target_node_key])
     .map((edge) => {
       const source = state.nodes[edge.source_node_key]
       const target = state.nodes[edge.target_node_key]
+      const exiting = edge.status === 'removed' || source.removed || target.removed
       const status: RuntimeEdgeStatus =
         target.node_key === visiblyActiveKey ? 'ACTIVE' :
         source.status === 'failed' || target.status === 'failed' ? 'FAILED' :
@@ -371,6 +465,8 @@ export default function Page() {
         status,
         signalKey: state.last_sequence,
         selected: selectedKey === edge.source_node_key || selectedKey === edge.target_node_key,
+        enterDelayMs: graphPresentation.edges[edge.edge_key]?.delayMs ?? 0,
+        exiting,
       }
       return {
         id: edge.edge_key,
@@ -379,10 +475,10 @@ export default function Page() {
         type: 'signal',
         data,
       }
-    }), [selectedKey, state.edges, state.last_sequence, state.nodes, visibleNodes, visiblyActiveKey])
+    }), [graphPresentation.edges, hiddenRemovedEdges, selectedKey, state.edges, state.last_sequence, state.nodes, visibleNodes, visiblyActiveKey])
 
   const layoutSignature = useMemo(() => [
-    ...visualNodes.map((node) => node.id).sort(),
+    ...visualNodes.map((node) => `${node.id}:${node.position.x}:${node.position.y}`).sort(),
     ...visualEdges.map((edge) => edge.id).sort(),
   ].join('|'), [visualEdges, visualNodes])
 
@@ -416,10 +512,14 @@ export default function Page() {
     await readPromiseRef.current
     sourceRef.current = createSource()
     layoutRef.current = {}
+    if (planRevealTimerRef.current !== null) window.clearTimeout(planRevealTimerRef.current)
+    planRevealTimerRef.current = null
     setState(createInitialRunState(RUN_KEY))
     setSelectedKey(null)
     setSelectedCapability(null)
     setHiddenRemoved(new Set())
+    setHiddenRemovedEdges(new Set())
+    setPlanRevealing(false)
     setSourceError(null)
     setRunning(true)
   }, [])
@@ -443,10 +543,13 @@ export default function Page() {
   const inspectorCapability = selectedCapability && activeCapabilities.includes(selectedCapability)
     ? selectedCapability
     : activeCapabilities[0] ?? null
-  const activeDisplayStatus = active ? displayStatus(active.status) : 'WAITING'
+  const activeDisplayStatus = active
+    ? displayStatus(planRevealing && active.status === 'in_progress' ? 'not_started' : active.status)
+    : 'WAITING'
   const rows = active ? evidenceRows(active) : []
   const output = active?.output_summary?.headline ?? active?.output_summary?.detail ??
-    (active?.status === 'in_progress' ? `${Math.round(active.progress_percent)}% complete` : 'Waiting for runtime output')
+    (active?.status === 'in_progress' ? 'Work in progress' : 'Waiting for runtime output')
+  const activeLiveStatus = active ? getLatestNodeStatus(active, state.event_log) : null
   const showHumanDecision = Boolean(state.open_intervention && active?.node_key === state.open_intervention.node_key)
   const latestEvents = [...state.event_log].reverse().slice(0, 8)
 
@@ -531,7 +634,7 @@ export default function Page() {
                     <button className={inspectorCapability === capability ? 'selected' : ''} key={capability} onClick={() => setSelectedCapability(capability)}>
                       <span>{capability}</span><b><StatusMark status={activeDisplayStatus} /> {activeDisplayStatus}</b>
                       {active.status === 'succeeded' && <small>Output: {output}</small>}
-                      {active.status === 'in_progress' && <small>Current: {Math.round(active.progress_percent)}% complete</small>}
+                      {active.status === 'in_progress' && !planRevealing && <small>Current: {activeLiveStatus?.text ?? 'Work in progress'}</small>}
                     </button>
                   ))}
                 </div>

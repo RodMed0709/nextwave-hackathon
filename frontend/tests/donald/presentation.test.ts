@@ -5,6 +5,7 @@ import {
   NODE_STAGGER_MS,
   getGraphPresentation,
   getLatestNodeStatus,
+  getPlanRevealDurationMs,
   getVisiblyActiveNodeKey,
 } from '../../lib/donald/presentation'
 import type { DonaldEvent, RunNode } from '../../lib/donald/types'
@@ -61,6 +62,14 @@ test('graph presentation staggers planned nodes and draws each edge after its ta
   assert.deepEqual(presentation.nodes.beta, { delayMs: NODE_STAGGER_MS, discovered: false, batch: 1 })
   assert.equal(presentation.edges['alpha-beta'].delayMs, NODE_STAGGER_MS + EDGE_LAND_DELAY_MS)
   assert.equal(presentation.edges['beta-gamma'].delayMs, NODE_STAGGER_MS * 2 + EDGE_LAND_DELAY_MS)
+})
+
+test('plan reveal duration leaves time for the final node and edge to land', () => {
+  const declared = event(1, 'plan_declared', null, {
+    plan: { steps: [{ node_key: 'alpha' }, { node_key: 'beta' }, { node_key: 'gamma' }] },
+  })
+
+  assert.equal(getPlanRevealDurationMs(declared), NODE_STAGGER_MS * 2 + EDGE_LAND_DELAY_MS + 340)
 })
 
 test('nodes added after work begins are marked discovered and stagger within their structural batch', () => {
