@@ -54,7 +54,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             steps = event.payload["plan"]["steps"]
             if steps and steps[0].get("agent_label"):
                 proposal_agent = steps[0]["agent_label"]
-            print(f"{proposal_agent} propone {len(steps)} pasos", flush=True)
+            total = event.payload["total_estimated_seconds"]
+            print(
+                f"{proposal_agent} propone {len(steps)} pasos · ~{total:g}s",
+                flush=True,
+            )
         elif event.event_type == "run_updated":
             evidence = ", ".join(event.payload["evidence"])
             print(

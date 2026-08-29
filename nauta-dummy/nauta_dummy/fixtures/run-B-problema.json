@@ -2,6 +2,11 @@
   "name": "nauta-shipment-delay",
   "display_order": 2,
   "started_at": "2026-08-29T11:20:00Z",
+  "timing": {
+    "duration_jitter_percent": 25,
+    "progress_interval_percent": 15,
+    "slow_threshold_percent": 50
+  },
   "provider": {
     "name": "Nauta",
     "agents": [
@@ -18,11 +23,11 @@
     "basis": "pipeline conocido del proveedor para gestionar excepciones logísticas",
     "summary": "Validar el cambio de viaje, medir el impacto y avisar al cliente.",
     "steps": [
-      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier"},
-      {"node_key": "reconcile-booking", "agent_label": "Theo", "label": "Comparar contra el booking"},
-      {"node_key": "assess-impact", "agent_label": "Marcus", "label": "Calcular el impacto"},
-      {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente"},
-      {"node_key": "monitor-resolution", "agent_label": "Nina", "label": "Monitorear la resolución"}
+      {"node_key": "receive-update", "agent_label": "Nina", "label": "Leer actualización del carrier", "estimated_seconds": 5},
+      {"node_key": "reconcile-booking", "agent_label": "Theo", "label": "Comparar contra el booking", "estimated_seconds": 12, "duration_multiplier_range": [1.75, 1.85]},
+      {"node_key": "assess-impact", "agent_label": "Marcus", "label": "Calcular el impacto", "estimated_seconds": 10},
+      {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente", "estimated_seconds": 6},
+      {"node_key": "monitor-resolution", "agent_label": "Nina", "label": "Monitorear la resolución", "estimated_seconds": 7}
     ],
     "edges": [
       {"edge_key": "receive-to-reconcile", "source_node_key": "receive-update", "target_node_key": "reconcile-booking"},
@@ -95,9 +100,9 @@
         {"edge_key": "notify-to-monitor", "source_node_key": "notify-client", "target_node_key": "monitor-resolution"}
       ],
       "add_nodes": [
-        {"node_key": "quote-carriers", "agent_label": "Theo", "label": "Cotizar alternativas", "plan_order": 4},
-        {"node_key": "secure-new-bl", "agent_label": "Alec", "label": "Conseguir un Bill of Lading nuevo", "plan_order": 5},
-        {"node_key": "decide-response", "agent_label": "Marcus", "label": "Elegir respuesta", "plan_order": 6}
+        {"node_key": "quote-carriers", "agent_label": "Theo", "label": "Cotizar alternativas", "estimated_seconds": 12, "plan_order": 4},
+        {"node_key": "secure-new-bl", "agent_label": "Alec", "label": "Conseguir un Bill of Lading nuevo", "estimated_seconds": 10, "plan_order": 5},
+        {"node_key": "decide-response", "agent_label": "Marcus", "label": "Elegir respuesta", "estimated_seconds": 8, "plan_order": 6}
       ],
       "add_edges": [
         {"edge_key": "impact-to-quotes", "source_node_key": "assess-impact", "target_node_key": "quote-carriers"},
@@ -199,7 +204,7 @@
               {"edge_key": "quotes-to-decision", "source_node_key": "quote-carriers", "target_node_key": "decide-response"}
             ],
             "add_nodes": [
-              {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente", "plan_order": 7}
+              {"node_key": "notify-client", "agent_label": "Nina", "label": "Notificar al cliente", "estimated_seconds": 6, "plan_order": 7}
             ],
             "add_edges": [
               {"edge_key": "decision-to-notify", "source_node_key": "decide-response", "target_node_key": "notify-client"},

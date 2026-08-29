@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -115,13 +114,18 @@ class StreamTests(unittest.TestCase):
         scenario = {
             "name": "order-regression",
             "started_at": "2026-08-29T12:00:00Z",
+            "timing": {
+                "duration_jitter_percent": 25,
+                "progress_interval_percent": 15,
+                "slow_threshold_percent": 50,
+            },
             "provider": {"name": "Prueba", "agents": []},
             "plan": {
                 "graph_revision": 1,
                 "basis": "flujo de prueba conocido",
                 "steps": [
-                    {"node_key": "first", "label": "Primero"},
-                    {"node_key": "second", "label": "Segundo"},
+                    {"node_key": "first", "label": "Primero", "estimated_seconds": 2},
+                    {"node_key": "second", "label": "Segundo", "estimated_seconds": 2},
                 ],
                 "edges": [],
             },
@@ -139,8 +143,8 @@ class StreamTests(unittest.TestCase):
                     "evidence": ["MSG-TEST-1"],
                     "remove_nodes": [{"node_key": "second"}],
                     "add_nodes": [
-                        {"node_key": "third", "label": "Tercero"},
-                        {"node_key": "fourth", "label": "Cuarto"},
+                        {"node_key": "third", "label": "Tercero", "estimated_seconds": 2},
+                        {"node_key": "fourth", "label": "Cuarto", "estimated_seconds": 2},
                     ],
                 },
                 {"verb": "finish", "summary": {"headline": "Listo"}},
@@ -206,6 +210,20 @@ class StreamTests(unittest.TestCase):
                 self.assertIs(True, declaration.payload["revisable"])
                 self.assertTrue(declaration.payload["basis"].strip())
 
+    def test_declared_plan_carries_each_estimate_and_the_total(self) -> None:
+        declaration = next(
+            event
+            for event in stream("nauta-shipment-delay", speed=0, seed=23)
+            if event.event_type == "plan_declared"
+        )
+        steps = declaration.payload["plan"]["steps"]
+
+        self.assertEqual(
+            [5, 12, 10, 6, 7],
+            [step["estimated_seconds"] for step in steps],
+        )
+        self.assertEqual(40, declaration.payload["total_estimated_seconds"])
+
     def test_every_replan_is_justified_by_an_existing_prior_finding(self) -> None:
         runs = [
             list(stream("nauta-shipment-quiet", speed=0)),
@@ -243,11 +261,22 @@ class StreamTests(unittest.TestCase):
         scenario = {
             "name": "invalid-replan",
             "started_at": "2026-08-29T12:00:00Z",
+            "timing": {
+                "duration_jitter_percent": 25,
+                "progress_interval_percent": 15,
+                "slow_threshold_percent": 50,
+            },
             "provider": {"name": "Prueba", "agents": []},
             "plan": {
                 "graph_revision": 1,
                 "basis": "flujo de prueba conocido",
-                "steps": [{"node_key": "detect", "label": "Detectar"}],
+                "steps": [
+                    {
+                        "node_key": "detect",
+                        "label": "Detectar",
+                        "estimated_seconds": 2,
+                    }
+                ],
                 "edges": [],
             },
             "timeline": [
@@ -283,6 +312,69 @@ class StreamTests(unittest.TestCase):
                     ):
                         next(stream("invalid-replan", speed=0))
 
+    def test_loading_step_without_estimate_raises(self) -> None:
+        scenario = {
+            "name": "missing-estimate",
+            "started_at": "2026-08-29T12:00:00Z",
+            "timing": {
+                "duration_jitter_percent": 25,
+                "progress_interval_percent": 15,
+                "slow_threshold_percent": 50,
+            },
+            "provider": {"name": "Prueba", "agents": []},
+            "plan": {
+                "basis": "flujo de prueba conocido",
+                "steps": [{"node_key": "read", "label": "Leer"}],
+                "edges": [],
+            },
+            "timeline": [{"verb": "finish", "summary": {"headline": "Listo"}}],
+        }
+
+        with TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "missing-estimate.json"
+            fixture_path.write_text(
+                json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
+            )
+            with patch("nauta_dummy.FIXTURES_DIR", Path(tmp)):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"Escenario 'missing-estimate'.*plan\.steps\[0\].*estimated_seconds",
+                ):
+                    next(stream("missing-estimate", speed=0))
+
+    def test_loading_replanned_step_without_estimate_raises(self) -> None:
+        fixture_path = Path(__file__).parents[1] / "fixtures" / "run-B-problema.json"
+        scenario = json.loads(fixture_path.read_text(encoding="utf-8"))
+        scenario["timeline"][3]["add_nodes"][0].pop("estimated_seconds")
+
+        with TemporaryDirectory() as tmp:
+            invalid_path = Path(tmp) / "invalid-replan-estimate.json"
+            invalid_path.write_text(
+                json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
+            )
+            with patch("nauta_dummy.FIXTURES_DIR", Path(tmp)):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"timeline\[3\]\.add_nodes\[0\].*estimated_seconds",
+                ):
+                    next(stream("nauta-shipment-delay", speed=0))
+
+    def test_loading_decimal_progress_interval_raises_clearly(self) -> None:
+        fixture_path = Path(__file__).parents[1] / "fixtures" / "run-A-tranquilo.json"
+        scenario = json.loads(fixture_path.read_text(encoding="utf-8"))
+        scenario["timing"]["progress_interval_percent"] = 12.5
+
+        with TemporaryDirectory() as tmp:
+            invalid_path = Path(tmp) / "invalid-progress-interval.json"
+            invalid_path.write_text(
+                json.dumps(scenario, ensure_ascii=False), encoding="utf-8"
+            )
+            with patch("nauta_dummy.FIXTURES_DIR", Path(tmp)):
+                with self.assertRaisesRegex(
+                    ValueError, r"progress_interval_percent"
+                ):
+                    list(stream("nauta-shipment-quiet", speed=0))
+
     def test_cli_uses_proposal_and_learning_copy_without_va_a_hacer(self) -> None:
         for scenario in list_scenarios():
             output = StringIO()
@@ -295,7 +387,7 @@ class StreamTests(unittest.TestCase):
         with redirect_stdout(delay_output):
             main(["--scenario", "nauta-shipment-delay", "--speed", "0"])
         rendered = delay_output.getvalue()
-        self.assertIn("Nina propone 5 pasos", rendered)
+        self.assertIn("Nina propone 5 pasos · ~40s", rendered)
         self.assertIn("Nina replantea:", rendered)
 
         for fixture_path in Path(__file__).parents[1].joinpath("fixtures").glob("*.json"):
@@ -326,6 +418,60 @@ class StreamTests(unittest.TestCase):
         self.assertEqual("text", email.payload["artifact_type"])
         self.assertEqual("message/rfc822", email.payload["content_type"])
         self.assertIn("Cargo rolled to MSC LIVORNO", email.payload["text_content"])
+
+    def test_running_step_reports_start_progress_and_actual_duration(self) -> None:
+        events = list(stream("nauta-shipment-delay", speed=0, seed=23))
+        node_events = [event for event in events if event.node_key == "receive-update"]
+        started = next(
+            event
+            for event in node_events
+            if event.event_type == "node_status_changed"
+            and event.payload["status"] == "in_progress"
+        )
+        progress = [
+            event.payload["progress_percent"]
+            for event in node_events
+            if event.event_type == "node_updated"
+            and "progress_percent" in event.payload
+        ]
+        completed = next(
+            event
+            for event in node_events
+            if event.event_type == "node_status_changed"
+            and event.payload["status"] == "succeeded"
+        )
+
+        self.assertEqual(5, started.payload["estimated_seconds"])
+        self.assertEqual(started.occurred_at.isoformat(), started.payload["started_at"])
+        self.assertEqual([15, 30, 45, 60, 75, 90, 100], progress)
+        self.assertEqual(5, completed.payload["estimated_seconds"])
+        self.assertGreater(completed.payload["actual_seconds"], 0)
+        self.assertAlmostEqual(
+            completed.payload["actual_seconds"],
+            (completed.occurred_at - started.occurred_at).total_seconds(),
+        )
+
+    def test_overrunning_step_emits_intervention_signal_before_completion(self) -> None:
+        events = list(stream("nauta-shipment-delay", speed=0, seed=23))
+        signal_index = next(
+            index
+            for index, event in enumerate(events)
+            if event.event_type == "agent_message"
+            and event.node_key == "reconcile-booking"
+        )
+        signal = events[signal_index]
+        completion_index = next(
+            index
+            for index, event in enumerate(events[signal_index + 1 :], signal_index + 1)
+            if event.event_type == "node_status_changed"
+            and event.node_key == "reconcile-booking"
+            and event.payload["status"] == "succeeded"
+        )
+
+        self.assertEqual(12, signal.payload["estimated_seconds"])
+        self.assertGreater(signal.payload["elapsed_seconds"], 18)
+        self.assertIn("más de lo esperado", signal.payload["message"])
+        self.assertLess(signal_index, completion_index)
 
     def test_replan_removes_before_adding_and_increments_revision(self) -> None:
         events = list(stream("nauta-shipment-delay", speed=0))
@@ -403,6 +549,26 @@ class StreamTests(unittest.TestCase):
         )
         self.assertEqual(len(first), len(set(event.idempotency_key for event in first)))
 
+    def test_different_seeds_vary_durations_within_fixture_bounds(self) -> None:
+        runs = [
+            list(stream("nauta-shipment-quiet", speed=0, seed=seed))
+            for seed in (23, 24)
+        ]
+        durations = [
+            [
+                event.payload["actual_seconds"]
+                for event in events
+                if event.event_type == "node_status_changed"
+                and event.payload["status"] == "succeeded"
+            ]
+            for events in runs
+        ]
+
+        self.assertNotEqual(durations[0], durations[1])
+        for actual, estimate in zip(durations[0], [5, 18, 15, 12], strict=True):
+            self.assertGreaterEqual(actual, estimate * 0.75)
+            self.assertLessEqual(actual, estimate * 1.25)
+
     def test_speed_zero_does_not_sleep(self) -> None:
         with patch(
             "nauta_dummy.time.sleep",
@@ -410,17 +576,21 @@ class StreamTests(unittest.TestCase):
         ):
             list(stream("payments-reconciliation", speed=0, seed=11))
 
-    def test_positive_speed_scales_seeded_variable_jitter(self) -> None:
-        events = list(stream("nauta-shipment-quiet", speed=0, seed=23))
-        rng = random.Random(23)
-        expected = [rng.uniform(0.8, 3.5) / 8 for _ in range(len(events) - 1)]
-
+    def test_positive_speed_scales_only_declared_step_work(self) -> None:
         with patch("nauta_dummy.time.sleep") as sleep:
-            list(stream("nauta-shipment-quiet", speed=8, seed=23))
+            events = list(stream("nauta-shipment-quiet", speed=8, seed=23))
 
-        self.assertEqual(expected, [call.args[0] for call in sleep.call_args_list])
-        self.assertTrue(all(0.8 / 8 <= value <= 3.5 / 8 for value in expected))
-        self.assertGreater(len(set(expected)), 1)
+        actual_seconds = sum(
+            event.payload["actual_seconds"]
+            for event in events
+            if event.event_type == "node_status_changed"
+            and event.payload["status"] == "succeeded"
+        )
+        slept_seconds = sum(call.args[0] for call in sleep.call_args_list)
+
+        self.assertAlmostEqual(actual_seconds / 8, slept_seconds)
+        self.assertTrue(all(call.args[0] > 0 for call in sleep.call_args_list))
+        self.assertEqual(7 * 4, sleep.call_count)
 
     def test_payments_uses_the_generic_protocol_with_different_agents(self) -> None:
         payments = list(stream("payments-reconciliation", speed=0))
