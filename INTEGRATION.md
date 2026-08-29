@@ -1,5 +1,20 @@
 # Wiring the backend to the frontend
 
+> ## Start here
+>
+> **`declare_actions` must emit one `node_added` per action.**
+>
+> Without it you will connect, see the header fill in and the event stream move, and the canvas
+> will stay empty — and you will think the frontend is broken. It is not. The frontend builds the
+> graph from `node_added` events, and that event is never emitted today.
+>
+> It is one change in `nodes.go`, and everything visual depends on it.
+>
+> The frontend is ready and merged. `lib/donald/source.ts` is the adapter: if your payload shape
+> does not match, **that one file changes, not the UI**. Do not reshape anything on your side for
+> our convenience — send what is natural for you and tell us what it looks like.
+
+
 Everything is deployed and everything works — separately. This is the list of what has to line up
 so a live run draws on screen, and who owns each item.
 
