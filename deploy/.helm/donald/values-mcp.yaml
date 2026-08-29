@@ -11,6 +11,23 @@ image:
       value: "/root/config,/root/hostconfig/nuzur/donald"
     - name: DONALD_ROLE
       value: "mcp"
+    # DEMO PACING. Exposes the `wait` tool so a demo agent paces itself and the
+    # graph unfolds at a believable speed — without it a run finishes in seconds
+    # and there is no window in which to press stop.
+    #
+    # ON BY DEFAULT while Donald is pre-production, so this line is documentation
+    # rather than the switch. To turn pacing OFF, set it to "false" (also 0, no,
+    # off) — the server treats anything else, including unset, as on.
+    #
+    # BEFORE PRODUCTION: flip the default in app/mcp/wait.go and set this to
+    # "false" here. A real agent must never be able to park a request on the
+    # server. Startup logs a warning whenever pacing is on.
+    #
+    # Only the mcp role serves tools, so this is the only values file where it
+    # has any effect.
+    - name: DONALD_DEMO_PACING
+      value: "true"
+
     # Optional: point agent-reported runs at a real client row instead of the
     # built-in demo tenant, which app/mcp/handler.go creates on demand.
     # - name: DONALD_CLIENT_UUID

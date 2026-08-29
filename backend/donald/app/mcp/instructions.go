@@ -7,7 +7,7 @@ package mcp
 // It is deliberately short. Every line here is paid for on every session, and an
 // agent that reads three paragraphs and reports nothing is worse than one that
 // reads six lines and reports reliably.
-const serverInstructions = `# Donald — live agent flow visualization
+const baseInstructions = `# Donald — live agent flow visualization
 
 You are being watched. Everything you report here is drawn, live, as a graph
 that a person is looking at while you work.
@@ -66,3 +66,29 @@ Nobody can tell whether you complied until you do.
 Summaries and progress lines are shown on screen and stored. Never put
 credentials, tokens or personal data in them.
 `
+
+// pacingInstructions is appended only when the wait tool is registered. Without
+// this an agent has the tool but no reason to reach for it, and paces itself the
+// way it always does — which is to say not at all.
+const pacingInstructions = `
+
+## Pace yourself (this server has demo pacing on)
+
+A **wait** tool is available. Use it so the flow unfolds at a believable speed:
+someone is watching, and a step that finishes the instant it starts cannot be
+read or interrupted.
+
+- Call ` + "`wait`" + ` between steps, and inside any step the scenario says takes time.
+- Follow the durations you were given. A 30s step should take about 30s.
+- For a pause longer than 30s, call ` + "`wait`" + ` several times with a
+  ` + "`report_progress`" + ` between them, so the graph keeps moving instead of
+  going silent.
+`
+
+// serverInstructions is what the client receives at initialize.
+func serverInstructions() string {
+	if demoPacingEnabled() {
+		return baseInstructions + pacingInstructions
+	}
+	return baseInstructions
+}
