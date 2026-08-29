@@ -1,136 +1,143 @@
 # PROBLEM.md
 
-**Reto 3 — The Interface That Builds Itself** · NextWave Hackathon 2026, CDMX
+**Challenge 3 — The Interface That Builds Itself** · NextWave Hackathon 2026, CDMX
 
 ---
 
-## La tesis
+## The thesis
 
-> **El agente no te cuenta lo que hizo. Te lo enseña mientras lo hace.**
-> La interfaz generada no es una feature bonita. **Es la explicación.**
-
----
-
-## El operador
-
-**Jorge, 52 años. Director de operaciones de Muebles del Sur**, importadora de muebles de
-Vietnam a México. Lleva 20 años en esto. No es técnico y no tiene por qué serlo.
-
-**Su día:**
-- Llega a las 8. Tiene 60 correos, tres de ellos importan y no sabe cuáles.
-- Tiene contratado Nauta. El agente de Nauta trabaja todo el día: lee correos, extrae datos,
-  reconcilia, vigila plazos, predice retrasos, detecta excepciones, calcula impacto, decide y actúa.
-- **Jorge no ve nada de eso.** Le llega un resumen, o un correo, o nada.
-- Cuando algo se rompe, se entera tarde — o peor: se entera porque **su cliente le habla**.
-- Cuando tiene que decidir algo, le llama a alguien para que se lo explique. Esa llamada dura
-  30 minutos y pasa tres o cuatro veces por semana.
-
-**Lo que Jorge dice, textual:**
-
-> *"No quiero el putazo de texto. Quiero entender qué se hizo."*
+> **The agent does not tell you what it did. It shows you while it does it.**
+> The generated interface is not a nice feature. **It is the explanation.**
 
 ---
 
-## El momento de dolor
+## The operator
 
-**Un embarque se complica y hay que decidir algo hoy.**
+**Jorge, 52. Operations director at Muebles del Sur**, an importer moving furniture from Vietnam
+to Mexico. He has done this for 20 years. He is not technical, and he should not have to be.
 
-Lo que pasa actualmente:
+**His day:**
 
-1. El agente de Nauta lo detecta a las 09:14 y actúa
-2. Jorge se entera a las 14:00, o al día siguiente, o cuando su cliente reclama
-3. Para entender qué pasó, alguien tiene que explicárselo: 30 minutos
-4. Decide con información incompleta, o pospone
+- He arrives at 8:00. Sixty emails are waiting; three matter, and he does not know which three.
+- He pays for Nauta. Its agent works all day: reading email, extracting data, reconciling records,
+  watching deadlines, predicting delays, detecting exceptions, calculating impact, deciding and
+  acting.
+- **Jorge sees none of that.** He gets a summary, or an email, or nothing.
+- When something breaks, he finds out late — or worse, **his client calls him first**.
+- When he must decide, he calls someone to explain the situation. That call takes 30 minutes and
+  happens three or four times a week.
 
-**Lo que cuesta:** entre la detección y la decisión con confianza pasan **horas**. En ese hueco
-se acumula demurrage, se pierden ventanas de reacción, y el cliente final se entera antes que él.
+**Jorge's exact point:**
 
-En el caso que vamos a demostrar: **$3,780 USD** y un compromiso comercial incumplido por 4 días.
+> *“I do not want a wall of text. I want to understand what was done.”*
 
 ---
 
-## La métrica
+## The painful moment
 
-| | Hoy | Con esto |
+**A shipment goes wrong, and a decision must be made today.**
+
+What happens now:
+
+1. Nauta's agent detects the issue at 09:14 and acts.
+2. Jorge finds out at 14:00, the next day, or when his client complains.
+3. Someone must spend 30 minutes explaining what happened.
+4. He decides with incomplete information, or postpones the decision.
+
+**The cost:** hours pass between detection and a confident decision. During that gap, demurrage
+accumulates, response windows close, and the end customer learns about the problem before Jorge.
+
+In the case we demonstrate: **$3,780 USD** and a customer commitment missed by four days.
+
+---
+
+## The metric
+
+| | Today | With Donald |
 |---|---|---|
-| Detección → decisión con confianza | horas (o nunca) | **90 segundos** |
-| Llamadas para que le expliquen | 3-4 por semana | 0 |
-| Cosas que el agente hizo y Jorge no vio | casi todas | ninguna |
+| Detection → confident decision | hours (or never) | **90 seconds** |
+| Calls to have the situation explained | 3–4 per week | 0 |
+| Things the agent did that Jorge never saw | almost everything | nothing |
 
 ---
 
-## La frontera con Nauta
+## The boundary with Nauta
 
-**Nauta ya hace los 12 pasos completos**, de INGEST a ACT. No competimos con eso.
+**Nauta already performs the complete 12-step flow**, from INGEST to ACT. We do not compete with
+that.
 
 ```
-        NAUTA  ──  corre los 12 pasos, sola, por dentro
+        NAUTA  ──  runs all 12 steps, autonomously, inside
               │
-              │  entrega lo que hizo y por qué
+              │  reports what it did and why
               ▼
-        NOSOTROS  ──  lo volvemos visible y accionable
+        DONALD  ──  makes the work visible and steerable
               │
               ▼
-        JORGE  ──  entiende e interviene
+        JORGE  ──  understands and intervenes
 ```
 
-> **Nauta decide qué hacer con el embarque.
-> Nosotros decidimos qué ve Jorge y cuándo tiene que meter mano.**
+> **Nauta decides what to do with the shipment.
+> Donald decides what Jorge sees and when he needs to step in.**
 
-Son dos decisiones distintas. La de Nauta es operativa. La nuestra es de interacción.
+Those are two different decisions. Nauta's is operational. Donald's is interactional.
 
-En este prototipo Nauta está simulado (ver `nauta-mock/`). La frontera es un contrato:
-el día que exista el acceso, se cambia el archivo por una llamada HTTP y **nada más se toca**.
+For this prototype, the provider is represented by a **real general-purpose agent reading a Nauta
+skill file**. It receives whatever the operator types, chooses its own plan and reports each step
+to Donald over MCP. Replacing that demo agent with Nauta changes the provider, not the supervision
+contract or the interface.
 
 ---
 
-## Qué hace nuestro agente
+## What our system does
 
-**Interpreta máquina para humano, y construye la pantalla para hacerlo.**
+**It translates machine work for a person, and builds the screen that makes the work legible.**
 
-| Decide | Ejemplo |
+| It decides | Example |
 |---|---|
-| ¿Esto amerita interrumpir a Jorge? | Run A: no. Run B: sí. |
-| ¿Qué es lo importante de todo lo que pasó? | de 3 alertas, manda el compromiso con el cliente |
-| ¿Cómo se lo digo a alguien de 52 años? | no *"eta_slip 9d"* sino *"llega 4 días tarde de lo que le prometiste a tu cliente"* |
-| ¿Qué evidencia le enseño? | el correo de MSC + el del cliente, subrayados |
-| ¿Qué le pregunto y con qué opciones? | las que salieron del PLAN de Nauta |
-| ¿Qué pasa con lo que contestó? | rehacer la UI con la consecuencia |
+| Does this deserve Jorge's attention? | A routine check: no. An irreversible action: yes. |
+| What matters in everything that happened? | Of three warnings, surface the customer commitment. |
+| How do I explain it to a 52-year-old operator? | Not *“eta_slip 9d”* but *“it arrives four days after the date you promised your customer.”* |
+| What evidence should be shown? | The MSC email and the client email, highlighted. |
+| What should Jorge decide, and with which options? | The alternatives that emerged from the agent's plan. |
+| What happens after his answer? | Rebuild the graph around the consequence. |
 
 ---
 
-## Por qué esto necesita IA
+## Why this needs AI
 
-**Porque no puedes pre-programar la pantalla de cada situación.**
+**Because you cannot pre-program the screen for every situation.**
 
-Las situaciones son ilimitadas: un transbordo no planeado, un documento invalidado, un proveedor
-que no contesta, una combinación que nadie vio nunca. Hoy, cuando el agente pega con un caso raro,
-**la pantalla no existe** — porque nadie la programó.
+The situations are unlimited: an unplanned transshipment, an invalidated document, an
+unresponsive supplier, a missing PO amendment, or a combination nobody has seen before. Today,
+when an agent encounters an unusual case, **the screen does not exist** — because nobody built it.
 
-Si quitas el LLM y la demo sigue funcionando igual, no es AI-native y el jurado lo va a ver.
-**La prueba está en los dos runs:** mismo código, mismos prompts, datos distintos → interfaz
-distinta. Nadie programó la segunda pantalla.
-
----
-
-## Anti-scope — lo que NO vamos a resolver
-
-- **No construimos el pipeline de Nauta.** Lo recibimos. Está simulado.
-- **No es un dashboard configurable.** No hay filtros, no hay vistas guardadas.
-- **No hay multiusuario, login, ni móvil.** Un solo run, una sola pantalla.
-- **No optimizamos rutas ni costos.** Eso es de Nauta.
-- **No es un chatbot de preguntas y respuestas.** Si el humano solo pregunta y el sistema
-  contesta texto, fracasamos en nuestra propia tesis.
-- **No persistimos nada que no salga en la demo.**
+If removing the LLM leaves the demo unchanged, the product is not AI-native, and the jury will
+see it. **The proof is in two requests:** same code, same reporting contract, different evidence
+and work → a different interface. Nobody programmed the second screen.
 
 ---
 
-## El momento que hay que ganar
+## Anti-scope — what we will NOT solve
 
-Todo el pitch gira alrededor de un solo instante:
+- **We are not building Nauta's operational pipeline.** A real agent reads a compact domain skill
+  for the demo; Donald only supervises what that agent reports.
+- **This is not a configurable dashboard.** No filters, no saved views.
+- **There is no multi-user system, login or mobile app.** One run, one screen.
+- **We do not optimize routes or costs.** That belongs to Nauta.
+- **This is not a question-and-answer chatbot.** If the person only asks and receives text, we
+  have failed our own thesis.
+- **We persist nothing that does not appear in the demo.**
 
-> Corremos el mismo flujo dos veces. En el primero el agente resuelve solo y no interrumpe.
-> En el segundo — **mismo código, mismos prompts, solo cambiaron los datos** — el agente se
-> detiene y **nace un panel de decisión que en el primero no existía**.
+---
 
-Todo lo demás existe para llegar ahí y para salir de ahí.
+## The moment we must win
+
+The entire pitch turns on one instant:
+
+> Give the same agent two real requests. In the first, it resolves the work alone and does not
+> interrupt. In the second — **same code, same reporting contract, different operational
+> evidence** — the agent stops and **a decision panel appears that did not exist in the first
+> run**.
+
+Everything else exists to reach that moment and carry the audience through it.

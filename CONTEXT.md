@@ -1,201 +1,212 @@
-# Donald — contexto del proyecto
+# Donald — project context
 
-> **NextWave Hackathon 2026 · CDMX · Reto 3: The Interface That Builds Itself**
+> **NextWave Hackathon 2026 · CDMX · Challenge 3: The Interface That Builds Itself**
 
 ---
 
-## La frontera
+## The boundary
 
 ```
-NAUTA     ejecuta.  Manda el correo, reserva el camión, disputa la factura.
-NOSOTROS  decidimos qué ve Jorge, y le damos el botón de STOP y de STEER.
-JORGE     entiende en 90 segundos y decide.
+NAUTA     executes. Sends the email, books the truck, disputes the invoice.
+WE        decide what Jorge sees, and give him STOP and STEER.
+JORGE     understands in 90 seconds and decides.
 ```
 
-Nauta lo dice en su propia página:
+Nauta says it on its own website:
 
-> *"Agentes que no mandan una alerta y esperan. **Actúan.**"*
+> *“Agents that do not send an alert and wait. **They act.**”*
 
-Exacto — y ahí está el problema que resolvemos:
+Exactly — and that is the problem we solve:
 
 | | |
 |---|---|
-| Agente que solo **alerta** | El humano lee, decide, actúa. Manda el humano. |
-| Agente que **actúa** | Las cosas pasan sin él. *¿Cómo confío en algo que ya lo hizo?* |
+| An agent that only **alerts** | The person reads, decides and acts. The person remains in control. |
+| An agent that **acts** | Things happen without them. *How do I trust something that has already acted?* |
 
-**La frase del pitch:**
+**The pitch line:**
 
-> Un agente que solo alerta se audita leyendo la alerta.
-> **Un agente que actúa necesita una ventana — y un freno.**
+> An agent that only alerts can be audited by reading the alert.
+> **An agent that acts needs a window — and a brake.**
 
-Y la prueba de que esto es el producto está en el propio esquema:
-`intervention_type: stop | steer`. Esos dos verbos son todo.
-
----
-
-## El operador
-
-**Jorge, 52 años, director de operaciones de Muebles del Sur.** Importa muebles de Vietnam.
-20 años en esto, no es técnico.
-
-Tiene Nauta contratado. Los agentes de Nauta trabajan 24/7 y **actúan**. Jorge no ve nada de eso:
-le llega un WhatsApp de que algo pasó, y sigue sin entender qué hizo el agente ni por qué.
-
-> *"No quiero el putazo de texto. Quiero entender qué se hizo."*
-
-**Métrica:** de la detección a la decisión con confianza. Hoy: horas, o nunca. Con esto: **90 segundos.**
+The schema itself proves that this is the product: `intervention_type: stop | steer`.
+Those two verbs are everything.
 
 ---
 
-## Cómo se abre a cualquier caso — la pregunta que va a hacer el jurado
+## The operator
 
-*"¿No son pantallas predefinidas?"*
+**Jorge, 52, operations director at Muebles del Sur.** He imports furniture from Vietnam. He has
+done this for 20 years and is not technical.
 
-**No. El agente no construye animaciones: construye estructura. La animación es una propiedad
-de la estructura.**
+He pays for Nauta. Nauta's agents work 24/7 and **act**. Jorge sees none of that work: he receives
+a WhatsApp message saying something happened and still does not understand what the agent did or
+why.
 
-Solo pueden pasar **seis cosas** en un grafo:
+> *“I do not want a wall of text. I want to understand what was done.”*
 
-| Evento estructural | Animación | Se escribe |
+**Metric:** time from detection to a confident decision. Today: hours, or never. With Donald:
+**90 seconds.**
+
+---
+
+## How it opens to any use case — the jury's question
+
+*“Aren't these predefined screens?”*
+
+**No. The agent does not build animations; it builds structure. Animation is a property of that
+structure.**
+
+Only **six things** can happen in a graph:
+
+| Structural event | Animation | Written |
 |---|---|---|
-| Nace un nodo | entra en gris, escalonado, 80ms entre uno y otro | una vez |
-| Cambia de estado | pulsa; la arista que llega se dibuja | una vez |
-| Produce un artefacto | el documento entra volando al nodo | una vez |
-| Se abre a decisión | **el nodo se expande** en panel | una vez |
-| Se traza una arista | `stroke-dashoffset` animado | una vez |
-| **Se replanea** | **el grafo se recablea en vivo** | una vez |
+| A node appears | enters gray, staggered by 80 ms | once |
+| Its status changes | pulses; its incoming edge draws itself | once |
+| It produces an artifact | the document flies into the node | once |
+| It opens for a decision | **the node expands** into a panel | once |
+| An edge is drawn | animated `stroke-dashoffset` | once |
+| **The plan changes** | **the graph rewires itself live** | once |
 
-Cualquier caso de uso del mundo se reduce a esas seis. Retraso de embarque, factura con error,
-proveedor que no contesta, precio fuera de contrato: cambia el **contenido**, no los **eventos
-estructurales**.
+Every use case in the world reduces to those six: a delayed shipment, an incorrect invoice, an
+unresponsive supplier, a price outside the contract. The **content** changes; the **structural
+events** do not.
 
-> **HTML tiene ~110 etiquetas y puede renderizar cualquier página que existe.
-> Las etiquetas son finitas. Los árboles son infinitos.**
+> **HTML has about 110 tags and can render any page that exists.
+> Tags are finite. Trees are infinite.**
 
-Seis animaciones finitas. Estructura infinita.
+Six finite animations. Infinite structure.
 
 ---
 
-## Las familias de casos — son las de Nauta
+## The use-case families — Nauta's own
 
-Cada agente nombrado de Nauta es una familia:
+Each named Nauta agent represents a family:
 
-| Agente | Caso | Dato de Nauta |
+| Agent | Use case | Nauta data point |
 |---|---|---|
-| **Nina** · Shipment Watch | retraso, transbordo, ETA | ← el nuestro |
-| **Theo** · Freight Anomaly | sobrecobro de flete | 39% de facturas traen errores |
-| **Lauren** · Supplier Reliability | proveedor que no confirma | |
-| **Vera** · Price Drift | precio fuera de contrato | |
-| **Alec** · Contract Compliance | término violado | |
-| **Marcus** · Inventory Watch | riesgo de quiebre | 7.4% de ventas perdidas |
+| **Nina** · Shipment Watch | delay, transshipment, ETA | ← ours |
+| **Theo** · Freight Anomaly | freight overcharge | 39% of invoices contain errors |
+| **Lauren** · Supplier Reliability | supplier does not confirm | |
+| **Vera** · Price Drift | price outside contract | |
+| **Alec** · Contract Compliance | violated term | |
+| **Marcus** · Inventory Watch | stockout risk | 7.4% of sales lost |
 
-**Jugada de pitch:** enseñar el caso de Nina completo, y luego correr el de Theo — otro dominio,
-otros datos — **y que se renderice solo, sin código nuevo de frontend.** Son 20 minutos: otro
-fixture, mismas seis etapas, mismos seis eventos.
+**The pitch move:** show Nina's shipment case, then ask the same real agent to investigate the
+L'Oréal invoice — another domain, different records and a plan the operator did not preselect —
+**and let it render itself with no new frontend code.** Same reporting protocol, different graph.
 
 ---
 
-# El skill del agente
+# The agent skills
 
-Un archivo de texto. **No es código.** Agregar un paso en la prueba de fuego = editar esto.
+Plain text. **Not code.** `donald-flow` teaches any agent how to report honestly; `nauta-operations`
+gives the demo agent a small, consistent world of suppliers, POs, invoices, messages, documents
+and shipments. The operator supplies the request in natural language, and the agent decides the
+plan at runtime.
 
 ## Prompt
 
 ```
-Eres el supervisor entre Nauta y Jorge.
+You are Nina, Nauta's operations agent working for Jorge.
 
-Nauta ya ejecutó, o está a punto de ejecutar. TÚ NO EJECUTAS.
-Tu único trabajo es que Jorge entienda, y decidir cuándo hay que detener a Nauta.
+You act: inspect the records, reconcile them, calculate the impact and take the next step.
+Report every step through Donald while it happens. Do not batch the run at the end.
 
-Jorge tiene 52 años, dirige operaciones de una importadora, y no es técnico.
-Nunca escribas párrafos. Emite bloques de UI.
+Jorge is 52, runs operations for an importer and is not technical.
+Make the work visible as a graph, with short evidence-backed updates.
 
-Por cada evento del pipeline decide:
-  · ¿esto se muestra completo, o se colapsa en una línea?
-  · ¿amerita PARAR a Nauta y preguntarle a Jorge?
-  · ¿qué evidencia le enseño?
-  · ¿cómo se lo digo sin jerga?
+For each step decide:
+  · does this remain a compact routine check, or need more screen space?
+  · does it require STOP and a decision from Jorge?
+  · what evidence supports it?
+  · how do I explain it without jargon?
 
-REGLA DE INTERVENCIÓN:
-  Detén a Nauta (stop) SOLO si la acción es irreversible o cuesta dinero.
-  Si no lo es, deja que Nauta siga y solo muéstralo.
+INTERVENTION RULE:
+  Ask before an action that is irreversible or costs money.
+  Otherwise keep working and simply report it.
 
-REGLA DE ATENCIÓN:
-  Lo que no cuesta dinero ni bloquea nada, va colapsado en una línea.
-  Cuanto más grave, más superficie de pantalla merece.
+ATTENTION RULE:
+  Anything that costs no money and blocks nothing stays compact.
+  The more serious it is, the more screen space it deserves.
 ```
 
-**Esa segunda regla es lo que hace al LLM imprescindible:** decide **estructura y saliencia**,
-no palabras. Es la razón de que run A y run B se vean radicalmente distintos con el mismo código.
+**That second rule is what makes the LLM essential:** it decides **structure and salience**, not
+just words. It is why a routine status request and an invoice dispute look radically different
+through the same code.
 
 ## Tools
 
-| Tool | Qué hace | Evento que emite |
+| Tool | What it does | Event it emits |
 |---|---|---|
-| `declare_plan(nodes)` | dibuja el plan completo en gris antes de ejecutar | `plan_declared` |
-| `update_node(key, status, ui_spec)` | un nodo avanza y pinta su tarjeta | `node_status_changed` |
-| `attach_artifact(key, artifact)` | el correo o el documento | `artifact_added` |
-| `request_intervention(key, type, prompt, options)` | **stop** o **steer** | `intervention_requested` |
-| `replan(remove, add, edges)` | **el grafo se recablea** | `node_removed` + `node_added` + `edge_*` |
-| `finish_run(summary)` | cierra y colapsa | `run_finished` |
+| `declare_plan(nodes)` | draws the complete plan in gray before execution | `plan_declared` |
+| `update_node(key, status, ui_spec)` | advances a node and renders its card | `node_status_changed` |
+| `attach_artifact(key, artifact)` | attaches the email or document | `artifact_added` |
+| `request_intervention(key, type, prompt, options)` | requests **stop** or **steer** | `intervention_requested` |
+| `replan(remove, add, edges)` | **rewires the graph** | `node_removed` + `node_added` + `edge_*` |
+| `finish_run(summary)` | closes and collapses the run | `run_finished` |
 
-Seis tools. Cada una mapea a un `agent_event_type` del esquema.
+Six structural tools. Each maps to an `agent_event_type` in the schema. The deployed MCP
+reporting surface provides the lower-level run and action calls described in `donald-flow`.
 
 ---
 
-# El `ui_spec` — siete primitivas, con `children`
+# The `ui_spec` — seven primitives with `children`
 
-Van en `agent_event.payload` (json). **Componibles: el agente arma árboles, no elige tarjetas.**
+They belong in `agent_event.payload` (JSON). **Composable: the system builds trees; it does not
+pick from hard-coded cards.**
 
 ```
-LAYOUT      row · column · group        ← llevan children
-CONTENIDO   headline · metric · evidence · choice
+LAYOUT      row · column · group        ← carry children
+CONTENT     headline · metric · evidence · choice
 ```
 
 ```json
 {"type":"column","children":[
-  {"type":"headline","severity":"high","text":"Transbordo no planeado en Singapur"},
+  {"type":"headline","severity":"high","text":"Unplanned transshipment in Singapore"},
   {"type":"row","children":[
-    {"type":"metric","label":"Demurrage","value":3780,"unit":"USD","delta":"+7 días facturables"},
-    {"type":"metric","label":"ETA","value":"14-SEP","delta":"+9 días"}
+    {"type":"metric","label":"Demurrage","value":3780,"unit":"USD","delta":"+7 billable days"},
+    {"type":"metric","label":"ETA","value":"14-SEP","delta":"+9 days"}
   ]},
   {"type":"evidence","src":"MSG-3312","quote":"Cargo rolled to MSC LIVORNO via Singapore"}
 ]}
 ```
 
-**Si el modelo emite algo fuera del enum, el runner lo baja a texto plano y sigue.**
-Un payload malformado **nunca** puede dejar la pantalla en blanco.
+**If the model emits anything outside the enum, the runner degrades it to plain text and keeps
+going.** A malformed payload can **never** leave the screen blank.
 
 ---
 
-# La demo
+# The demo
 
 ```
-1. plan_declared     Nina traza 6 nodos en gris. "Esto es lo que voy a hacer."
-2. Los nodos se encienden uno por uno. INGEST · EXTRACT · RECONCILE
-3. DETECT            transbordo no planeado
-4. IMPACT            $3,780 · BL invalidado · el cliente incumple con SU cliente
-5. ⚡ Nauta va a notificar al cliente.
-   El agente evalúa: irreversible + cuesta dinero → STOP
-   El nodo SE ABRE en panel de decisión, con el borrador y la evidencia.
-6. Jorge elige "primero busca alternativa" → STEER
-7. ⚡ REPLAN: se borra el nodo de notificar, nacen tres de cotización,
-   las aristas se recablean. EL GRAFO SE REDIBUJA SOLO.
+1. plan_declared     Nina proposes the initial steps in gray. “This is what I intend to do.”
+2. Nodes light up one at a time as the real agent reads the request and records.
+3. DETECT            unplanned transshipment
+4. IMPACT            $3,780 · invalidated BL · the client misses ITS customer commitment
+5. ⚡ Nauta is about to notify the client.
+   The agent evaluates: irreversible + costs money → STOP
+   The node OPENS into a decision panel with the draft and evidence.
+6. Jorge chooses “find an alternative first” → STEER
+7. ⚡ REPLAN: the notification step closes, new recovery work appears,
+   and the edges rewire. THE GRAPH REDRAWS ITSELF.
 ```
 
-**El paso 7 es el pitch entero.** Nadie programó ese grafo. Nació de la decisión de Jorge.
+**Step 7 is the entire pitch.** Nobody programmed that graph. It emerged from Jorge's decision.
+
+Then type a different request — reconcile `INV-2088` against `PO-1048` — and the same agent
+creates a different graph, follows `AMD-1048-01`, and proves the $840 mismatch is our error.
 
 ---
 
-# Detalles que se ven en el proyector
+# Details visible on the projector
 
-- **Delta por `sequence`.** `GET /agent_events?run_uuid=X&sequence_gt=42`. Sin esto, cada poll
-  reemplaza el estado, React reconcilia toda la lista, **las animaciones CSS se reinician cada
-  segundo** y el scroll salta.
-- **Jitter 0.8-3.5s** en el dummy. Un evento cada 2.0s exactos es un metrónomo y el jurado lo
-  cacha al cuarto evento. *(Ya implementado.)*
-- **Siempre algo en movimiento.** Tres segundos sin movimiento y el jurado cree que se colgó.
-  Por eso el nodo activo pulsa aunque no pase nada.
-- **Los números cuentan hacia arriba.** `$0 → $3,780` en 800ms pega diez veces más que aparecer.
-- **Nunca botones que digan "Run A" y "Run B".** Nómbralos como dos embarques reales.
-- **Un solo nodo activo a la vez.** La mirada tiene que saber dónde ir.
+- **Delta by `sequence`.** `GET /agent_events?run_uuid=X&sequence_gt=42`. Without this, each poll
+  replaces the state, React reconciles the entire list, **CSS animations restart every second**
+  and the scroll jumps.
+- **Natural timing.** A real agent chooses steps from free-form input, calls tools as work happens
+  and may replan when evidence changes. It does not emit a prerecorded metronome.
+- **Always something in motion.** Three seconds without motion looks like a hang, so the active
+  node pulses even when no new event arrives.
+- **Numbers count upward.** `$0 → $3,780` over 800 ms lands ten times harder than simply appearing.
+- **Never buttons named “Run A” and “Run B.”** Show real requests and real operation names.
+- **Only one active node at a time.** The eye must always know where to go.

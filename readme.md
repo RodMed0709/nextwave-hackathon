@@ -1,98 +1,88 @@
 # Donald
 
-**Una superficie de supervisión para agentes que actúan.**
+**A supervision surface for agents that act.**
 
-NextWave Hackathon 2026 · CDMX · Reto 3 — *The Interface That Builds Itself*
+NextWave Hackathon 2026 · CDMX · Challenge 3 — *The Interface That Builds Itself*
 
 ---
 
-## El problema
+## The problem
 
-Empresas como **Nauta** venden agentes de IA que no solo avisan: **ejecutan**. Mandan correos,
-reservan camiones, disputan facturas, 24/7. Su propia página lo dice:
+Companies like **Nauta** sell AI agents that do more than alert: **they execute**. They send
+emails, book trucks and dispute invoices, 24/7. Their own website says it plainly:
 
-> *"Agentes que no mandan una alerta y esperan. **Actúan.**"*
+> *“Agents that do not send an alert and wait. **They act.**”*
 
-Y ahí está el hueco:
+That leaves a gap:
 
 | | |
 |---|---|
-| Un agente que solo **alerta** | El humano lee, decide, actúa. Manda el humano. |
-| Un agente que **actúa** | Las cosas pasan sin él. *¿Cómo confío en algo que ya lo hizo?* |
+| An agent that only **alerts** | The person reads, decides and acts. The person remains in control. |
+| An agent that **acts** | Things happen without them. *How do I trust something that has already acted?* |
 
-> **Un agente que solo alerta se audita leyendo la alerta.
-> Un agente que actúa necesita una ventana — y un freno.**
+> **An agent that only alerts can be audited by reading the alert.
+> An agent that acts needs a window — and a brake.**
 
-Donald es esa ventana y ese freno. El operador ve el razonamiento del agente **construirse en
-pantalla mientras ocurre**, y puede **detenerlo** o **redirigirlo**.
+Donald is that window and that brake. The operator watches the agent's reasoning **build itself
+on screen as it happens**, and can **stop** or **redirect** it.
 
-**No le cambiamos nada al proveedor.** Sus etapas, su lógica y sus acciones quedan intactas.
-Solo le pedimos que exponga su intención y avise cuando cambia.
+**We change nothing about the provider.** Its stages, logic and actions stay intact. We only ask
+the agent to expose its intent and report when that intent changes.
 
 ---
 
-## Cómo funciona — el protocolo de cinco verbos
+## How it works — the five-verb protocol
 
-Cualquier agente que hable estos cinco verbos se vuelve supervisable:
+Any agent that speaks these five verbs becomes supervisable:
 
-| Verbo | El agente dice | Donald pinta |
+| Verb | The agent says | Donald draws |
 |---|---|---|
-| **DECLARE** | *"propongo estos N pasos"* | los nodos grises, escalonados |
-| **ADVANCE** | *"voy en el 3, esto encontré"* | el nodo pulsa, la arista se dibuja |
-| **REPLAN** | *"cambió el plan: quito esto, agrego aquello"* | **el grafo se recablea** |
-| **ASK** | *"necesito que decidas"* | el nodo se expande en panel |
-| **FINISH** | *"terminé, esto pasó"* | se colapsa en resumen |
+| **DECLARE** | *“I propose these N steps”* | staggered gray nodes |
+| **ADVANCE** | *“I am on step 3; this is what I found”* | the node pulses and the edge draws itself |
+| **REPLAN** | *“The plan changed: remove this, add that”* | **the graph rewires itself** |
+| **ASK** | *“I need you to decide”* | the node expands into a decision panel |
+| **FINISH** | *“I am done; this is what happened”* | the run collapses into a summary |
 
-Lo que le pedimos es una **propuesta, no un compromiso**:
+What we ask for is a **proposal, not a commitment**:
 
-> *"Sabemos que tienes mucho trabajo. Solo danos una propuesta de tu plan — aunque cambie."*
+> *“We know you have a lot to do. Just propose your plan — even if it changes.”*
 
-**Y que el plan cambie no es una falla: es que el agente aprendió algo.** Si el plan nunca
-cambiara, la interfaz nunca se reconstruiría y no habría nada que demostrar. Por eso todo replan
-carga su causa (`reason`, `triggered_by`, `evidence`) — sin ella se lee como que alguien se
-equivocó; con ella, como que el sistema aprendió.
+**A changing plan is not failure; it means the agent learned something.** If the plan never
+changed, the interface would never rebuild itself and there would be nothing to demonstrate.
+That is why every replan carries its cause (`reason`, `triggered_by`, `evidence`) — without it,
+the change looks like a mistake; with it, the system looks like it learned.
 
 ---
 
-## Las piezas
+## The pieces
 
 ```
-  CUALQUIER AGENTE            nauta-dummy/        ← simulador, para la demo ensayada
-  (Claude Code, Nauta, …)     skill/              ← el skill que le enseña a reportar
-            │
-            │  MCP · 5 verbos · https://mcp.donald.todes.mx/v1/mcp
-            ▼
-  backend/donald/             ← Go generado por nuzur + servidor MCP
-            │                    entidades: agent_run · agent_node · agent_edge
+  ANY REAL AGENT             skill/              ← teaches the agent the domain and reporting loop
+  (Claude Code, Nauta, …)       │
+                               │  MCP · 5 verbs · https://mcp.donald.todes.mx/v1/mcp
+                               ▼
+  backend/donald/             ← Go generated by nuzur + MCP server
+            │                    entities: agent_run · agent_node · agent_edge
             │                    agent_event · intervention · artifact
             ▼
-  https://api.donald.todes.mx/    ← REST
+  https://api.donald.todes.mx/    ← REST + live event stream
             │
             ▼
-  frontend/                   ← Next + React Flow. Polling por sequence.
+  frontend/                   ← Next + React Flow. The graph comes from run data.
 ```
 
-| Carpeta | Qué es | Dueño |
+| Folder | What it is | Owner |
 |---|---|---|
-| [`backend/donald/`](backend/) | Backend Go generado por nuzur desde el modelo `v2-run-graph-events`, más el servidor MCP en `app/mcp/`. **Los archivos generados no se editan** — ver `backend/donald/AI.md`. Lo tuyo va en `app/`. | Meykel |
-| [`frontend/`](frontend/) | Next 16 + React Flow. El grafo se dibuja desde los datos: posiciones calculadas, nunca escritas a mano. | Mau |
-| [`nauta-dummy/`](nauta-dummy/) | Simulador de un proveedor. Tres escenarios como datos, cero dominio en el código. | Rodrigo |
-| [`skill/`](skill/) | El skill `donald-flow` que conecta cualquier agente al MCP, y cómo cablearlo. | Meykel |
-| [`deploy/`](deploy/) | Helm charts. Ya desplegado. | Meykel |
+| [`backend/donald/`](backend/) | Go backend generated by nuzur from the `v2-run-graph-events` model, plus the MCP server in `app/mcp/`. **Generated files are not edited** — see `backend/donald/AI.md`. Custom work belongs in `app/`. | Meykel |
+| [`frontend/`](frontend/) | Next 16 + React Flow. Graph positions are calculated from data, never hand-authored. | Mau |
+| [`skill/`](skill/) | `donald-flow` teaches any agent to report through MCP; `nauta-operations` gives the demo agent a coherent importer data landscape. | Meykel |
+| [`deploy/`](deploy/) | Helm charts for the deployed API, MCP endpoint and web surface. | Meykel |
 
 ---
 
-## Arranca en 5 minutos
+## See it in five minutes
 
-**El simulador** — sin dependencias, no necesita nada más:
-
-```bash
-cd nauta-dummy
-python -m nauta_dummy --list
-python -m nauta_dummy --scenario nauta-shipment-delay --speed 4
-```
-
-**El frontend:**
+**Start the frontend:**
 
 ```bash
 cd frontend
@@ -100,73 +90,75 @@ npx pnpm@10 install
 npx pnpm@10 dev          # http://localhost:3000
 ```
 
-Arranca **en blanco** y se llena con los eventos. Nada existe hasta que un evento lo crea.
-Para apuntarlo a datos reales en vez de la grabación local:
-
-```bash
-NEXT_PUBLIC_DONALD_API=https://api.donald.todes.mx
-```
-
-**Conectar un agente de verdad** — ver [`skill/README.md`](skill/README.md). Transporte HTTP,
-sin auth (demo):
+**Connect a real agent** — see [`skill/README.md`](skill/README.md). Add Donald as a
+streamable-HTTP MCP server; there is no authentication in the demo:
 
 ```json
 { "mcpServers": { "donald": { "type": "http", "url": "https://mcp.donald.todes.mx/v1/mcp" } } }
 ```
 
+Give the MCP client both [`donald-flow`](skill/donald-flow/) and
+[`nauta-operations`](skill/nauta-operations/). Then type any operational request, for example:
+
+> *“L'Oréal's invoice does not match our PO. Find out what happened and draft the right email.”*
+
+The provider in this demo is a **real agent reading those skill files**. There is no scenario
+selector: the input is whatever the operator types, the agent chooses its own plan, and the graph
+is non-deterministic because it is built from the steps the agent actually takes.
+
 ---
 
-## Los tres casos que demuestran el producto
+## The requests that demonstrate the product
 
-Cada uno tiene una **forma distinta en pantalla** — eso es lo que prueba que la interfaz nace de
-los datos y no de un guion.
+Each produces a **different shape on screen**. That is the proof that the interface comes from
+the work, not from a script. These are examples, not presets.
 
-| Caso | Escenario | Forma |
+| Case | Example request | Shape |
 |---|---|---|
-| **Se calla** | `nauta-shipment-quiet` | Todo colapsado en una línea. Cero interrupciones. Un sistema que siempre grita es tan inútil como uno ciego. |
-| **Replantea y pregunta** | `nauta-shipment-delay` | Transbordo no planeado · $3,780 de demurrage · BL invalidado. **El grafo se recablea** y nace el panel de decisión. |
-| **Otro dominio** | `payments-reconciliation` | Otra empresa, otros pasos, otro vocabulario. **Cero código nuevo.** |
+| **It stays quiet** | *“What is the status of OP-4471?”* | Routine checks collapse into a line. No needless interruption. A system that always shouts is as useless as one that is blind. |
+| **It replans and asks** | *“Handle the transshipment on OP-4471.”* | Unplanned transshipment · $3,780 demurrage exposure · invalidated BL. **The graph rewires itself** and a decision panel appears. |
+| **It crosses domains** | *“Why does L'Oréal's invoice disagree with our PO?”* | Supplier invoice · missing amendment · exact $840 gap · our error. Different evidence and steps, **zero new frontend code.** |
 
-El tercero es la prueba de apertura: se agregó escribiendo un JSON, sin tocar Python.
-
----
-
-## Por qué el tiempo importa
-
-Los pasos declaran cuánto creen que van a tardar, y el simulador **de verdad espera**, reportando
-progreso mientras tanto. No es relleno:
-
-> **La duración es la ventana de intervención.** Solo puedes detener algo que todavía está
-> pasando. Si los pasos brincan instantáneos, el botón de stop es decorativo.
-
-Un run completo dura ~60 segundos reales. Y si un paso se pasa 50% de su estimado, emite
-`agent_message` — *"se está tardando"* es una razón legítima para que el humano intervenga.
+The third case proves the system is open-ended: it was added by expanding the agent's knowledge,
+without writing a new flow or changing the frontend.
 
 ---
 
-## Documentos
+## Why time matters
+
+The steps unfold while a real agent reads, reconciles, calculates and decides what comes next.
+That is not decorative delay:
+
+> **Duration is the intervention window.** You can only stop something that is still happening.
+> If every step completes instantly, the stop button is decoration.
+
+The graph stays current as the agent works: progress appears when something takes time, a block
+is visible when the agent needs missing data, and a replan appears the moment new evidence changes
+the work. The timing belongs to the task, not to a prerecorded sequence.
+
+---
+
+## Documents
 
 | | |
 |---|---|
-| [`PROBLEM.md`](PROBLEM.md) | El operador (Jorge, 52 años), la tesis, la métrica, el anti-scope |
-| [`CONTEXT.md`](CONTEXT.md) | La frontera con Nauta, el skill, el vocabulario de `ui_spec` |
-| [`nauta-dummy/README.md`](nauta-dummy/README.md) | El protocolo, cómo agregar un caso sin tocar Python |
-| [`skill/README.md`](skill/README.md) | Cómo conectar un agente al MCP |
-| [`backend/donald/AI.md`](backend/donald/) | Qué se puede editar del backend generado y qué no |
+| [`PROBLEM.md`](PROBLEM.md) | The operator (Jorge, 52), the thesis, the metric and the anti-scope |
+| [`CONTEXT.md`](CONTEXT.md) | The boundary with Nauta, agent skills and the `ui_spec` vocabulary |
+| [`skill/README.md`](skill/README.md) | How to connect an agent to Donald over MCP |
+| [`skill/nauta-operations/SKILL.md`](skill/nauta-operations/SKILL.md) | The importer world the demo agent can investigate |
+| [`backend/donald/AI.md`](backend/donald/AI.md) | Which generated backend files are editable and which are not |
 
 ---
 
-## Estado
+## Status
 
 ```
-✅  backend + API + MCP desplegados
-✅  simulador: 3 escenarios · 26 tests · duraciones reales · branching
-✅  skill donald-flow
-🔨  frontend conectado a la API en vivo
-❌  el simulador todavía no llama al MCP — habla por su cuenta
+✅  backend + REST API + 15-tool MCP server deployed
+✅  donald-flow + nauta-operations skills
+✅  interactive Next.js + React Flow frontend prototype
+🔨  frontend still runs on in-memory demo data; live API/event-stream wiring is pending
+⚠️  demo has no authentication; artifact byte uploads still need R2 credentials
 ```
 
-**Lo que falta para cerrar el circuito:** que `nauta-dummy` llame las tools del MCP en vez de
-emitir eventos por su lado, y que el frontend consuma `/agent_events?sequence_gt=N`.
-
-Todo lo demás ya corre.
+Agent reporting reaches Donald through MCP. The remaining integration step is for the frontend
+to consume the run event stream instead of its local prototype data.

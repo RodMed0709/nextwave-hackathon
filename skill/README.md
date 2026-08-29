@@ -32,7 +32,7 @@ constructing the agent.
 Nothing else to configure; there are no headers, tokens or scopes.
 
 Verify the connection by asking the agent to list its tools. You should see
-thirteen `donald` tools, starting with `start_run`.
+fifteen `donald` tools, starting with `start_run`.
 
 ## 2. Give the agent the skill
 
@@ -56,6 +56,17 @@ report as it goes rather than in one batch at the end.
 
 If an agent connects but never calls `start_run`, the skill is the missing piece.
 
+## 3. Give the demo agent its operational world
+
+For the Nauta demo, also install `nauta-operations/` beside `donald-flow/`. It
+gives a real general-purpose agent a small, internally consistent importer world:
+suppliers, purchase orders, amendments, invoices, documents, messages and
+shipment OP-4471. The operator can then type any free-form request grounded in
+those records; there is no scenario selector.
+
+`donald-flow` is the reusable reporting contract. `nauta-operations` is demo
+domain knowledge and is not required for agents working in another domain.
+
 ## Checking it worked
 
 While an agent runs, the graph is at `https://donald.todes.mx`.
@@ -78,6 +89,6 @@ the tools before suspecting the server.
 
 - **Artifact file uploads are not functional** until R2 credentials are added to
   the deployed config. `attach_artifact` with a `url` or `text` works fine;
-  uploading file bytes through the storage API returns 503.
+  uploading file bytes through the storage API currently returns HTTP 500.
 - **No authentication.** Anyone who can reach the MCP URL can write runs, and
   every run lands under one demo tenant. Fine for a demo, not for production.
