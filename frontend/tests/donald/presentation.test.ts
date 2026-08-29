@@ -7,6 +7,7 @@ import {
   getInstructionLifecycle,
   getLatestNodeStatus,
   getLatestReplan,
+  getLatestRecalculation,
   getPrimaryMetric,
   getPlanRevealDurationMs,
   getRunRequest,
@@ -191,6 +192,21 @@ test('the latest replan exposes its cause and evidence from the event', () => {
     reason: 'The original Bill of Lading is invalid.',
     triggeredBy: 'reconcile-booking',
     evidenceIds: ['MSG-3312'],
+  })
+})
+
+test('a single mid-run node addition triggers a smaller recalculation notice', () => {
+  const events = [
+    event(1, 'node_added', 'alpha', { label: 'Initial step' }),
+    event(2, 'node_status_changed', 'alpha', { status: 'in_progress' }),
+    event(3, 'node_added', 'delta', { label: 'Validate new document' }),
+  ]
+
+  assert.deepEqual(getLatestRecalculation(events), {
+    key: 'event-3',
+    kind: 'addition',
+    reason: null,
+    evidenceIds: [],
   })
 })
 

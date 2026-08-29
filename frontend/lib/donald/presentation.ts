@@ -40,6 +40,13 @@ export type ReplanNotice = {
   evidenceIds: string[]
 }
 
+export type RecalculationNotice = {
+  key: string
+  kind: 'replan' | 'addition'
+  reason: string | null
+  evidenceIds: string[]
+}
+
 export type InstructionLifecycle = {
   id: string
   instruction: string
@@ -141,6 +148,27 @@ export function getLatestReplan(events: readonly DonaldEvent[]): ReplanNotice | 
     }
   }
   return null
+}
+
+export function getLatestRecalculation(events: readonly DonaldEvent[]): RecalculationNotice | null {
+  const replan = getLatestReplan(events)
+  if (replan) {
+    return {
+      key: replan.key,
+      kind: 'replan',
+      reason: replan.reason,
+      evidenceIds: replan.evidenceIds,
+    }
+  }
+  let workStarted = false
+  let addition: DonaldEvent | null = null
+  for (const event of events) {
+    if (event.event_type === 'node_status_changed' && event.payload.status === 'in_progress') workStarted = true
+    if (workStarted && event.event_type === 'node_added') addition = event
+  }
+  return addition
+    ? { key: addition.idempotency_key, kind: 'addition', reason: null, evidenceIds: [] }
+    : null
 }
 
 export function getInstructionLifecycle(
