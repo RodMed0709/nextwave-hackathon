@@ -11,6 +11,8 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/guregu/null/v6"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/nextwave/donald/core/module/agent_event"
 	agent_event_types "github.com/nextwave/donald/core/module/agent_event/types"
 	agent_event_entity "github.com/nextwave/donald/entity/agent_event"
@@ -50,12 +52,52 @@ type mutation struct {
 // Returning entities here would put a growing payload in front of an LLM on
 // every single progress report.
 type result struct {
-	OK            bool   `json:"ok"`
-	RunKey        string `json:"run_key"`
-	NodeKey       string `json:"node_key,omitempty"`
-	Sequence      int64  `json:"sequence"`
+	OK       bool   `json:"ok"`
+	RunKey   string `json:"run_key"`
+	NodeKey  string `json:"node_key,omitempty"`
+	Sequence int64  `json:"sequence"`
+	// GraphRevision counts STRUCTURAL changes only - nodes and edges added or
+	// removed. Status changes do not move it. Use Sequence as the execution
+	// cursor: it advances on every event, so a client can tell "re-layout the
+	// graph" (revision moved) from "repaint a node" (only sequence moved).
 	GraphRevision int64  `json:"graph_revision"`
 	Note          string `json:"note,omitempty"`
+
+	// PendingInstructions is how many stop/steer requests are waiting for this
+	// agent right now.
+	//
+	// It rides along on every mutation so an agent does not have to poll blind
+	// between steps: zero means carry on, non-zero means call check_instructions.
+	// It is a COUNT rather than the instructions themselves on purpose -
+	// check_instructions is what marks a request delivered, and silently
+	// acknowledging one inside an unrelated call would tell the person who
+	// clicked the button that the agent had seen it when it had not.
+	PendingInstructions int `json:"pending_instructions,omitempty"`
+}
+
+// ack finishes a result by attaching the pending-instruction signal.
+//
+// A failure to count is deliberately swallowed: an agent that just successfully
+// reported progress should not be told its call failed because a secondary
+// lookup did. Worst case the agent polls check_instructions as it always did.
+func (h *Handler) ack(ctx context.Context, r result, runUUID uuid.UUID) (*mcp.CallToolResult, any, error) {
+	if n, err := h.pendingInstructionCount(ctx, runUUID); err == nil && n > 0 {
+		r.PendingInstructions = n
+		if r.Note == "" {
+			r.Note = fmt.Sprintf("%d instruction(s) waiting - call check_instructions", n)
+		}
+	}
+	return jsonResult(r)
+}
+
+// pendingInstructionCount counts undelivered, unexpired interventions. Served by
+// idx_intervention_run_status.
+func (h *Handler) pendingInstructionCount(ctx context.Context, runUUID uuid.UUID) (int, error) {
+	var n int
+	err := h.core.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM `intervention` WHERE `run_uuid` = ? AND `status` = ? AND (`expires_at` IS NULL OR `expires_at` > ?)",
+		runUUID.String(), enums.INTERVENTION_STATUS_REGISTERED, time.Now().UTC()).Scan(&n)
+	return n, err
 }
 
 // commit runs a mutation: it takes the run's sequence lock, applies the snapshot
@@ -86,7 +128,7 @@ func (h *Handler) commit(ctx context.Context, m mutation) (int64, int64, error) 
 
 	tx, err := h.core.DB().BeginTx(ctx, nil)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, retryable(err, "opening the transaction")
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -158,7 +200,7 @@ func (h *Handler) commit(ctx context.Context, m mutation) (int64, int64, error) 
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, 0, err
+		return 0, 0, retryable(err, "committing the graph change")
 	}
 
 	// Nothing is published from here. Subscribers are fed by the Broadcaster

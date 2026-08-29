@@ -38,6 +38,29 @@ Declare all of this in one `declare_actions` call before doing any work. The who
 should be on screen before the first step turns green — that is the moment the audience
 understands what they are looking at.
 
+**Pass `agent_label` on every step** (the Agent column below) — it draws the swimlanes, and
+without it the graph looks like one anonymous worker. **Use `depends_on: [...]` for the
+joins** (steps 6 and 9 and 12 each wait on more than one predecessor); `after` only handles
+a single parent. Declaring the joins properly here is what makes step 6 render as a real
+three-way join instead of a line you patch up afterwards.
+
+```
+declare_actions(run_key="nauta-detention-001", actions=[
+  {node_key: "ingest_carrier_update",      name: "Read carrier schedule update", agent_label: "Nina"},
+  {node_key: "identify_shipments",         name: "Identify affected shipments",  agent_label: "Nina",
+   after: "ingest_carrier_update"},
+  {node_key: "extract_bill_of_lading",     name: "Extract bill of lading",       agent_label: "Theo",
+   after: "identify_shipments"},
+  {node_key: "extract_commercial_invoice", name: "Extract commercial invoice",   agent_label: "Theo",
+   after: "identify_shipments"},
+  {node_key: "extract_packing_list",       name: "Extract packing list",         agent_label: "Theo",
+   after: "identify_shipments"},
+  {node_key: "reconcile_sources",          name: "Reconcile against ERP booking", agent_label: "Theo",
+   depends_on: ["extract_bill_of_lading", "extract_commercial_invoice", "extract_packing_list"]},
+  ... and so on for steps 7-15, with depends_on on 9 and 12
+])
+```
+
 | # | Stage | node_key | Label | Agent | ~sec | Depends on |
 |---|---|---|---|---|---|---|
 | 1 | INGEST | `ingest_carrier_update` | Read carrier schedule update | Nina | 8 | — |

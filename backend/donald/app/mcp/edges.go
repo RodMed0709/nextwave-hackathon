@@ -69,7 +69,7 @@ func (h *Handler) AddDependency(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 
-	return jsonResult(result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev})
+	return h.ack(ctx, result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev}, run.UUID)
 }
 
 // upsertEdge is a no-op when the edge already exists. The schema's unique index

@@ -80,6 +80,20 @@ find yourself thinking "the graph is a bit out of date but I will fix it later",
 fix it now — later usually means never, and the person is watching in the
 meantime.
 
+## Declaring the plan properly
+
+Two fields carry more than they look like they do:
+
+- **`agent_label`** — which agent runs the step ("Nina", "Theo"). This is what
+  draws the swimlanes. Omit it and every step looks like it came from one
+  anonymous worker, which is wrong whenever subagents are involved.
+- **`depends_on: [...]`** — ALL the steps this one waits on. A step with three
+  predecessors is a join and needs all three here. `after: "x"` is shorthand for
+  exactly one. Declaring a join with one parent and adding the rest later leaves
+  the graph briefly lying about its own shape.
+
+Both are optional to the schema and load-bearing to the picture. Fill them in.
+
 ## Two more things that matter
 
 **Invent a node_key per step and never change it.**
@@ -98,7 +112,13 @@ it unfold.
 
 ## Someone may interrupt you
 
-`check_instructions` between steps. It is almost always empty; carry on.
+Every call you make returns **`pending_instructions`**. Zero — the usual case, and
+the field is omitted entirely — means carry on. Non-zero means somebody is waiting
+on you, so call `check_instructions` then. You do not have to poll blindly after
+every step; the signal comes to you.
+
+`check_instructions` is still there for an explicit check, and is worth calling at
+a natural pause such as before a decision or an irreversible action.
 
 If it returns a **stop**, wind up cleanly — `cancel_action` whatever you had
 running, do not start new work, and `finish_run` with `status="cancelled"`. If it
@@ -115,6 +135,17 @@ you heard them.
 upload through the storage API first and pass the resulting URL — do not try to
 push file contents through the tool call.
 
+## When a call fails
+
+Call **`health`** before concluding anything. A transport error looks identical
+whether Donald is down or your run is broken, and `health` is what tells them
+apart. If the database is unreachable, wait and retry the **same** call — every
+mutation carries an idempotency key and will not double-apply.
+
+Do not abandon a run on one failed call. `start_run` with the same `run_key`
+resumes exactly where you left off, and `get_graph` shows you where that is. Do
+not invent new node_keys on reconnect.
+
 ## Never report secrets
 
 Summaries, progress lines and artifact text are displayed on screen and stored.
@@ -128,10 +159,16 @@ start_run(run_key="sess_8f21", name="Reconcile March invoices",
           summary="Pull invoices from the billing API, match against the ledger, flag mismatches")
 
 declare_actions(run_key="sess_8f21", actions=[
-  {node_key: "fetch_invoices",  name: "Fetch invoices"},
-  {node_key: "match_ledger",    name: "Match against ledger", after: "fetch_invoices"},
-  {node_key: "flag_mismatches", name: "Flag mismatches",      after: "match_ledger"},
-  {node_key: "email_summary",   name: "Email summary",        after: "flag_mismatches"},
+  {node_key: "fetch_invoices",  name: "Fetch invoices",       agent_label: "Nina"},
+  {node_key: "fetch_ledger",    name: "Fetch ledger extract", agent_label: "Theo"},
+  # A JOIN: give every predecessor in depends_on. Do NOT declare it with one
+  # parent and patch the rest in later with add_dependency.
+  {node_key: "match_ledger",    name: "Match against ledger", agent_label: "Theo",
+   depends_on: ["fetch_invoices", "fetch_ledger"]},
+  {node_key: "flag_mismatches", name: "Flag mismatches",      agent_label: "Marcus",
+   after: "match_ledger"},
+  {node_key: "email_summary",   name: "Email summary",        agent_label: "Nina",
+   after: "flag_mismatches"},
 ])
 
 start_action(run_key="sess_8f21", node_key="fetch_invoices")

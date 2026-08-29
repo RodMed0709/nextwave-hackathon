@@ -30,6 +30,10 @@ This is the scenario where the graph stops being a progress bar and becomes a co
 
 Steps 6 and 7 run in parallel and join at 8.
 
+**Schema reminder.** Pass `agent_label` on every declared step so the UI can lane it, and
+use `depends_on: [...]` (not `after`) wherever a step waits on more than one predecessor.
+See `nauta_agent_happy_path.md` for a full worked `declare_actions` call.
+
 ## Pacing — how to actually take the time
 
 This server exposes a **`wait`** tool (demo pacing is on). Durations in this brief are not

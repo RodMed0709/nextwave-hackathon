@@ -129,10 +129,10 @@ func (h *Handler) DeclareActions(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, nil, err
 	}
 
-	return jsonResult(result{
+	return h.ack(ctx, result{
 		OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev,
 		Note: fmt.Sprintf("%d actions planned", len(args.Actions)),
-	})
+	}, run.UUID)
 }
 
 // ─────────────────────────────────────────────
@@ -197,7 +197,7 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 		return nil, nil, err
 	}
 
-	return jsonResult(result{OK: true, RunKey: run.RunKey, NodeKey: key, Sequence: seq, GraphRevision: rev})
+	return h.ack(ctx, result{OK: true, RunKey: run.RunKey, NodeKey: key, Sequence: seq, GraphRevision: rev}, run.UUID)
 }
 
 // ─────────────────────────────────────────────
@@ -285,7 +285,7 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, nil, err
 	}
-	return jsonResult(result{OK: true, RunKey: run.RunKey, NodeKey: node.NodeKey, Sequence: seq, GraphRevision: rev})
+	return h.ack(ctx, result{OK: true, RunKey: run.RunKey, NodeKey: node.NodeKey, Sequence: seq, GraphRevision: rev}, run.UUID)
 }
 
 type CompleteActionParams struct {
@@ -563,10 +563,10 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 		return nil, nil, err
 	}
 
-	return jsonResult(result{
+	return h.ack(ctx, result{
 		OK: true, RunKey: run.RunKey, NodeKey: node.NodeKey,
 		Sequence: seq, GraphRevision: rev,
-	})
+	}, run.UUID)
 }
 
 type nodeFields struct {

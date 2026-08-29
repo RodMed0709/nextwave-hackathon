@@ -167,7 +167,7 @@ func (h *Handler) FinishRun(ctx context.Context, req *mcp.CallToolRequest, args 
 	if len(open) > 0 {
 		note = fmt.Sprintf("closed with %d action(s) still open: %s", len(open), strings.Join(open, ", "))
 	}
-	return jsonResult(result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev, Note: note})
+	return h.ack(ctx, result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev, Note: note}, run.UUID)
 }
 
 // openNodes lists the node_keys that have not reached a terminal status, in plan

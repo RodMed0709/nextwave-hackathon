@@ -54,6 +54,10 @@ does this look like at scale?"* and it exercises the DAG harder than anything el
 | 7 | DECIDE | `decide_response` | Decide within policy | Alec | 8 | 6 |
 | 8 | ACT | `act_extend_free_time` | Buy free time | Nina | 16 | 7 |
 
+**Schema reminder.** Pass `agent_label` on every declared step so the UI can lane it, and
+use `depends_on: [...]` (not `after`) wherever a step waits on more than one predecessor.
+See `nauta_agent_happy_path.md` for a full worked `declare_actions` call.
+
 ## Pacing — how to actually take the time
 
 This server exposes a **`wait`** tool (demo pacing is on). Durations in this brief are not

@@ -36,8 +36,22 @@ docker save "$IMAGE" | microk8s ctr image import -
 echo "==> verifying the image is visible to the kubelet"
 # containerd normalises `donald:TAG` to `docker.io/library/donald:TAG`, which is
 # also what the kubelet resolves the chart's `image: donald:TAG` to.
-if ! microk8s ctr images ls -q | grep -qx "docker.io/library/${IMAGE}"; then
-  echo "FAILED: docker.io/library/${IMAGE} is not in containerd"
+# `ctr image import` returns before the image reliably shows up in `images ls`:
+# the import prints "unpacking ...done" and the very next `ls` can still miss it,
+# while an `ls` a second later has it. Observed repeatedly on this box, which is
+# why this retries instead of asserting once — a false failure here aborts a
+# perfectly good deploy.
+found=""
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if microk8s ctr images ls -q | grep -qx "docker.io/library/${IMAGE}"; then
+    found="yes"
+    [ "$attempt" -gt 1 ] && echo "    (visible after ${attempt} attempts)"
+    break
+  fi
+  sleep 1
+done
+if [ -z "$found" ]; then
+  echo "FAILED: docker.io/library/${IMAGE} is not in containerd after 10s"
   microk8s ctr images ls -q | grep donald || true
   exit 1
 fi

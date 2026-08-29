@@ -206,6 +206,12 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	}, h.AttachArtifact)
 
 	addTool(server, logger, &mcp.Tool{
+		Name:        "health",
+		Description: "Check whether Donald itself is reachable and its database is up. Call this when a tool call fails with a transport error, to tell 'Donald is down, retry later' apart from 'my run is broken'. Never abandon a run on a single failed call without checking here first.",
+		Annotations: readOnly,
+	}, h.Health)
+
+	addTool(server, logger, &mcp.Tool{
 		Name:        "get_graph",
 		Description: "List the steps in this run with their keys and statuses. Use it if you have lost track of the node_keys you invented earlier.",
 		Annotations: readOnly,

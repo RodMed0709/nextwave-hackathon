@@ -25,7 +25,7 @@ func TestToolSurface(t *testing.T) {
 		"start_run", "declare_actions", "add_action", "add_dependency",
 		"start_action", "report_progress", "complete_action", "fail_action",
 		"skip_action", "cancel_action", "block_action", "check_instructions", "resolve_instruction",
-		"attach_artifact", "get_graph", "finish_run",
+		"attach_artifact", "get_graph", "finish_run", "health",
 	}
 	if len(registered) != len(want) {
 		t.Fatalf("registered %d tools, want %d", len(registered), len(want))
@@ -180,7 +180,7 @@ var documentedTools = []string{
 	"start_action", "report_progress",
 	"complete_action", "fail_action", "skip_action", "cancel_action", "block_action",
 	"check_instructions", "resolve_instruction",
-	"attach_artifact", "get_graph",
+	"attach_artifact", "get_graph", "health",
 }
 
 func TestEveryDocumentedToolIsRegistered(t *testing.T) {

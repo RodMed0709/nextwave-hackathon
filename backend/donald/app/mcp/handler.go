@@ -91,7 +91,7 @@ func (h *Handler) resolveRun(ctx context.Context, runKey string) (agent_run_enti
 			Limit:      1,
 		}, agent_run.WithSkipCache())
 	if err != nil {
-		return agent_run_entity.AgentRun{}, err
+		return agent_run_entity.AgentRun{}, retryable(err, "looking up the run")
 	}
 	if len(res.Results) == 0 {
 		return agent_run_entity.AgentRun{}, fmt.Errorf(
@@ -115,7 +115,7 @@ func (h *Handler) resolveNode(ctx context.Context, runUUID uuid.UUID, nodeKey st
 			Limit:   1,
 		}, agent_node.WithSkipCache())
 	if err != nil {
-		return agent_node_entity.AgentNode{}, err
+		return agent_node_entity.AgentNode{}, retryable(err, "looking up the action")
 	}
 	if len(res.Results) == 0 {
 		return agent_node_entity.AgentNode{}, fmt.Errorf(

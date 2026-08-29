@@ -101,5 +101,5 @@ func (h *Handler) AttachArtifact(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, nil, err
 	}
 
-	return jsonResult(result{OK: true, RunKey: run.RunKey, NodeKey: nodeKey, Sequence: seq, GraphRevision: rev})
+	return h.ack(ctx, result{OK: true, RunKey: run.RunKey, NodeKey: nodeKey, Sequence: seq, GraphRevision: rev}, run.UUID)
 }

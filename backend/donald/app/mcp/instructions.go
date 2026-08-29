@@ -55,6 +55,21 @@ moment it stops matching what you are doing:
 Every step ends in exactly one of complete / fail / cancel / skip / block, or is
 still running.
 
+## You do not need to poll blindly
+
+Every mutation you make comes back with **pending_instructions**. Zero (the usual
+case, and the field is omitted) means carry on. Non-zero means somebody is waiting
+on you — call **check_instructions** then.
+
+## If a call fails
+
+Call **health**. It tells you whether Donald is down or your run is broken, which
+a transport error cannot. If it says the database is unreachable, wait and retry
+the SAME call — every mutation carries an idempotency key and will not
+double-apply. Do NOT abandon a run on one failed call, and do not invent new
+node_keys on reconnect: **start_run** with the same run_key resumes exactly where
+you left off.
+
 ## Someone may ask you to stop
 
 **check_instructions** is normally empty; carry on. If it returns a stop or a
