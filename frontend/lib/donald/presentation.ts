@@ -1,4 +1,4 @@
-import type { DonaldEvent, RunNode } from './types'
+import type { DonaldEvent, NodeSummary, RunNode, RunState } from './types'
 
 export const NODE_STAGGER_MS = 120
 export const EDGE_LAND_DELAY_MS = 340
@@ -25,6 +25,31 @@ export type LiveNodeStatus = {
   text: string
 }
 
+export type DisplayMetric = {
+  key: string
+  label: string
+  value: string
+  severity: 1 | 2 | 3
+}
+
+export type ReplanNotice = {
+  key: string
+  revision: number
+  reason: string
+  triggeredBy: string | null
+  evidenceIds: string[]
+}
+
+export type InstructionLifecycle = {
+  id: string
+  instruction: string
+  optionId: string | null
+  status: 'queued' | 'delivered' | 'resolved'
+  queuedAt: string
+  deliveredAt: string | null
+  resolvedAt: string | null
+}
+
 export function keepStillRemovedKeys(
   hiddenKeys: Set<string>,
   removedKeys: Iterable<string>,
@@ -49,6 +74,105 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function titleFromKey(key: string): string {
+  const cleaned = key
+    .replace(/_usd$/i, '')
+    .replace(/_days?$/i, '')
+    .replaceAll('_', ' ')
+    .trim()
+  return cleaned ? cleaned[0].toUpperCase() + cleaned.slice(1) : 'Metric'
+}
+
+function metricSeverity(key: string): 1 | 2 | 3 {
+  if (/(?:cost|price|amount|usd)/i.test(key)) return 3
+  if (/(?:day|delay|duration|lead_time|eta)/i.test(key)) return 2
+  return 1
+}
+
+function metricValue(key: string, value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number' && /(?:cost|price|amount|usd)/i.test(key)) {
+    return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)} USD`
+  }
+  if (typeof value === 'number' && /days?/i.test(key)) return `${value} ${value === 1 ? 'day' : 'days'}`
+  return typeof value === 'number' ? new Intl.NumberFormat('en-US').format(value) : value
+}
+
+export function metricRows(metrics: NodeSummary['metrics']): DisplayMetric[] {
+  return Object.entries(metrics)
+    .map(([key, value]) => ({
+      key,
+      label: titleFromKey(key),
+      value: metricValue(key, value),
+      severity: metricSeverity(key),
+    }))
+    .sort((left, right) => right.severity - left.severity || left.label.localeCompare(right.label))
+}
+
+export function getPrimaryMetric(metrics: NodeSummary['metrics']): DisplayMetric | null {
+  return metricRows(metrics)[0] ?? null
+}
+
+export function getRunRequest(run: RunState['run']): string {
+  return stringValue(run.name) ?? stringValue(run.plan_summary) ?? run.key
+}
+
+export function getLatestReplan(events: readonly DonaldEvent[]): ReplanNotice | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.event_type !== 'run_updated') continue
+    const revision = numberValue(event.payload.graph_revision)
+    const reason = stringValue(event.payload.reason)
+    if (revision === null || !reason) continue
+    return {
+      key: event.idempotency_key,
+      revision,
+      reason,
+      triggeredBy: stringValue(event.payload.triggered_by),
+      evidenceIds: Array.isArray(event.payload.evidence)
+        ? event.payload.evidence.filter((value): value is string => typeof value === 'string')
+        : [],
+    }
+  }
+  return null
+}
+
+export function getInstructionLifecycle(
+  events: readonly DonaldEvent[],
+  nodeKey: string,
+): InstructionLifecycle | null {
+  let queuedEvent: DonaldEvent | null = null
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.node_key === nodeKey && event.event_type === 'operator_instruction_queued') {
+      queuedEvent = event
+      break
+    }
+  }
+  if (!queuedEvent) return null
+  const id = stringValue(queuedEvent.payload.instruction_id) ?? queuedEvent.idempotency_key
+  const later = events.filter((event) =>
+    event.node_key === nodeKey &&
+    event.sequence >= queuedEvent.sequence &&
+    stringValue(event.payload.instruction_id) === id,
+  )
+  const delivered = later.find((event) => event.event_type === 'operator_instruction_delivered') ?? null
+  const resolved = later.find((event) => event.event_type === 'operator_instruction_resolved') ?? null
+  return {
+    id,
+    instruction: stringValue(queuedEvent.payload.instruction) ?? 'Operator instruction',
+    optionId: stringValue(queuedEvent.payload.option_id),
+    status: resolved ? 'resolved' : delivered ? 'delivered' : 'queued',
+    queuedAt: queuedEvent.occurred_at,
+    deliveredAt: delivered?.occurred_at ?? null,
+    resolvedAt: resolved?.occurred_at ?? null,
+  }
 }
 
 export function getPlanRevealDurationMs(event: DonaldEvent): number {
