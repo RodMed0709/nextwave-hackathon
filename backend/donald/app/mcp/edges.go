@@ -60,6 +60,14 @@ func (h *Handler) AddDependency(ctx context.Context, req *mcp.CallToolRequest, a
 		structural:     true,
 		payload: payload_entity.AgentEventPayload{
 			Message: nullString(fmt.Sprintf("%s -> %s", from.NodeKey, to.NodeKey)),
+			// Endpoints by key, so a client can draw the edge from the event
+			// alone. The stored payload has no columns for these, and detail is
+			// exactly the "type-specific extras" escape hatch it documents.
+			Detail: detailJSON(map[string]string{
+				"edge_key":        from.NodeKey + "->" + to.NodeKey,
+				"source_node_key": from.NodeKey,
+				"target_node_key": to.NodeKey,
+			}),
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			return h.upsertEdge(ctx, tx, run.UUID, from.UUID, to.UUID, edgeType, args.Condition)
