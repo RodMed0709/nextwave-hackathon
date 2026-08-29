@@ -9,7 +9,9 @@ import (
 	"github.com/gofrs/uuid"
 	"go.uber.org/zap"
 
-	payload_entity "github.com/nextwave/donald/entity/agent_event_payload"
+	"github.com/guregu/null/v6"
+
+	"github.com/nextwave/donald/enums"
 )
 
 // pollInterval is how often a watched run is checked for new events. It is the
@@ -22,12 +24,79 @@ const pollInterval = 400 * time.Millisecond
 // already loaded, so re-sending whole nodes would waste the bandwidth the
 // sequence design exists to save.
 type Delta struct {
-	Sequence      int64                            `json:"sequence"`
-	GraphRevision int64                            `json:"graph_revision"`
-	EventType     string                           `json:"event_type"`
-	NodeUUID      *uuid.UUID                       `json:"node_uuid,omitempty"`
-	Payload       payload_entity.AgentEventPayload `json:"payload"`
-	OccurredAt    time.Time                        `json:"occurred_at"`
+	Sequence      int64      `json:"sequence"`
+	GraphRevision int64      `json:"graph_revision"`
+	EventType     string     `json:"event_type"`
+	NodeUUID      *uuid.UUID `json:"node_uuid,omitempty"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+
+	// The three fields below are what a client needs to apply a delta without
+	// holding its own uuid lookup table. They are derived at read time from the
+	// row's joins, not stored twice.
+	//
+	// node_key rather than only node_uuid because every other part of this
+	// protocol addresses a node by its key — the agent invents it, the tools take
+	// it, the graph is keyed on it — so forcing the one consumer that reads
+	// events to resolve uuids was a gap, not a design.
+	NodeKey        string `json:"node_key,omitempty"`
+	AgentLabel     string `json:"agent_label,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+
+	Payload deltaPayload `json:"payload"`
+}
+
+// deltaPayload is the wire form of an event payload: the stored fields plus
+// everything a client would otherwise have to fetch separately to render the
+// change.
+//
+// It is strictly ADDITIVE over the stored payload — nothing is renamed and no
+// existing field changes type. previous_status and new_status keep their numeric
+// form; `status` is a new string mirror of new_status, because a client applying
+// a status change wants the name, and a number that silently shifts if the enum
+// is reordered is a poor contract to hand out.
+type deltaPayload struct {
+	PreviousStatus   enums.AgentNodeStatus `json:"previous_status,omitempty"`
+	NewStatus        enums.AgentNodeStatus `json:"new_status,omitempty"`
+	Message          null.String           `json:"message,omitempty"`
+	ProgressPercent  null.Int64            `json:"progress_percent,omitempty"`
+	EdgeUUID         *uuid.UUID            `json:"edge_uuid,omitempty"`
+	ArtifactUUID     *uuid.UUID            `json:"artifact_uuid,omitempty"`
+	InterventionUUID *uuid.UUID            `json:"intervention_uuid,omitempty"`
+	Detail           null.String           `json:"detail,omitempty"`
+
+	// Status is new_status by name. This is the field a client should read.
+	Status string `json:"status,omitempty"`
+
+	// Node facts, so node_added and node_status_changed carry enough to build or
+	// update the node without a second request.
+	Label         string      `json:"label,omitempty"`
+	Planned       *bool       `json:"planned,omitempty"`
+	PlanOrder     null.Int64  `json:"plan_order,omitempty"`
+	StartedAt     null.Time   `json:"started_at,omitempty"`
+	FinishedAt    null.Time   `json:"finished_at,omitempty"`
+	InputSummary  null.String `json:"input_summary,omitempty"`
+	OutputSummary null.String `json:"summary,omitempty"`
+	ActualSeconds *int64      `json:"actual_seconds,omitempty"`
+
+	// Edge endpoints by key. Without these an edge event names two uuids and a
+	// client cannot draw the edge at all.
+	EdgeKey       string `json:"edge_key,omitempty"`
+	SourceNodeKey string `json:"source_node_key,omitempty"`
+	TargetNodeKey string `json:"target_node_key,omitempty"`
+
+	// Intervention facts for the stop/steer events.
+	Type   string `json:"type,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
+
+	// Plan is the whole declared plan, present on plan_declared only.
+	Plan *planWire `json:"plan,omitempty"`
+}
+
+// planWire is the declared plan as a client receives it. Edges are included
+// because a plan's dependencies produce no edge_added events of their own.
+type planWire struct {
+	Steps []map[string]any    `json:"steps"`
+	Edges []map[string]string `json:"edges"`
 }
 
 // Broadcaster fans graph deltas out to the browsers watching a run.

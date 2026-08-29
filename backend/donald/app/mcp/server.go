@@ -81,6 +81,9 @@ func Register(r chi.Router, coreImpl *core.Implementation, logger *zap.Logger) {
 
 	if role == RoleAPI || role == RoleAll {
 		r.Get("/v1/runs/{run_key}/stream", handler.streamHandler)
+		// Purpose-built endpoints for the web app; see web_api.go for why the
+		// generated CRUD is not enough on its own.
+		handler.registerWebAPI(r)
 	}
 
 	logger.Info("donald custom routes mounted",

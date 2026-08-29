@@ -77,8 +77,13 @@ func (h *Handler) DeclareActions(ctx context.Context, req *mcp.CallToolRequest, 
 		eventType:      enums.AGENT_EVENT_TYPE_PLAN_DECLARED,
 		idempotencyKey: "plan_declared:" + run.RunKey,
 		structural:     true,
+		// The plan travels IN the event. Edges created here get no edge_added of
+		// their own — they are part of one atomic plan declaration — so without
+		// this a client replaying the log would see the nodes appear with no
+		// shape connecting them.
 		payload: payload_entity.AgentEventPayload{
 			Message: nullString(fmt.Sprintf("declared %d planned actions", len(args.Actions))),
+			Detail:  detailJSON(planDetail(args.Actions)),
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			keyToUUID := map[string]uuid.UUID{}
@@ -567,6 +572,31 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 		OK: true, RunKey: run.RunKey, NodeKey: node.NodeKey,
 		Sequence: seq, GraphRevision: rev,
 	}, run.UUID)
+}
+
+// planDetail is the declared plan in the shape a client needs to build the graph
+// in one go: every step with the facts that render it, and every dependency as
+// an explicit edge.
+func planDetail(actions []PlannedAction) map[string]any {
+	steps := make([]map[string]any, 0, len(actions))
+	edges := make([]map[string]string, 0)
+	for i, a := range actions {
+		steps = append(steps, map[string]any{
+			"node_key":    strings.TrimSpace(a.NodeKey),
+			"label":       a.Name,
+			"agent_label": a.AgentLabel,
+			"planned":     true,
+			"plan_order":  i + 1,
+		})
+		for _, pred := range a.predecessors() {
+			edges = append(edges, map[string]string{
+				"edge_key":        pred + "->" + strings.TrimSpace(a.NodeKey),
+				"source_node_key": pred,
+				"target_node_key": strings.TrimSpace(a.NodeKey),
+			})
+		}
+	}
+	return map[string]any{"steps": steps, "edges": edges}
 }
 
 type nodeFields struct {
