@@ -33,6 +33,7 @@ import {
   getLatestNodeStatus,
   getPlanRevealDurationMs,
   getVisiblyActiveNodeKey,
+  keepStillRemovedKeys,
   type LiveNodeStatus,
   type NodePresentation,
 } from '@/lib/donald/presentation'
@@ -371,6 +372,13 @@ export default function Page() {
   }, [])
 
   useEffect(() => {
+    const removedKeys = Object.values(state.nodes)
+      .filter((node) => node.removed)
+      .map((node) => node.node_key)
+    setHiddenRemoved((current) => keepStillRemovedKeys(current, removedKeys))
+  }, [state.nodes])
+
+  useEffect(() => {
     const timers = Object.values(state.nodes)
       .filter((node) => node.removed && !hiddenRemoved.has(node.node_key))
       .map((node) => window.setTimeout(() => {
@@ -378,6 +386,15 @@ export default function Page() {
       }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 520))
     return () => timers.forEach(window.clearTimeout)
   }, [hiddenRemoved, state.nodes])
+
+  useEffect(() => {
+    const removedKeys = Object.values(state.edges)
+      .filter((edge) => edge.status === 'removed' ||
+        state.nodes[edge.source_node_key]?.removed ||
+        state.nodes[edge.target_node_key]?.removed)
+      .map((edge) => edge.edge_key)
+    setHiddenRemovedEdges((current) => keepStillRemovedKeys(current, removedKeys))
+  }, [state.edges, state.nodes])
 
   useEffect(() => {
     const timers = Object.values(state.edges)
@@ -435,9 +452,7 @@ export default function Page() {
     height: NODE_HEIGHT,
     data: {
       runtimeNode: node,
-      displayStatus: displayStatus(
-        node.status === 'in_progress' && node.node_key !== visiblyActiveKey ? 'not_started' : node.status,
-      ),
+      displayStatus: displayStatus(planRevealing && node.status === 'in_progress' ? 'not_started' : node.status),
       capability: capabilityFor(node),
       nextTask: nextTaskFor(node.node_key, state.nodes, state.edges),
       selected: selectedKey === node.node_key,

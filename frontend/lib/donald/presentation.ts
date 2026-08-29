@@ -25,6 +25,15 @@ export type LiveNodeStatus = {
   text: string
 }
 
+export function keepStillRemovedKeys(
+  hiddenKeys: Set<string>,
+  removedKeys: Iterable<string>,
+): Set<string> {
+  const removed = new Set(removedKeys)
+  if ([...hiddenKeys].every((key) => removed.has(key))) return hiddenKeys
+  return new Set([...hiddenKeys].filter((key) => removed.has(key)))
+}
+
 const STRUCTURAL_EVENT_TYPES = new Set([
   'node_added',
   'node_removed',
@@ -141,7 +150,11 @@ export function getLatestNodeStatus(
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event.node_key !== node.node_key) continue
-    if (event.event_type !== 'node_updated' && event.event_type !== 'node_status_changed') continue
+    if (
+      event.event_type !== 'node_updated' &&
+      event.event_type !== 'node_status_changed' &&
+      event.event_type !== 'agent_message'
+    ) continue
 
     const text = stringValue(event.payload.status_message) ??
       stringValue(event.payload.message) ??

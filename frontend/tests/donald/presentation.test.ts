@@ -7,6 +7,7 @@ import {
   getLatestNodeStatus,
   getPlanRevealDurationMs,
   getVisiblyActiveNodeKey,
+  keepStillRemovedKeys,
 } from '../../lib/donald/presentation'
 import type { DonaldEvent, RunNode } from '../../lib/donald/types'
 
@@ -122,4 +123,24 @@ test('live status prefers event copy and otherwise narrates progress without a p
     key: 'event-4',
     text: 'Reconciling against booking BK-3341',
   })
+})
+
+test('live status surfaces the latest node-scoped agent message', () => {
+  const activeNode = node('reconcile-booking', 'in_progress', 1)
+  const events = [
+    event(1, 'node_updated', activeNode.node_key, { progress_percent: 60 }),
+    event(2, 'agent_message', activeNode.node_key, { message: 'Theo is taking longer than expected.' }),
+  ]
+
+  assert.deepEqual(getLatestNodeStatus(activeNode, events), {
+    key: 'event-2',
+    text: 'Theo is taking longer than expected.',
+  })
+})
+
+test('hidden presentation keys are released when an element is re-added', () => {
+  const hidden = new Set(['still-removed', 're-added'])
+
+  assert.deepEqual(keepStillRemovedKeys(hidden, ['still-removed']), new Set(['still-removed']))
+  assert.equal(keepStillRemovedKeys(hidden, ['still-removed', 're-added']), hidden)
 })

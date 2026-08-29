@@ -407,7 +407,7 @@ code,.mono { font-family:monospace; font-size:11px; }
   .flow-node-shell.born,
   .flow-node-shell.discovered::before,
   .flow-node-shell.discovered::after { animation-delay:0ms!important; }
-  .react-flow__node,.flow-card { transition-duration:.001ms!important; }
+  .react-flow__node,.flow-card,.runtime-edge { transition-duration:.001ms!important; }
 }
 
 @media (max-width:900px){.header{padding:0 16px}.run-meta>div:nth-child(-n+2){display:none}.toolbar{padding:0 16px}.crumb{font-size:9px}.controls .text-btn{display:none}.workspace{grid-template-columns:1fr}.inspector{min-height:420px}.canvas-panel{min-height:520px;border-right:0;border-bottom:1px solid #24476c}.flow-wrap{height:520px}}
