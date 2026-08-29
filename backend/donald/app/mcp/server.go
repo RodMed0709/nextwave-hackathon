@@ -128,6 +128,12 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	}, h.DeclareActions)
 
 	addTool(server, logger, &mcp.Tool{
+		Name:        "finish_run",
+		Description: "Close the run: succeeded, failed or cancelled. Always call this, especially when things went badly - a run nobody finishes is indistinguishable from an agent that crashed. Finishing as succeeded is refused while any action is still open, and the error names them.",
+		Annotations: idempotent,
+	}, h.FinishRun)
+
+	addTool(server, logger, &mcp.Tool{
 		Name:        "add_action",
 		Description: "Add one step that was not in the declared plan. Use this whenever you discover work mid-run.",
 		Annotations: idempotent,

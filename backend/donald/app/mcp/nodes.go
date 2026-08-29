@@ -26,10 +26,34 @@ import (
 // this is the only bulk call in the surface, and every field multiplies by the
 // number of steps the agent is declaring.
 type PlannedAction struct {
-	NodeKey     string `json:"node_key" jsonschema:"Stable slug for this action, unique in the run - lower_snake_case, e.g. fetch_invoices. Reuse it in every later call about this action."`
-	Name        string `json:"name" jsonschema:"Short label shown on the node"`
-	Description string `json:"description,omitempty" jsonschema:"Optional one-line description of what the step does"`
-	After       string `json:"after,omitempty" jsonschema:"node_key of the step this one depends on. Omit for a first step. Use add_dependency for anything with more than one predecessor."`
+	NodeKey     string   `json:"node_key" jsonschema:"Stable slug for this action, unique in the run - lower_snake_case, e.g. fetch_invoices. Reuse it in every later call about this action."`
+	Name        string   `json:"name" jsonschema:"Short label shown on the node"`
+	Description string   `json:"description,omitempty" jsonschema:"Optional one-line description of what the step does"`
+	AgentLabel  string   `json:"agent_label,omitempty" jsonschema:"Which agent or subagent runs this step, e.g. 'Nina'. Drawn as a lane, so pass it here rather than describing it in text."`
+	ActionType  string   `json:"action_type,omitempty" jsonschema:"One of: plan_step, tool_call, reasoning, decision, user_interaction, subagent_call, external_call, other"`
+	DependsOn   []string `json:"depends_on,omitempty" jsonschema:"node_keys this step waits on. Give ALL of them - a step with three predecessors is a join and needs all three here. May name steps declared later in this same list."`
+	After       string   `json:"after,omitempty" jsonschema:"Single-predecessor shorthand for depends_on. Use depends_on when there is more than one."`
+}
+
+// predecessors merges the two ways a plan step can state its dependencies.
+//
+// depends_on exists because `after` could only express one, which forced an
+// agent declaring a join to follow up with add_dependency calls — contradicting
+// the instruction to declare the whole graph in one go. `after` is kept as the
+// single-parent shorthand because most steps have exactly one and a bare string
+// reads better than a one-element list.
+func (a PlannedAction) predecessors() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range append(append([]string{}, a.DependsOn...), a.After) {
+		k = strings.TrimSpace(k)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+	}
+	return out
 }
 
 type DeclareActionsParams struct {
@@ -70,6 +94,8 @@ func (h *Handler) DeclareActions(ctx context.Context, req *mcp.CallToolRequest, 
 				id, err := h.upsertNode(ctx, tx, run.UUID, key, nodeFields{
 					Name:        a.Name,
 					Description: a.Description,
+					AgentLabel:  a.AgentLabel,
+					NodeType:    enums.AgentNodeTypeFromString(a.ActionType),
 					Planned:     true,
 					PlanOrder:   &order,
 				})
@@ -78,23 +104,22 @@ func (h *Handler) DeclareActions(ctx context.Context, req *mcp.CallToolRequest, 
 				}
 				keyToUUID[key] = id
 			}
-			// Edges are created after every node exists, so an "after" may name a
+			// Edges are created after every node exists, so a dependency may name a
 			// step declared later in the list.
 			for i, a := range args.Actions {
-				if strings.TrimSpace(a.After) == "" {
-					continue
-				}
-				from, ok := keyToUUID[a.After]
-				if !ok {
-					resolved, err := h.resolveNode(ctx, run.UUID, a.After)
-					if err != nil {
-						return fmt.Errorf("actions[%d].after names %q, which is not in this plan or the run: %w", i, a.After, err)
+				for _, pred := range a.predecessors() {
+					from, ok := keyToUUID[pred]
+					if !ok {
+						resolved, err := h.resolveNode(ctx, run.UUID, pred)
+						if err != nil {
+							return fmt.Errorf("actions[%d] (%s) depends on %q, which is not in this plan or the run: %w", i, a.NodeKey, pred, err)
+						}
+						from = resolved.UUID
 					}
-					from = resolved.UUID
-				}
-				if err := h.upsertEdge(ctx, tx, run.UUID, from, keyToUUID[a.NodeKey],
-					enums.AGENT_EDGE_TYPE_DEPENDENCY, ""); err != nil {
-					return err
+					if err := h.upsertEdge(ctx, tx, run.UUID, from, keyToUUID[a.NodeKey],
+						enums.AGENT_EDGE_TYPE_DEPENDENCY, ""); err != nil {
+						return err
+					}
 				}
 			}
 			return nil

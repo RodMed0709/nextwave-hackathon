@@ -25,7 +25,7 @@ func TestToolSurface(t *testing.T) {
 		"start_run", "declare_actions", "add_action", "add_dependency",
 		"start_action", "report_progress", "complete_action", "fail_action",
 		"skip_action", "cancel_action", "block_action", "check_instructions", "resolve_instruction",
-		"attach_artifact", "get_graph",
+		"attach_artifact", "get_graph", "finish_run",
 	}
 	if len(registered) != len(want) {
 		t.Fatalf("registered %d tools, want %d", len(registered), len(want))
@@ -161,6 +161,50 @@ func TestDemoPacingDefaultsOnAndCanBeDisabled(t *testing.T) {
 		}
 		if !strings.Contains(serverInstructions(), "Pace yourself") {
 			t.Errorf("DONALD_DEMO_PACING=%q did not add the pacing instructions", on)
+		}
+	}
+}
+
+// documentedTools is the contract as the skill and the Nauta briefs state it —
+// every tool an agent is told to call.
+//
+// It is written from the DOCUMENTATION, deliberately, not from the registration
+// code. That distinction is the whole point of this test: finish_run shipped
+// implemented, documented and unregistered, and the existing surface test did
+// not catch it because its expected list had been copied from the same
+// registration block that was missing the tool. A test that reads the code it is
+// testing agrees with the code's bugs.
+var documentedTools = []string{
+	"start_run", "declare_actions", "finish_run",
+	"add_action", "add_dependency",
+	"start_action", "report_progress",
+	"complete_action", "fail_action", "skip_action", "cancel_action", "block_action",
+	"check_instructions", "resolve_instruction",
+	"attach_artifact", "get_graph",
+}
+
+func TestEveryDocumentedToolIsRegistered(t *testing.T) {
+	t.Setenv("DONALD_DEMO_PACING", "false")
+	newServer(NewHandler(nil, nil, zap.NewNop()), zap.NewNop())
+
+	got := map[string]bool{}
+	for _, tool := range registered {
+		got[tool.Name] = true
+	}
+	for _, name := range documentedTools {
+		if !got[name] {
+			t.Errorf("tool %q is documented for agents but NOT registered — agents will be told to call a tool that does not exist", name)
+		}
+	}
+	// The reverse: a registered tool nobody documented is dead weight in every
+	// agent's context.
+	documented := map[string]bool{}
+	for _, n := range documentedTools {
+		documented[n] = true
+	}
+	for _, tool := range registered {
+		if !documented[tool.Name] {
+			t.Errorf("tool %q is registered but not in the documented contract — document it or remove it", tool.Name)
 		}
 	}
 }

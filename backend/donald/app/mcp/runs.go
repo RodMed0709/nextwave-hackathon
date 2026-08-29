@@ -127,6 +127,22 @@ func (h *Handler) FinishRun(ctx context.Context, req *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("status must be one of succeeded, failed, cancelled (got %q)", args.Status)
 	}
 
+	// Refuse to close a run that still has work open, and say exactly which.
+	//
+	// A run marked succeeded while three nodes sit at not_started is a graph that
+	// lies, and it lies in the direction that matters: it claims work happened.
+	// Returning the offending keys makes the fix mechanical - skip them, cancel
+	// them, or finish them - rather than a puzzle.
+	open, err := h.openNodes(ctx, run.UUID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(open) > 0 && status == enums.AGENT_RUN_STATUS_SUCCEEDED {
+		return nil, nil, fmt.Errorf(
+			"cannot finish as succeeded: %d action(s) still open — %s. Resolve each one first (complete_action, fail_action, skip_action or cancel_action), or finish with status=\"failed\" or \"cancelled\" if the run really ended this way",
+			len(open), strings.Join(open, ", "))
+	}
+
 	now := time.Now().UTC()
 	seq, rev, err := h.commit(ctx, mutation{
 		runUUID:        run.UUID,
@@ -147,5 +163,34 @@ func (h *Handler) FinishRun(ctx context.Context, req *mcp.CallToolRequest, args 
 		return nil, nil, err
 	}
 
-	return jsonResult(result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev})
+	note := ""
+	if len(open) > 0 {
+		note = fmt.Sprintf("closed with %d action(s) still open: %s", len(open), strings.Join(open, ", "))
+	}
+	return jsonResult(result{OK: true, RunKey: run.RunKey, Sequence: seq, GraphRevision: rev, Note: note})
+}
+
+// openNodes lists the node_keys that have not reached a terminal status, in plan
+// order so the message reads like the plan.
+func (h *Handler) openNodes(ctx context.Context, runUUID uuid.UUID) ([]string, error) {
+	rows, err := h.core.DB().QueryContext(ctx,
+		"SELECT `node_key` FROM `agent_node` WHERE `run_uuid` = ? AND `status` IN (?, ?, ?, ?, ?) ORDER BY COALESCE(`plan_order`, 2147483647), `created_at`",
+		runUUID.String(),
+		enums.AGENT_NODE_STATUS_NOT_STARTED, enums.AGENT_NODE_STATUS_IN_PROGRESS,
+		enums.AGENT_NODE_STATUS_BLOCKED_ON_USER_DECISION, enums.AGENT_NODE_STATUS_BLOCKED_ON_MISSING_DATA,
+		enums.AGENT_NODE_STATUS_BLOCKED_ON_PROVIDER_OUTAGE)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }
