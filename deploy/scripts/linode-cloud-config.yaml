@@ -1,0 +1,25 @@
+#cloud-config
+disable_root: false
+ssh_pwauth: false
+users:
+  - name: root
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAqbS217KdGN2Gj5cJe38b852nlYDDLa1Gv44MLjbOll
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-donald.conf
+    permissions: '0644'
+    content: |
+      Port 22
+      Port 2222
+      PermitRootLogin prohibit-password
+      PasswordAuthentication no
+package_update: true
+runcmd:
+  - [ bash, -lc, "systemctl disable --now ssh.socket || true" ]
+  - [ bash, -lc, "systemctl unmask ssh.service || true" ]
+  - [ bash, -lc, "systemctl enable --now ssh.service" ]
+  - [ bash, -lc, "systemctl restart ssh.service" ]
+  - [ bash, -lc, "snap install microk8s --classic --channel=1.31/stable >/var/log/microk8s-install.log 2>&1" ]
+  - [ bash, -lc, "microk8s status --wait-ready --timeout 300 >>/var/log/microk8s-install.log 2>&1" ]
+  - [ bash, -lc, "touch /root/CLOUD_INIT_DONE" ]

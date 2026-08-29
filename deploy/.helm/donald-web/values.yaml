@@ -1,0 +1,78 @@
+# Default values for donald-web.
+#
+# The React frontend does not exist yet. This chart reserves donald.todes.mx, its
+# Service name and its TLS certificate so that shipping the real app later is a
+# values change — image.repository/tag plus `placeholder.enabled: false` — with
+# no ingress or certificate churn.
+
+replicaCount: 1
+
+image:
+  # nginx-unprivileged listens on 8080 and needs no root. Replace with the real
+  # frontend image (built on the box and imported into microk8s, same as donald).
+  repository: nginxinc/nginx-unprivileged
+  pullPolicy: IfNotPresent
+  tag: "1.27-alpine"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+# Set enabled: false once a real frontend image is in place — it drops the
+# ConfigMap and its volume mount.
+placeholder:
+  enabled: true
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: lets-encrypt
+  hosts:
+    - host: donald.todes.mx
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: donald-web-tls
+      hosts:
+        - donald.todes.mx
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 64Mi
+  requests:
+    cpu: 10m
+    memory: 16Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: []
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

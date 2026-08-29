@@ -1,0 +1,9 @@
+apiVersion: v2
+name: donald-mysql
+description: in-cluster MySQL for donald
+
+type: application
+
+version: 0.0.1
+
+appVersion: "8.4"

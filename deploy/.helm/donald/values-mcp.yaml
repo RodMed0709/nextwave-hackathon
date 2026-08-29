@@ -1,0 +1,51 @@
+# Release donald-mcp — serves mcp.donald.todes.mx; the MCP endpoint is /v1/mcp.
+#
+#   helm upgrade --install donald-mcp .helm/donald \
+#     -n donald -f .helm/donald/values-mcp.yaml --set image.tag=<tag>
+#
+# Same image as donald-api; only DONALD_ROLE differs. See values.yaml.
+
+image:
+  env:
+    - name: CONFIG
+      value: "/root/config,/root/hostconfig/nuzur/donald"
+    - name: DONALD_ROLE
+      value: "mcp"
+    # Optional: point agent-reported runs at a real client row instead of the
+    # built-in demo tenant, which app/mcp/handler.go creates on demand.
+    # - name: DONALD_CLIENT_UUID
+    #   value: "00000000-0000-4000-8000-00000000c11e"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: lets-encrypt
+    # MCP's transport is Streamable HTTP: after initialize the client holds a
+    # long-lived SSE stream that can idle for minutes while the model works.
+    # Same three settings as the api host, for the same reason.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  hosts:
+    # Routing "/" rather than only /v1/mcp keeps the generated CRUD reachable on
+    # this host too, which is what makes the readiness probe and a manual smoke
+    # test meaningful against this deployment.
+    - host: mcp.donald.todes.mx
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: donald-mcp-tls
+      hosts:
+        - mcp.donald.todes.mx
+
+# The bursty, unpredictable side. Isolating it is the whole point of the split,
+# so it gets the larger budget of the two.
+resources:
+  limits:
+    cpu: 1000m
+    memory: 768Mi
+  requests:
+    cpu: 150m
+    memory: 192Mi

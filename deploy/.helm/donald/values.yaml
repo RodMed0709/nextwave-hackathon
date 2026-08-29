@@ -1,0 +1,159 @@
+# Default values for donald.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+#
+# ONE CHART, TWO RELEASES. donald-api and donald-mcp run the SAME image and
+# differ only by the DONALD_ROLE environment variable, which app/mcp/server.go
+# (RoleFromEnv) reads to decide which half of the HTTP surface to mount:
+#
+#   api -> generated CRUD + the SSE stream GET /v1/runs/{run_key}/stream
+#   mcp -> generated CRUD + the MCP endpoint /v1/mcp and /v1/mcp/*
+#   all -> both; also the fallback when DONALD_ROLE is unset or unrecognised,
+#          so a misconfigured pod is unisolated rather than down.
+#
+# Install with the per-role values file, never this one on its own:
+#   helm upgrade --install donald-api .helm/donald -f .helm/donald/values-api.yaml
+#   helm upgrade --install donald-mcp .helm/donald -f .helm/donald/values-mcp.yaml
+#
+# The split is blast-radius isolation, not correctness: agent traffic is bursty
+# and must not slow the REST API the web app depends on. Both releases talk to
+# the same MySQL. Scaling either past 1 replica is safe — browser deltas come
+# from tailing the agent_event table, not an in-process channel, so an event
+# written by an MCP pod reaches a browser attached to any API pod.
+
+replicaCount: 1
+
+# Seconds k8s waits after SIGTERM before SIGKILL. Above the fx stop timeout so
+# in-flight requests and open SSE streams drain on deploy/restart.
+terminationGracePeriodSeconds: 60
+
+image:
+  # No registry on this box: the image is built on the node and imported
+  # straight into microk8s' containerd (see deploy/scripts/02-build-image.sh).
+  # Switching to GHCR later is a values change only — set repository to
+  # ghcr.io/... , pullPolicy back to Always, and restore imagePullSecrets.
+  repository: donald
+  # MUST NOT be Always: there is no registry to pull from, so Always gives
+  # ImagePullBackOff on a locally imported image.
+  pullPolicy: IfNotPresent
+  # NEVER "latest". With IfNotPresent and a mutable tag the kubelet keeps the
+  # old layers after a re-import and you silently run the previous build. Every
+  # deploy stamps a fresh tag here (deploy.sh does this with --set).
+  tag: "0.0.1"
+  env:
+    # config.New() reads CONFIG and EXITS if it is unset — there is no default.
+    #
+    # /root/config is donald's OWN config dir, baked into the image: the
+    # Dockerfile does WORKDIR /root/ then copies the source tree, so base.yaml
+    # lands at /root/config/base.yaml. That is why the hostPath overlay is
+    # mounted at /root/hostconfig and NOT at /root/config the way the product
+    # chart does it — mounting over /root/config would SHADOW base.yaml, which
+    # is what supplies ports.http: 8080, and the pod would fail in a way that
+    # looks nothing like a config problem. Do not "fix" this back.
+    - name: CONFIG
+      value: "/root/config,/root/hostconfig/nuzur/donald"
+    # ENV=prod is already baked into the image by the Dockerfile; the loader
+    # then reads <dir>/base.yaml then <dir>/prod.yaml from each CONFIG entry.
+    - name: DONALD_ROLE
+      value: "all"
+
+# No registry, so nothing to authenticate to. Restore
+# `- name: ghcr-login-secret` if this ever moves to GHCR.
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  # The generated REST server binds ports.http from base.yaml. gRPC was
+  # generated disabled, so nothing listens on 6009 — do not expose it.
+  port: 8080
+
+# /healthz is a static handler in the generated router (rest/server/router.go):
+# it answers 200 without touching the database, so a DB blip cannot restart the
+# pod. Readiness is a real query, so a pod only takes traffic once MySQL is
+# reachable AND the schema is applied. The list page-size parameter is
+# `page_size`, not `limit` (rest/server/list_params.go).
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 6
+readinessProbe:
+  httpGet:
+    path: /v1/clients?page_size=1
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 5
+  failureThreshold: 60
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: lets-encrypt
+  hosts: []
+  tls: []
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+# prod.yaml lives on the node at /etc/config/nuzur/donald/prod.yaml (root-owned,
+# chmod 600) and is NOT in this repo — see prod.yaml.example.
+volumes:
+  - name: config
+    hostPath:
+      path: "/etc/config"
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts:
+  - name: config
+    # NOT /root/config — see the CONFIG comment above.
+    mountPath: "/root/hostconfig"
+    readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

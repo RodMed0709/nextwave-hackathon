@@ -1,0 +1,49 @@
+# Release donald-api — serves api.donald.todes.mx.
+#
+#   helm upgrade --install donald-api .helm/donald \
+#     -n donald -f .helm/donald/values-api.yaml --set image.tag=<tag>
+#
+# Overrides values.yaml. See that file for the DONALD_ROLE contract and for why
+# the config overlay mounts at /root/hostconfig rather than /root/config.
+
+image:
+  env:
+    - name: CONFIG
+      value: "/root/config,/root/hostconfig/nuzur/donald"
+    - name: DONALD_ROLE
+      value: "api"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: lets-encrypt
+    # GET /v1/runs/{run_key}/stream is a long-lived SSE stream. nginx's default
+    # 60s proxy-read-timeout would close it while a run is idle between agent
+    # reports (the app sends a keepalive comment every 20s, but the timeout still
+    # has to outlive a quiet stretch), and the browser would reconnect — the
+    # graph looks frozen and then jumps. proxy-buffering must be off so bytes are
+    # flushed rather than held; the app already sends X-Accel-Buffering: no, this
+    # makes it explicit.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  hosts:
+    - host: api.donald.todes.mx
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: donald-api-tls
+      hosts:
+        - api.donald.todes.mx
+
+# The REST API the web app depends on: steady, predictable load. The generous
+# half of the split goes to donald-mcp, which absorbs the agent traffic.
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

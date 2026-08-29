@@ -1,0 +1,72 @@
+# Default values for donald-mysql.
+#
+# Single-node MySQL for the donald demo, on the same box as the app. The PVC is
+# backed by the microk8s `hostpath-storage` addon, so the data lives on the
+# node's disk. This is NOT highly available and there are no backups.
+#
+# CREDENTIALS ARE NOT IN THIS FILE. The chart reads them from an existing Secret
+# named by `auth.existingSecret`, created on the box by scripts/03-deploy.sh from
+# passwords generated there. Nothing in this repo ever holds a password.
+
+replicaCount: 1
+
+image:
+  repository: mysql
+  pullPolicy: IfNotPresent
+  tag: "8.4"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+auth:
+  database: donald
+  username: donald
+  # Secret with keys `root-password` and `app-password`.
+  existingSecret: donald-db
+
+service:
+  type: ClusterIP
+  port: 3306
+
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: "microk8s-hostpath"
+
+# Tuned down for a 2 vCPU / 4 GiB node shared with two app pods, the ingress
+# controller and the microk8s control plane.
+args:
+  - --character-set-server=utf8mb4
+  - --collation-server=utf8mb4_0900_ai_ci
+  - --innodb-buffer-pool-size=256M
+  - --max-connections=200
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+volumes: []
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

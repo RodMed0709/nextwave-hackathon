@@ -1,0 +1,12 @@
+MySQL is reachable in-cluster at:
+
+  {{ include "donald-mysql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+  database: {{ .Values.auth.database }}   user: {{ .Values.auth.username }}
+
+It is NOT exposed outside the cluster, by design. To open a shell:
+
+  kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "donald-mysql.fullname" . }} -- \
+    env MYSQL_PWD="$(grep MYSQL_ROOT_PASSWORD /etc/donald/credentials.env | cut -d= -f2)" \
+    mysql -u root {{ .Values.auth.database }}
+
+Single replica on a hostpath PVC. No HA, no backups.

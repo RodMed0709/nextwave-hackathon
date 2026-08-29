@@ -1,0 +1,9 @@
+apiVersion: v2
+name: donald-web
+description: donald web frontend (placeholder until the React app exists)
+
+type: application
+
+version: 0.0.1
+
+appVersion: "0.0.1"
