@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nextwave/donald/enums"
@@ -16,6 +17,8 @@ import (
 // The handler's dependencies are nil because no tool is invoked here; only
 // registration is exercised.
 func TestToolSurface(t *testing.T) {
+	// Assert the production shape: pacing explicitly off.
+	t.Setenv("DONALD_DEMO_PACING", "false")
 	newServer(NewHandler(nil, nil, zap.NewNop()), zap.NewNop())
 
 	want := []string{
@@ -117,5 +120,47 @@ func TestRunStatusFor(t *testing.T) {
 	// Only finish_run decides the run's outcome.
 	if _, ok := runStatusFor(enums.AGENT_NODE_STATUS_IN_PROGRESS, enums.AGENT_NODE_STATUS_FAILED); ok {
 		t.Error("one failed step must not change the run status")
+	}
+}
+
+// TestDemoPacingDefaultsOnAndCanBeDisabled pins both halves of the switch.
+//
+// Pacing is ON by default while Donald is pre-production — the demo matters more
+// than the production risk today — so the property worth protecting is that the
+// OFF switch genuinely works and is not silently ignored. Flip the expectation
+// here when the default flips.
+func TestDemoPacingDefaultsOnAndCanBeDisabled(t *testing.T) {
+	for _, off := range []string{"false", "0", "no", "off", "FALSE", "Off"} {
+		t.Setenv("DONALD_DEMO_PACING", off)
+		newServer(NewHandler(nil, nil, zap.NewNop()), zap.NewNop())
+		for _, tool := range registered {
+			if tool.Name == "wait" {
+				t.Fatalf("DONALD_DEMO_PACING=%q did NOT disable the wait tool; the off switch is broken", off)
+			}
+		}
+		// "Pace yourself" is the section heading; matching on the bare word
+		// "wait" would false-positive on the base instructions, which talk about
+		// being stuck waiting on data.
+		if strings.Contains(serverInstructions(), "Pace yourself") {
+			t.Errorf("DONALD_DEMO_PACING=%q disabled the tool but still advertises pacing", off)
+		}
+	}
+
+	// Unset means on, and so does anything that is not a recognised negative.
+	for _, on := range []string{"", "1", "true", "TRUE", "yes", "on", "nonsense"} {
+		t.Setenv("DONALD_DEMO_PACING", on)
+		newServer(NewHandler(nil, nil, zap.NewNop()), zap.NewNop())
+		found := false
+		for _, tool := range registered {
+			if tool.Name == "wait" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("DONALD_DEMO_PACING=%q should leave pacing ON but the wait tool was absent", on)
+		}
+		if !strings.Contains(serverInstructions(), "Pace yourself") {
+			t.Errorf("DONALD_DEMO_PACING=%q did not add the pacing instructions", on)
+		}
 	}
 }

@@ -83,7 +83,12 @@ func Register(r chi.Router, coreImpl *core.Implementation, logger *zap.Logger) {
 		r.Get("/v1/runs/{run_key}/stream", handler.streamHandler)
 	}
 
-	logger.Info("donald custom routes mounted", zap.String("role", string(role)))
+	logger.Info("donald custom routes mounted",
+		zap.String("role", string(role)),
+		zap.Bool("demo_pacing", demoPacingEnabled()))
+	if demoPacingEnabled() {
+		logger.Warn("DONALD_DEMO_PACING is on: the wait tool is exposed. This is demo scaffolding and should be off in production.")
+	}
 }
 
 func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
@@ -93,7 +98,7 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Name:    "donald",
 		Version: ProtocolVersion,
 	}, &mcp.ServerOptions{
-		Instructions: serverInstructions,
+		Instructions: serverInstructions(),
 	})
 
 	// Annotations are not decoration: clients gate tool calls on them, and in the
@@ -199,6 +204,17 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Description: "List the steps in this run with their keys and statuses. Use it if you have lost track of the node_keys you invented earlier.",
 		Annotations: readOnly,
 	}, h.GetGraph)
+
+	// Demo pacing is opt-in and absent from the tool list entirely when off, so a
+	// production agent never sees a tool it should not have and cannot build a
+	// dependency on one that will vanish.
+	if demoPacingEnabled() {
+		addTool(server, logger, &mcp.Tool{
+			Name:        "wait",
+			Description: "DEMO ONLY. Pause for a few seconds so the flow unfolds at a realistic pace and a person watching has time to react. Use it between steps and inside long ones, matching the durations in the scenario you were given. Do not use it to fake work in a real run.",
+			Annotations: readOnly,
+		}, h.Wait)
+	}
 
 	return server
 }
