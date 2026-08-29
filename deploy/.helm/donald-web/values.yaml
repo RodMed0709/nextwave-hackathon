@@ -1,18 +1,20 @@
-# Default values for donald-web.
+# Default values for donald-web — the Next.js frontend.
 #
-# The React frontend does not exist yet. This chart reserves donald.todes.mx, its
-# Service name and its TLS certificate so that shipping the real app later is a
-# values change — image.repository/tag plus `placeholder.enabled: false` — with
-# no ingress or certificate churn.
+# Built on the box by scripts/04-build-web.sh and imported into containerd, the
+# same way as the API image. There is no registry, so pullPolicy must NOT be
+# Always and the tag must be unique per build (a reused tag leaves the kubelet on
+# the previous layers).
+#
+# Set `web.enabled: false` in deploy-web.sh terms by simply not running the web
+# step — the chart still reserves donald.todes.mx, its Service and its TLS cert.
 
 replicaCount: 1
 
 image:
-  # nginx-unprivileged listens on 8080 and needs no root. Replace with the real
-  # frontend image (built on the box and imported into microk8s, same as donald).
-  repository: nginxinc/nginx-unprivileged
+  repository: donald-web
   pullPolicy: IfNotPresent
-  tag: "1.27-alpine"
+  # Overridden per deploy with --set image.tag=<timestamp>. Never "latest".
+  tag: "placeholder"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -30,14 +32,16 @@ podLabels: {}
 podSecurityContext: {}
 securityContext: {}
 
-# Set enabled: false once a real frontend image is in place — it drops the
-# ConfigMap and its volume mount.
+# The real app is in place, so the holding-page ConfigMap and its mount are off.
+# Flip back to true to serve the static placeholder again without touching the
+# ingress or the certificate.
 placeholder:
-  enabled: true
+  enabled: false
 
 service:
   type: ClusterIP
-  port: 8080
+  # Next.js binds 3000; the placeholder nginx image used 8080.
+  port: 3000
 
 ingress:
   enabled: true
@@ -56,11 +60,12 @@ ingress:
 
 resources:
   limits:
-    cpu: 100m
-    memory: 64Mi
+    cpu: 500m
+    # A Next server needs far more headroom than the nginx placeholder did.
+    memory: 512Mi
   requests:
-    cpu: 10m
-    memory: 16Mi
+    cpu: 50m
+    memory: 128Mi
 
 autoscaling:
   enabled: false
