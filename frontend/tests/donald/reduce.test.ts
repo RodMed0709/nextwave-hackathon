@@ -239,3 +239,61 @@ test('subtask detail JSON is not treated as a node finding', () => {
 
   assert.equal(state.nodes.build.output_summary, null)
 })
+
+test('an operator steer records the instruction without claiming the step stopped', () => {
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, event(1, 'node_added', {
+    label: 'Reconcile routing', planned: false,
+  }, 'reconcile_routing'))
+  state = applyEvent(state, event(2, 'node_status_changed', { status: 'in_progress' }, 'reconcile_routing'))
+  state = applyEvent(state, event(3, 'intervention_requested', {
+    intervention_id: 'iv-9',
+    origin: 'operator',
+    type: 'steer',
+    prompt: 'Check the Busan transshipment before you commit',
+  }, 'reconcile_routing'))
+
+  // The agent is still working. Only IT can stop itself; we asked.
+  assert.equal(state.nodes.reconcile_routing.status, 'in_progress')
+  assert.equal(state.open_intervention, null)
+  assert.equal(state.interventions['iv-9'].status, 'queued')
+  assert.equal(state.interventions['iv-9'].origin, 'operator')
+
+  state = applyEvent(state, event(4, 'intervention_delivered', { intervention_id: 'iv-9' }, 'reconcile_routing'))
+  assert.equal(state.interventions['iv-9'].status, 'delivered')
+
+  state = applyEvent(state, event(5, 'intervention_resolved', {
+    intervention_id: 'iv-9', message: 'Added a transshipment check', outcome: 'succeeded',
+  }, 'reconcile_routing'))
+  assert.equal(state.interventions['iv-9'].status, 'resolved')
+  assert.equal(state.interventions['iv-9'].response, 'Added a transshipment check')
+})
+
+test('an agent-raised decision still blocks the step it is asking about', () => {
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, event(1, 'node_added', { label: 'Decide' }, 'decide'))
+  state = applyEvent(state, event(2, 'intervention_requested', {
+    prompt: 'Which option?',
+  }, 'decide'))
+
+  assert.equal(state.nodes.decide.status, 'blocked_on_user_decision')
+  assert.equal(state.open_intervention?.prompt, 'Which option?')
+})
+
+test('node detail the server attaches survives events that do not mention it', () => {
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, event(1, 'node_added', {
+    label: 'Fetch invoices',
+    description: 'Pull every invoice on the PO',
+    tool_name: 'erp.search',
+    node_type: 'tool_call',
+  }, 'fetch_invoices'))
+  state = applyEvent(state, event(2, 'node_status_changed', { status: 'failed', error_message: 'ERP returned 503' }, 'fetch_invoices'))
+  state = applyEvent(state, event(3, 'node_status_changed', { status: 'succeeded', manual_minutes: 90 }, 'fetch_invoices'))
+
+  const node = state.nodes.fetch_invoices
+  assert.equal(node.description, 'Pull every invoice on the PO')
+  assert.equal(node.tool_name, 'erp.search')
+  assert.equal(node.node_type, 'tool_call')
+  assert.equal(node.manual_minutes, 90)
+})

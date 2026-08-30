@@ -21,7 +21,34 @@ export default async function RunPage({ params }: RunPageProps) {
   return <RunViewer requestedRunKey={decodeURIComponent(runKey).trim() || null} />
 }
 
+/**
+ * The browser tab shows the run's real name when the API knows one.
+ *
+ * Fetched server-side rather than left to the client, because the tab title is
+ * read before any stream has connected — and a tab reading `nauta-detention-002`
+ * tells the person nothing about which of their four open tabs is the one about
+ * the detention exposure. Falls back to the key if the lookup fails: a wrong
+ * title is worse than a plain one, and a run page must never fail to render
+ * because a title lookup timed out.
+ */
 export async function generateMetadata({ params }: RunPageProps) {
   const { runKey } = await params
-  return { title: `${decodeURIComponent(runKey)} · DONALD` }
+  const key = decodeURIComponent(runKey)
+  const base = process.env.NEXT_PUBLIC_DONALD_API
+  if (base) {
+    try {
+      const response = await fetch(
+        `${base.replace(/\/+$/, '')}/runs/${encodeURIComponent(key)}`,
+        { signal: AbortSignal.timeout(3_000), next: { revalidate: 30 } },
+      )
+      if (response.ok) {
+        const body = await response.json() as { run?: { name?: string } }
+        const name = body.run?.name?.trim()
+        if (name) return { title: `${name} · DONALD` }
+      }
+    } catch {
+      // Fall through to the key.
+    }
+  }
+  return { title: `${key} · DONALD` }
 }

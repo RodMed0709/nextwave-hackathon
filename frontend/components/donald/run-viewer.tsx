@@ -18,14 +18,23 @@ import {
   ChevronUp,
   CircleDot,
   Clock3,
+  ExternalLink,
   FileText,
+  Hand,
+  Maximize2,
   Minus,
+  Play,
   RotateCcw,
+  Square,
   Send,
+  Sparkles,
   UserRound,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
+  Background,
+  BackgroundVariant,
   Handle,
   Position,
   ReactFlow,
@@ -42,34 +51,37 @@ import {
   type NodeSize,
 } from '@/lib/donald/layout'
 import {
+  canIntervene,
+  getAutomationSaving,
   getGraphPresentation,
-  getInstructionLifecycle,
   getLatestNodeStatus,
   getLatestRecalculation,
   getLatestReplan,
+  getNodeInterventions,
   getPrimaryMetric,
   getRunRequest,
   getSubtaskPresentation,
+  getRunSavings,
   getVisiblyActiveNodeKey,
   metricRows,
-  type InstructionLifecycle,
   type LiveNodeStatus,
   type NodePresentation,
 } from '@/lib/donald/presentation'
 import { applyEvent, createInitialRunState } from '@/lib/donald/reduce'
 import {
+  fetchPromptSuggestions,
   liveSource,
   postOperatorInstruction,
   recordedSource,
   type DonaldEventSource,
+  type PromptSuggestion,
 } from '@/lib/donald/source'
 import type {
   DonaldEvent,
   InterventionOption,
-  NodeStatus,
+  InterventionRecord,
   OpenIntervention,
   RunArtifact,
-  RunEdge,
   RunNode,
   RunState,
   RunSubtask,
@@ -78,27 +90,55 @@ import '@xyflow/react/dist/style.css'
 
 type DisplayStatus = 'PROPOSED' | 'WAITING' | 'RUNNING' | 'DONE' | 'NEEDS HUMAN' | 'BLOCKED' | 'FAILED' | 'SKIPPED' | 'REMOVED'
 
-type MeasuredNodeSize = NodeSize & { expanded: boolean }
+type InstructionKind = 'stop' | 'steer'
+
+/** Why a read ended. See readNext for why this is not just `event | null`. */
+type ReadOutcome =
+  | { status: 'event'; event: DonaldEvent }
+  | { status: 'aborted' }
+  | { status: 'error' }
+  | { status: 'done' }
 
 type FlowNodeData = {
   runtimeNode: RunNode
   displayStatus: DisplayStatus
-  expanded: boolean
+  selected: boolean
   visiblyActive: boolean
   appearance: NodePresentation
   liveStatus: LiveNodeStatus | null
   intervention: OpenIntervention | null
-  instructionLifecycle: InstructionLifecycle | null
+  interventions: InterventionRecord[]
+  steerable: boolean
   instructionError: string | null
   submitting: boolean
+  suggestions: PromptSuggestion[]
   onToggle: () => void
   onResize: (size: NodeSize) => void
-  onInstruction: (instruction: string, optionId?: string | null) => Promise<void>
+  onInstruction: (instruction: string, options?: { optionId?: string | null; kind?: InstructionKind }) => Promise<void>
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_DONALD_API ?? null
 const COLLAPSED_SIZE: NodeSize = { width: 300, height: 190 }
-const EXPANDED_SIZE: NodeSize = { width: 430, height: 650 }
+// A replay is compressed to about this long, whatever the run really took, with
+// every gap kept proportional inside it.
+const REPLAY_TARGET_MS = 45_000
+// The floor is what stops a replay flickering. Events in a real run can land
+// milliseconds apart; replaying them that way flips edge and node states a dozen
+// times a second, which no amount of easing can make readable. A quarter second
+// is the shortest gap that still reads as one change at a time.
+const REPLAY_MIN_GAP_MS = 250
+const REPLAY_MAX_GAP_MS = 1_600
+// How coarsely the graph's extent is measured before the camera reacts to it.
+// One card width: smaller than a new column, larger than any text reflow.
+const VIEWPORT_QUANTUM = 300
+// Kept in step with .node-drawer in globals.css: the camera treats the drawer as
+// part of the right margin so a selected card never hides behind it.
+const DRAWER_WIDTH = 430
+// Framing: a little breathing room, and a zoom ceiling so a one-node run does
+// not open magnified to fill the screen and then crawl back out as work arrives.
+const FIT_PADDING = 0.14
+const MAX_FIT_ZOOM = 1.15
+const MIN_FIT_ZOOM = 0.18
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
@@ -131,6 +171,41 @@ function runStatusLabel(state: RunState): string {
     case 'cancelled': return 'CANCELLED'
     case 'not_started': return 'CONNECTING'
   }
+}
+
+/**
+ * Move the camera, and animate it in CSS.
+ *
+ * React Flow's own animation is unusable here: setViewport, fitView and
+ * fitBounds all resolve without moving anything when given a non-zero duration,
+ * while the identical call with duration 0 applies instantly and correctly. That
+ * silent failure is why the graph sat unfitted and ran off the right of the
+ * screen — every camera call this app made passed a duration, so not one of them
+ * ever took effect, and nothing reported an error.
+ *
+ * So the position is applied instantly and the smoothing is a CSS transition on
+ * the viewport, switched on only for the length of a programmatic move. Leaving
+ * it on permanently would put the same easing on hand-panning, which turns a
+ * drag into a laggy chase.
+ */
+function moveCamera(
+  instance: ReactFlowInstance,
+  container: HTMLElement | null,
+  target: { x: number; y: number; zoom: number },
+) {
+  const viewport = container?.querySelector<HTMLElement>('.react-flow__viewport')
+  const duration = motionDuration(420)
+  if (viewport && duration > 0) {
+    viewport.classList.add('camera-moving')
+    window.setTimeout(() => viewport.classList.remove('camera-moving'), duration + 60)
+  }
+  void instance.setViewport(target, { duration: 0 })
+}
+
+/** Honours the reduced-motion preference in one place. */
+function motionDuration(milliseconds: number): number {
+  if (typeof window === 'undefined') return 0
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : milliseconds
 }
 
 function statusClass(status: DisplayStatus): string {
@@ -213,19 +288,34 @@ function ArtifactBlock({ artifact }: { artifact: RunArtifact }) {
         </div>
       </div>
       {artifact.text_content && <blockquote><pre>{artifact.text_content}</pre></blockquote>}
+      {artifact.url && (
+        <a className="artifact-link" href={artifact.url} onClick={(event) => event.stopPropagation()} rel="noreferrer noopener" target="_blank">
+          <ExternalLink size={11} /> Open
+        </a>
+      )}
     </article>
   )
 }
 
-function InstructionTrail({ lifecycle }: { lifecycle: InstructionLifecycle }) {
+function InstructionTrail({ record }: { record: InterventionRecord }) {
   const milestones = [
-    { status: 'queued', label: 'Queued', time: lifecycle.queuedAt, reached: true },
-    { status: 'delivered', label: 'Delivered', time: lifecycle.deliveredAt, reached: Boolean(lifecycle.deliveredAt) },
-    { status: 'resolved', label: 'Resolved', time: lifecycle.resolvedAt, reached: Boolean(lifecycle.resolvedAt) },
+    { status: 'queued', label: 'Queued', time: record.queued_at, reached: true },
+    { status: 'delivered', label: 'Agent saw it', time: record.delivered_at, reached: Boolean(record.delivered_at) },
+    { status: 'resolved', label: 'Acted on', time: record.resolved_at, reached: Boolean(record.resolved_at) },
   ]
+  const headline = record.status === 'queued'
+    ? 'Queued — the agent has not picked this up yet'
+    : record.status === 'delivered'
+      ? 'The agent has seen this and is acting on it'
+      : record.outcome === 'failed'
+        ? 'The agent could not comply'
+        : 'Done'
   return (
     <div className="instruction-state" aria-live="polite">
-      <strong>{lifecycle.status === 'queued' ? 'Queued — not yet picked up' : `Instruction ${lifecycle.status}`}</strong>
+      <strong>{headline}</strong>
+      <p className="instruction-echo">
+        {record.type === 'stop' ? 'STOP · ' : 'STEER · '}{record.prompt}
+      </p>
       <div className="instruction-milestones">
         {milestones.map((milestone) => (
           <div className={milestone.reached ? 'reached' : ''} key={milestone.status}>
@@ -235,6 +325,7 @@ function InstructionTrail({ lifecycle }: { lifecycle: InstructionLifecycle }) {
           </div>
         ))}
       </div>
+      {record.response && <p className="instruction-response">“{record.response}”</p>}
     </div>
   )
 }
@@ -283,13 +374,14 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
   const options = [...(data.intervention?.options ?? [])].sort((left, right) =>
     (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER),
   )
-  const sent = Boolean(data.instructionLifecycle)
+  const pending = data.interventions.find((record) => record.status !== 'resolved') ?? null
+  const busy = data.submitting || Boolean(pending)
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
+  const send = (kind: InstructionKind) => {
     const value = instruction.trim()
-    if (value) void data.onInstruction(value)
+    if (!value) return
+    void data.onInstruction(value, { kind })
+    setInstruction('')
   }
 
   return (
@@ -305,16 +397,16 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
           <div className="decision-options">
             {options.map((option) => (
               <OptionButton
-                disabled={data.submitting || sent}
+                disabled={busy}
                 key={option.id}
-                onChoose={(selected) => void data.onInstruction(selected.label, selected.id)}
+                onChoose={(selected) => void data.onInstruction(selected.label, { optionId: selected.id })}
                 option={option}
               />
             ))}
             {options.length === 0 && (
               <button
                 className="acknowledge"
-                disabled={data.submitting || sent}
+                disabled={busy}
                 onClick={() => void data.onInstruction('Acknowledged')}
                 type="button"
               >
@@ -324,24 +416,94 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
           </div>
         </>
       )}
-      <form className="instruction-form" onSubmit={submit}>
-        <label htmlFor={`instruction-${data.runtimeNode.node_key}`}>Give the agent an instruction</label>
-        <div>
-          <textarea
-            disabled={data.submitting || sent}
-            id={`instruction-${data.runtimeNode.node_key}`}
-            onChange={(event) => setInstruction(event.target.value)}
-            placeholder="Type a concrete instruction for this step…"
-            rows={3}
-            value={instruction}
-          />
-          <button disabled={!instruction.trim() || data.submitting || sent} type="submit">
-            <Send size={14} /> Send
+
+      {!data.intervention && (
+        <div className="section-label">
+          <Hand size={13} /> {data.displayStatus === 'PROPOSED' || data.displayStatus === 'WAITING'
+            ? 'Change this before it runs'
+            : 'Take over this step'}
+        </div>
+      )}
+
+      {data.suggestions.length > 0 && !busy && (
+        <div className="suggestions">
+          <span className="suggestions-label"><Sparkles size={11} /> Suggested</span>
+          <div className="suggestion-chips">
+            {data.suggestions.map((suggestion) => (
+              <button
+                className="suggestion-chip"
+                key={suggestion.label}
+                onClick={(event) => { event.stopPropagation(); setInstruction(suggestion.prompt) }}
+                title={suggestion.prompt}
+                type="button"
+              >
+                {suggestion.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <form className="instruction-form" onSubmit={(event) => { event.preventDefault(); send('steer') }}>
+        <label htmlFor={`instruction-${data.runtimeNode.node_key}`}>
+          {data.displayStatus === 'PROPOSED' || data.displayStatus === 'WAITING'
+            ? 'Tell the agent how to do this step'
+            : 'Give the agent an instruction'}
+        </label>
+        <textarea
+          disabled={busy}
+          id={`instruction-${data.runtimeNode.node_key}`}
+          onChange={(event) => setInstruction(event.target.value)}
+          placeholder="Type a concrete instruction for this step…"
+          rows={3}
+          value={instruction}
+        />
+        <div className="instruction-actions">
+          {/* Stop and steer are the same channel with different intent, so they
+              share one box. Both are advisory - the agent honours them on its
+              next check - and the wording says so rather than implying a kill
+              switch we do not have. */}
+          <button
+            className="steer"
+            disabled={!instruction.trim() || busy}
+            type="submit"
+          >
+            <Send size={13} /> Steer
+          </button>
+          <button
+            className="stop"
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation()
+              void data.onInstruction(
+                instruction.trim() || `Stop ${data.runtimeNode.label} and do not continue with it.`,
+                { kind: 'stop' },
+              )
+              setInstruction('')
+            }}
+            type="button"
+          >
+            Stop this step
           </button>
         </div>
       </form>
-      {data.instructionLifecycle && <InstructionTrail lifecycle={data.instructionLifecycle} />}
+
+      {data.interventions.map((record) => <InstructionTrail key={record.id} record={record} />)}
       {data.instructionError && <p className="instruction-error">{data.instructionError}</p>}
+    </section>
+  )
+}
+
+function ArtifactList({ node }: { node: RunNode }) {
+  const evidenceIds = node.output_summary?.evidence_ids ?? []
+  if (node.artifacts.length === 0 && evidenceIds.length === 0) return null
+  return (
+    <section>
+      <div className="section-label">Evidence</div>
+      {evidenceIds.map((id) => <code className="evidence-id" key={id}>{id}</code>)}
+      {node.artifacts.map((artifact, index) => (
+        <ArtifactBlock artifact={artifact} key={`${artifact.name}-${index}`} />
+      ))}
     </section>
   )
 }
@@ -349,19 +511,66 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
 function ExpandedDetails({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
   const metrics = metricRows(node.output_summary?.metrics ?? {})
-  const blocked = node.status.startsWith('blocked_on_')
+  const saving = getAutomationSaving(node)
+  const finding = node.output_summary?.detail
   return (
     <div className="card-details" onClick={(event) => event.stopPropagation()}>
-      {(node.output_summary?.detail || node.input_summary) && (
+      {node.description && (
         <section>
-          {node.output_summary?.detail && <><div className="section-label">Finding</div><p>{node.output_summary.detail}</p></>}
+          <div className="section-label">What this step does</div>
+          <p>{node.description}</p>
+        </section>
+      )}
+
+      {(node.tool_name || node.node_type) && (
+        <section className="node-meta">
+          {node.tool_name && <span><Wrench size={11} /> {node.tool_name}</span>}
+          {node.node_type && <span className="node-kind">{node.node_type.replaceAll('_', ' ')}</span>}
+        </section>
+      )}
+
+      {/* A failure the agent explained and the UI threw away was the worst gap
+          in this panel: a red card reading FAILED with no reason, while the
+          explanation sat in the database. */}
+      {node.error_message && (
+        <section className="failure">
+          <div className="section-label"><AlertTriangle size={13} /> Why it failed</div>
+          <p>{node.error_message}</p>
+        </section>
+      )}
+
+      {node.status.startsWith('blocked_on_') && node.status_message && !node.error_message && (
+        <section className="blocked-reason">
+          <div className="section-label"><AlertTriangle size={13} /> What it is waiting for</div>
+          <p>{node.status_message}</p>
+        </section>
+      )}
+
+      {(finding || node.input_summary) && (
+        <section>
+          {finding && <><div className="section-label">Finding</div><p>{finding}</p></>}
           {node.input_summary && <><div className="section-label secondary">Input</div><p>{node.input_summary}</p></>}
         </section>
       )}
+
       <section className="timing-grid">
         <div><Clock3 size={13} /><span>Started</span><b>{formatTime(node.started_at)}</b></div>
         <div><Clock3 size={13} /><span>Duration</span><b>{formatDuration(node)}</b></div>
       </section>
+
+      {saving && (
+        <section className="saving">
+          <div className="section-label">Saved by automating this</div>
+          <div className="saving-figures">
+            <div><span>Human time</span><strong>{saving.humanTime}</strong></div>
+            <div><span>Cost</span><strong>{saving.money}</strong></div>
+          </div>
+          {/* The basis is shown, not hidden. A savings number whose arithmetic
+              you cannot see is a claim; one that shows its rate is an argument. */}
+          <small className="saving-basis">{saving.basis}</small>
+        </section>
+      )}
+
       {metrics.length > 0 && (
         <section>
           <div className="section-label">Impact</div>
@@ -370,33 +579,66 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
           </div>
         </section>
       )}
-      {(node.artifacts.length > 0 || (node.output_summary?.evidence_ids.length ?? 0) > 0) && (
-        <section>
-          <div className="section-label">Evidence</div>
-          {node.output_summary?.evidence_ids.map((id) => <code className="evidence-id" key={id}>{id}</code>)}
-          {node.artifacts.map((artifact, index) => <ArtifactBlock artifact={artifact} key={`${artifact.name}-${index}`} />)}
-        </section>
-      )}
+
+      <ArtifactList node={node} />
+
       {node.removal_reason && (
         <section className="removal-reason">
           <div className="section-label">Why this step was removed</div>
           <p>{node.removal_reason}</p>
         </section>
       )}
-      {(blocked || data.instructionLifecycle) && <InstructionBox data={data} />}
+
+      {(data.steerable || data.interventions.length > 0) && <InstructionBox data={data} />}
     </div>
+  )
+}
+
+/**
+ * The detail panel, beside the graph rather than inside it.
+ *
+ * A person watching a live run has built a spatial map of the work; the run
+ * keeps going while they read one step. Expanding in place destroyed that map at
+ * exactly the moment they were trying to use it. A drawer keeps the graph
+ * geometrically frozen, keeps the whole run visible while one step is read, and
+ * gives the detail a real reading column instead of 430px of squeezed card.
+ */
+function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void }) {
+  const node = data.runtimeNode
+  return (
+    <aside aria-label={`Details for ${node.label}`} className="node-drawer">
+      <header className="drawer-header">
+        <div>
+          <span className="owner"><UserRound size={12} /> {node.agent_label ?? 'Donald'}</span>
+          <span className={`status ${statusClass(data.displayStatus)}`}>
+            <StatusMark status={data.displayStatus} /> {data.displayStatus}
+          </span>
+        </div>
+        <h2>{node.output_summary?.headline ?? node.label}</h2>
+        <code>{node.node_key}</code>
+        <button aria-label="Close details" className="drawer-close" onClick={onClose} type="button">
+          <X size={16} />
+        </button>
+      </header>
+      <div className="drawer-body">
+        <ExpandedDetails data={data} />
+      </div>
+    </aside>
   )
 }
 
 function FlowCard({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
   const primaryMetric = getPrimaryMetric(node.output_summary?.metrics ?? {})
+  const saving = getAutomationSaving(node)
+  const pendingIntervention = data.interventions.find((record) => record.status !== 'resolved') ?? null
   const title = node.output_summary?.headline ?? node.label
   const classes = [
     'flow-card',
     statusClass(data.displayStatus),
-    data.expanded ? 'expanded' : '',
+    data.selected ? 'selected' : '',
     data.visiblyActive ? 'visibly-active' : '',
+    pendingIntervention ? 'steered' : '',
   ].filter(Boolean).join(' ')
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -406,7 +648,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   }
   return (
     <div
-      aria-expanded={data.expanded}
+      aria-pressed={data.selected}
       className={classes}
       onClick={data.onToggle}
       onKeyDown={onKeyDown}
@@ -420,19 +662,30 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       </div>
       <h2>{title}</h2>
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
+      {saving && (
+        <div className="card-saving" title={saving.basis}>
+          <span>Saved</span><strong>{saving.humanTime}</strong><em>{saving.money}</em>
+        </div>
+      )}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
       {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
-      {data.expanded && <ExpandedDetails data={data} />}
-      <span className="expand-hint">{data.expanded ? 'Click to collapse' : 'Click to inspect'}</span>
+      {pendingIntervention && (
+        <p className="card-instruction"><Hand size={11} /> {pendingIntervention.type === 'stop' ? 'Stop' : 'Steer'} sent — {pendingIntervention.status === 'queued' ? 'waiting for the agent' : 'agent has it'}</p>
+      )}
+      <span className="expand-hint">
+        {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}
+      </span>
       <Handle type="source" position={Position.Right} />
     </div>
   )
 }
 
 function SubtaskList({ subtasks }: { subtasks: RunSubtask[] }) {
+  const visibleSubtasks = subtasks.slice(0, 6)
+  const hiddenCount = subtasks.length - visibleSubtasks.length
   return (
     <ul className="subtask-list">
-      {subtasks.map((subtask) => {
+      {visibleSubtasks.map((subtask) => {
         const appearance = getSubtaskPresentation(subtask.status)
         return (
           <li
@@ -448,6 +701,7 @@ function SubtaskList({ subtasks }: { subtasks: RunSubtask[] }) {
           </li>
         )
       })}
+      {hiddenCount > 0 && <li className="subtask-more">+{hiddenCount} more</li>}
     </ul>
   )
 }
@@ -464,9 +718,10 @@ function FlowNodeRenderer(props: NodeProps) {
     observer.observe(element)
     return () => observer.disconnect()
   }, [data])
+  // One width, always. Selection is a ring, not a size change — see NodeDrawer.
   const style = {
     '--node-enter-delay': `${data.appearance.delayMs}ms`,
-    width: data.expanded ? `${EXPANDED_SIZE.width}px` : `${COLLAPSED_SIZE.width}px`,
+    width: `${COLLAPSED_SIZE.width}px`,
   } as CSSProperties
   return (
     <div
@@ -488,33 +743,53 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [instructionError, setInstructionError] = useState<string | null>(null)
   const [submittingNodeKey, setSubmittingNodeKey] = useState<string | null>(null)
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
+  // Set the moment the person pans or zooms by hand. From then on the canvas is
+  // theirs: an agent adding a node must not move a camera someone is holding.
+  const [viewportPinned, setViewportPinned] = useState(false)
   const [sourceGeneration, setSourceGeneration] = useState(0)
-  const [measuredSizes, setMeasuredSizes] = useState<Record<string, MeasuredNodeSize>>({})
+  const [measuredSizes, setMeasuredSizes] = useState<Record<string, NodeSize>>({})
+  const [suggestions, setSuggestions] = useState<Record<string, PromptSuggestion[]>>({})
+  const [replaying, setReplaying] = useState(false)
+  const replayingRef = useRef(false)
+  const replayTimerRef = useRef<number | null>(null)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const readPromiseRef = useRef<Promise<DonaldEvent | null> | null>(null)
+  const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
   const layoutRef = useRef<Record<string, LayoutPosition>>({})
+  const canvasRef = useRef<HTMLElement | null>(null)
   if (!sourceRef.current) sourceRef.current = createSource(requestedRunKey)
 
-  const readNext = useCallback((): Promise<DonaldEvent | null> => {
+  /**
+   * One read from the source, reporting WHY it ended rather than just "nothing".
+   *
+   * The previous version returned `DonaldEvent | null` and the loop broke on
+   * null, which conflated three unrelated things: the stream genuinely ending,
+   * a transient failure, and an abort. React's development double-mount aborts
+   * the first read and immediately restarts the loop, so the restarted loop
+   * would collect the aborted read's `null` and stop for good — the page sat at
+   * CONNECTING with zero events and made no network request at all, because the
+   * only reader had already given up. Naming the outcome is what makes "the
+   * component remounted" recoverable and "the run is over" final.
+   */
+  const readNext = useCallback((): Promise<ReadOutcome> => {
     if (readPromiseRef.current) return readPromiseRef.current
     const controller = new AbortController()
     abortRef.current = controller
     const source = sourceRef.current
-    if (!source) return Promise.resolve(null)
-    const promise = (async () => {
+    if (!source) return Promise.resolve({ status: 'done' })
+    const promise = (async (): Promise<ReadOutcome> => {
       try {
         const result = await source.next({ signal: controller.signal })
-        if (result.done) return null
+        if (result.done) return { status: 'done' }
         const event = result.value
         setState((current) => applyEvent(current, event))
         if (event.event_type === 'intervention_requested' && event.node_key) setExpandedKey(event.node_key)
         setSourceError(null)
-        return event
+        return { status: 'event', event }
       } catch (error: unknown) {
-        if (controller.signal.aborted) return null
+        if (controller.signal.aborted) return { status: 'aborted' }
         setSourceError(error instanceof Error ? error.message : 'Runtime source failed')
-        return null
+        return { status: 'error' }
       } finally {
         readPromiseRef.current = null
         if (abortRef.current === controller) abortRef.current = null
@@ -526,23 +801,42 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
   useEffect(() => {
     if (state.open_intervention) return
+    // A replay is re-folding the log from scratch; letting the live reader write
+    // into the same state at the same time would interleave two timelines.
+    if (replaying) return
     let cancelled = false
     void (async () => {
       while (!cancelled) {
-        const event = await readNext()
-        if (!event || event.event_type === 'intervention_requested') break
+        const outcome = await readNext()
+        if (cancelled) break
+        // An abort belongs to a reader that is being replaced, not to the run.
+        // Loop round and open a fresh read; the source resumes from its cursor.
+        if (outcome.status === 'aborted') continue
+        if (outcome.status === 'done') break
+        if (outcome.status === 'error') break
+        if (outcome.event.event_type === 'intervention_requested') break
       }
     })()
     return () => { cancelled = true }
-  }, [readNext, sourceGeneration, state.open_intervention])
+  }, [readNext, replaying, sourceGeneration, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
+  /**
+   * Card sizes, which selection no longer affects.
+   *
+   * Cards used to grow from 300x190 to 430x650 in place. Because a column's
+   * pitch is set by its widest card and a column is centred on its own total
+   * height, opening one card slid its siblings apart, pushed every downstream
+   * column sideways, swung the edges attached to it, and forced the camera to
+   * zoom out — all while the run carried on behind the disruption. The detail
+   * moved to a drawer precisely so that reading one step cannot destroy the map
+   * of the whole run, which is the thing the person is there to watch.
+   */
   const nodeSizes = useMemo(() => Object.fromEntries(Object.keys(state.nodes).map((key) => {
-    const expanded = expandedKey === key
     const measured = measuredSizes[key]
-    return [key, measured?.expanded === expanded ? measured : expanded ? EXPANDED_SIZE : COLLAPSED_SIZE]
-  })), [expandedKey, measuredSizes, state.nodes])
+    return [key, measured ?? COLLAPSED_SIZE]
+  })), [measuredSizes, state.nodes])
 
   const structuralSignature = useMemo(() => [
     ...Object.values(state.nodes).map((node) => `${node.node_key}:${node.removed}`).sort(),
@@ -562,22 +856,27 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     [state.event_log, state.nodes],
   )
 
-  const updateMeasurement = useCallback((nodeKey: string, expanded: boolean, size: NodeSize) => {
+  const updateMeasurement = useCallback((nodeKey: string, size: NodeSize) => {
     setMeasuredSizes((current) => {
       const previous = current[nodeKey]
-      if (previous && previous.expanded === expanded && previous.width === size.width && previous.height === size.height) return current
-      return { ...current, [nodeKey]: { ...size, expanded } }
+      if (previous && previous.width === size.width && previous.height === size.height) return current
+      return { ...current, [nodeKey]: size }
     })
   }, [])
 
-  const submitInstruction = useCallback(async (node: RunNode, instruction: string, optionId?: string | null) => {
+  const submitInstruction = useCallback(async (
+    node: RunNode,
+    instruction: string,
+    options: { optionId?: string | null; kind?: InstructionKind } = {},
+  ) => {
     setSubmittingNodeKey(node.node_key)
     setInstructionError(null)
     try {
       const event = await postOperatorInstruction(API_BASE_URL, state.run.key, {
         nodeKey: node.node_key,
         instruction,
-        optionId,
+        optionId: options.optionId,
+        type: options.kind ?? 'steer',
         currentSequence: state.last_sequence,
       })
       setState((current) => applyEvent(current, event))
@@ -588,8 +887,32 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     }
   }, [state.last_sequence, state.run.key])
 
+  /**
+   * Suggestions are fetched for the card that is OPEN, and only that one.
+   *
+   * Generating them for every node up front would bill an LLM call per step of
+   * a graph nobody has clicked on. They are keyed by graph revision as well as
+   * node so that reopening the same card during the same state of the run
+   * returns the server's cached answer rather than re-rolling the wording.
+   */
+  useEffect(() => {
+    if (!expandedKey) return
+    const node = state.nodes[expandedKey]
+    if (!node || !canIntervene(node)) return
+    const key = `${expandedKey}:${state.run.graph_revision}`
+    if (suggestions[key]) return
+
+    const controller = new AbortController()
+    void fetchPromptSuggestions(API_BASE_URL, state.run.key, expandedKey, { signal: controller.signal })
+      .then((fetched) => {
+        if (controller.signal.aborted || fetched.length === 0) return
+        setSuggestions((current) => ({ ...current, [key]: fetched }))
+      })
+    return () => controller.abort()
+  }, [expandedKey, state.nodes, state.run.graph_revision, state.run.key, suggestions])
+
   const visualNodes: Node[] = useMemo(() => Object.values(state.nodes).map((node) => {
-    const expanded = expandedKey === node.node_key
+    const selected = expandedKey === node.node_key
     const intervention = state.open_intervention?.node_key === node.node_key ? state.open_intervention : null
     const size = nodeSizes[node.node_key]
     return {
@@ -602,20 +925,37 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       data: {
         runtimeNode: node,
         displayStatus: displayStatus(node),
-        expanded,
+        selected,
         visiblyActive: visiblyActiveKey === node.node_key,
         appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
         liveStatus: visiblyActiveKey === node.node_key ? getLatestNodeStatus(node, state.event_log) : null,
         intervention,
-        instructionLifecycle: getInstructionLifecycle(state.event_log, node.node_key),
-        instructionError: expanded ? instructionError : null,
+        interventions: getNodeInterventions(state.interventions, node.node_key),
+        // Every step that has not finished can be steered, not just a blocked
+        // one. Waiting until a step blocks means the only work you can influence
+        // is work that has already stalled - the opposite of supervision.
+        steerable: canIntervene(node),
+        instructionError: selected ? instructionError : null,
         submitting: submittingNodeKey === node.node_key,
+        suggestions: suggestions[`${node.node_key}:${state.run.graph_revision}`] ?? [],
         onToggle: () => setExpandedKey((current) => current === node.node_key ? null : node.node_key),
-        onResize: (measured) => updateMeasurement(node.node_key, expanded, measured),
-        onInstruction: (instruction, optionId) => submitInstruction(node, instruction, optionId),
+        onResize: (measured) => updateMeasurement(node.node_key, measured),
+        onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
       } satisfies FlowNodeData,
     }
-  }), [expandedKey, graphPresentation.nodes, instructionError, layout, nodeSizes, state.event_log, state.nodes, state.open_intervention, submitInstruction, submittingNodeKey, updateMeasurement, visiblyActiveKey])
+  }), [expandedKey, graphPresentation.nodes, instructionError, layout, nodeSizes, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKey])
+
+  const selectedNodeData = useMemo(
+    () => (visualNodes.find((node) => node.id === expandedKey)?.data as FlowNodeData | undefined) ?? null,
+    [expandedKey, visualNodes],
+  )
+
+  useEffect(() => {
+    if (!expandedKey) return
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setExpandedKey(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expandedKey])
 
   const visualEdges: Edge[] = useMemo(() => Object.values(state.edges)
     .filter((edge) => state.nodes[edge.source_node_key] && state.nodes[edge.target_node_key])
@@ -644,18 +984,203 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }
     }), [graphPresentation.edges, state.edges, state.nodes, visiblyActiveKey])
 
+  /**
+   * Frame the graph using OUR layout, not React Flow's.
+   *
+   * Both fitView and fitBounds silently did nothing here: they size the graph
+   * from each node's `measured` field, which React Flow populates from its own
+   * ResizeObserver, and for these nodes it stayed undefined — so the call
+   * resolved without moving the camera and the graph hung off the right of the
+   * screen with no error anywhere. We already compute exact positions and sizes
+   * in layoutGraph, so the arithmetic here is authoritative and needs nothing
+   * from the library's measurement lifecycle. It also lets the zoom ceiling
+   * actually apply, which fitBounds does not support at all.
+   */
   const zoomToFit = useCallback(() => {
     const bounds = getLayoutBounds(layout, nodeSizes)
-    if (!bounds || !flowInstance) return
-    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 420
-    void flowInstance.fitBounds(bounds, { padding: 0.12, duration })
+    const container = canvasRef.current
+    if (!bounds || !flowInstance || !container) return
+    const { width, height } = container.getBoundingClientRect()
+    if (width === 0 || height === 0) return
+
+    const zoom = Math.min(
+      Math.max(
+        Math.min(
+          (width * (1 - FIT_PADDING)) / Math.max(1, bounds.width),
+          (height * (1 - FIT_PADDING)) / Math.max(1, bounds.height),
+        ),
+        MIN_FIT_ZOOM,
+      ),
+      MAX_FIT_ZOOM,
+    )
+    moveCamera(flowInstance, container, {
+      x: width / 2 - (bounds.x + bounds.width / 2) * zoom,
+      y: height / 2 - (bounds.y + bounds.height / 2) * zoom,
+      zoom,
+    })
   }, [flowInstance, layout, nodeSizes])
 
+  /**
+   * The camera follows the EXTENT of the graph, quantised.
+   *
+   * It used to depend on the whole zoomToFit closure, which changes whenever any
+   * node is measured — so it re-fit on every one of a run's ~90 events, each fit
+   * interrupting the last before it arrived, and every card click yanked the
+   * person out to the full graph at a new zoom.
+   *
+   * Keying on the node and edge KEYS alone fixed the clicking but under-fit: the
+   * keys are final before the cards have been measured, so the one fit that
+   * mattered ran against stale sizes and the right-hand column hung off the
+   * screen. Rounding the bounds to a coarse grid keeps both properties — a
+   * status line rewrapping does not move the camera, a column of new work does.
+   */
+  const viewportKey = useMemo(() => {
+    const bounds = getLayoutBounds(layout, nodeSizes)
+    if (!bounds) return 'empty'
+    const q = (value: number) => Math.round(value / VIEWPORT_QUANTUM)
+    return `${q(bounds.x)}:${q(bounds.y)}:${q(bounds.width)}:${q(bounds.height)}`
+  }, [layout, nodeSizes])
+
+  const zoomToFitRef = useRef(zoomToFit)
+  zoomToFitRef.current = zoomToFit
+
   useEffect(() => {
-    zoomToFit()
-  }, [zoomToFit])
+    if (viewportPinned || expandedKey) return
+    zoomToFitRef.current()
+  }, [expandedKey, flowInstance, viewportKey, viewportPinned])
+
+  /**
+   * A person taking hold of the canvas pins it.
+   *
+   * onMoveStart was supposed to tell us this — its event argument is documented
+   * as null for React Flow's own moves — but in practice it fired with an event
+   * during the library's initial fitView, so the camera was pinned before the
+   * first node had arrived and every later fit was skipped. The graph then ran
+   * off the right of the screen and no amount of new work would bring it back.
+   *
+   * Wheel and pointer-down on the PANE are unambiguous: nothing but a person
+   * produces them, and the pane excludes the cards, so clicking a card to read
+   * it does not count as taking over the camera.
+   */
+  useEffect(() => {
+    const container = canvasRef.current
+    if (!container) return
+    const pane = container.querySelector('.react-flow__pane')
+    if (!pane) return
+    const pin = () => setViewportPinned(true)
+    // React Flow nests the node layer INSIDE the pane, so a pointerdown on a
+    // card bubbles here too. Without the target check, clicking a card to read
+    // it pinned the camera, and the graph then grew off the right of the screen
+    // with no fit ever running again. Wheel needs no such check: React Flow
+    // zooms on a wheel anywhere over the canvas, including over a card.
+    const pinIfPane = (event: Event) => { if (event.target === pane) pin() }
+    pane.addEventListener('wheel', pin, { passive: true })
+    pane.addEventListener('pointerdown', pinIfPane)
+    return () => {
+      pane.removeEventListener('wheel', pin)
+      pane.removeEventListener('pointerdown', pinIfPane)
+    }
+  }, [flowInstance])
+
+  /**
+   * Keep the selected card clear of the drawer, WITHOUT changing the zoom.
+   *
+   * The drawer covers the right-hand strip of the canvas, so selecting a card
+   * that sits under it would hide the very thing being described. This pans by
+   * the minimum needed, treating the drawer as part of the right margin, and
+   * leaves the zoom exactly where the person set it. A card already fully
+   * visible causes no movement at all — the obvious alternative, fitting the
+   * card, is what made this feel broken in the first place.
+   */
+  useEffect(() => {
+    if (!flowInstance || !expandedKey) return
+    const position = layout[expandedKey]
+    const size = nodeSizes[expandedKey]
+    const container = canvasRef.current
+    if (!position || !size || !container) return
+
+    const { x, y, zoom } = flowInstance.getViewport()
+    const { width, height } = container.getBoundingClientRect()
+    const margin = 24
+    const rightMargin = margin + DRAWER_WIDTH
+
+    const left = position.x * zoom + x
+    const top = position.y * zoom + y
+    const right = left + size.width * zoom
+    const bottom = top + size.height * zoom
+
+    let nextX = x
+    let nextY = y
+    if (right > width - rightMargin) nextX -= right - (width - rightMargin)
+    if (left + (nextX - x) < margin) nextX += margin - (left + (nextX - x))
+    if (bottom > height - margin) nextY -= bottom - (height - margin)
+    if (top + (nextY - y) < margin) nextY += margin - (top + (nextY - y))
+
+    if (Math.abs(nextX - x) < 1 && Math.abs(nextY - y) < 1) return
+    moveCamera(flowInstance, container, { x: nextX, y: nextY, zoom })
+  }, [expandedKey, flowInstance, layout, nodeSizes])
+
+  /**
+   * Replay the run from its first event, at the pace it actually happened.
+   *
+   * The events are already in the log — this re-folds them rather than asking
+   * the server for anything, so a replay works on a finished run and cannot
+   * disturb a live one. Gaps are taken from the real occurred_at timestamps and
+   * then compressed to fit a watchable span: a run that took nine minutes is
+   * unwatchable at true speed, but a fixed tick would flatten the rhythm that
+   * makes the graph readable — the pause where the agent was thinking is the
+   * part worth seeing.
+   */
+  const replay = useCallback(() => {
+    const recorded = [...state.event_log].sort((left, right) => left.sequence - right.sequence)
+    if (recorded.length < 2 || replayingRef.current) return
+
+    replayingRef.current = true
+    setReplaying(true)
+    setExpandedKey(null)
+    setInstructionError(null)
+    layoutRef.current = {}
+    setMeasuredSizes({})
+    setState(createInitialRunState(initialKey))
+
+    const first = Date.parse(recorded[0].occurred_at)
+    const span = Math.max(1, Date.parse(recorded[recorded.length - 1].occurred_at) - first)
+    const scale = Math.min(1, REPLAY_TARGET_MS / span)
+
+    let index = 0
+    const step = () => {
+      if (!replayingRef.current) return
+      const event = recorded[index]
+      if (!event) {
+        replayingRef.current = false
+        setReplaying(false)
+        return
+      }
+      setState((current) => applyEvent(current, event))
+      index += 1
+      const next = recorded[index]
+      if (!next) {
+        replayTimerRef.current = window.setTimeout(step, 0)
+        return
+      }
+      const gap = (Date.parse(next.occurred_at) - Date.parse(event.occurred_at)) * scale
+      replayTimerRef.current = window.setTimeout(
+        step,
+        motionDuration(Math.min(REPLAY_MAX_GAP_MS, Math.max(REPLAY_MIN_GAP_MS, gap))),
+      )
+    }
+    step()
+  }, [initialKey, state.event_log])
+
+  useEffect(() => () => {
+    replayingRef.current = false
+    if (replayTimerRef.current) window.clearTimeout(replayTimerRef.current)
+  }, [])
 
   const reset = useCallback(async () => {
+    replayingRef.current = false
+    if (replayTimerRef.current) window.clearTimeout(replayTimerRef.current)
+    setReplaying(false)
     abortRef.current?.abort()
     await readPromiseRef.current
     sourceRef.current = createSource(requestedRunKey)
@@ -663,8 +1188,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     setState(createInitialRunState(initialKey))
     setExpandedKey(null)
     setMeasuredSizes({})
+    setSuggestions({})
     setSourceError(null)
     setInstructionError(null)
+    setViewportPinned(false)
     setSourceGeneration((generation) => generation + 1)
   }, [initialKey, requestedRunKey])
 
@@ -672,6 +1199,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const latestReplan = getLatestReplan(state.event_log)
   const latestRecalculation = getLatestRecalculation(state.event_log)
   const request = getRunRequest(state.run)
+  const runSavings = getRunSavings(state.nodes)
 
   return (
     <main className="donald">
@@ -682,14 +1210,39 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           <h1>{request}</h1>
         </div>
         <div className="run-summary">
-          <span><i className="live-dot" />{runStatusLabel(state)}</span>
+          <span><i className="live-dot" />{replaying ? 'REPLAY' : runStatusLabel(state)}</span>
           <code>{state.run.key}</code>
           <small>{state.event_log.length} events · revision {state.run.graph_revision}</small>
         </div>
-        <button className="reset-button" onClick={() => void reset()} type="button"><RotateCcw size={14} /> Reset</button>
+        {runSavings && (
+          <div className="run-saving" title={runSavings.basis}>
+            <span>Saved so far</span>
+            <strong>{runSavings.humanTime}</strong>
+            <em>{runSavings.money}</em>
+          </div>
+        )}
+        <div className="header-actions">
+          <button
+            className="reset-button"
+            onClick={() => { setViewportPinned(false); zoomToFit() }}
+            title="Fit the whole graph and follow it again"
+            type="button"
+          >
+            <Maximize2 size={14} /> Fit
+          </button>
+          <button
+            className="reset-button"
+            disabled={state.event_log.length < 2}
+            onClick={() => replaying ? void reset() : replay()}
+            title={replaying ? 'Stop the replay and return to live' : 'Watch this run again from the beginning, at the pace it happened'}
+            type="button"
+          >
+            {replaying ? <><Square size={13} /> Stop</> : <><Play size={14} /> Replay</>}
+          </button>
+        </div>
       </header>
 
-      <section className="canvas-panel">
+      <section className="canvas-panel" ref={canvasRef}>
         {latestRecalculation && (
           <div className={`replan-overlay ${latestRecalculation.kind}`} key={latestRecalculation.key}>
             <div className="recalculating">Recalculating…</div>
@@ -702,6 +1255,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           </div>
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
+        {selectedNodeData && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
         <ReactFlow
           edges={visualEdges}
           edgeTypes={edgeTypes}
@@ -718,7 +1272,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           panOnDrag
           style={{ width: '100%', height: '100%' }}
           zoomOnDoubleClick={false}
-        />
+        >
+          <Background color="#6990b3" gap={42} variant={BackgroundVariant.Lines} />
+        </ReactFlow>
       </section>
 
       <footer className={`event-stream ${streamOpen ? 'open' : ''}`}>

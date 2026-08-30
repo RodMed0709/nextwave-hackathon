@@ -133,6 +133,33 @@ report_progress(run_key="sess_8f21", node_key="approve_animation_slice",
   ])
 ```
 
+## Say what the step would have cost a person
+
+`complete_action` takes one more field worth the same care: **`manual_minutes`**,
+how long that step would have taken a competent person doing it by hand, start to
+finish. Wall-clock minutes, not effort — count the waiting on a reply, the
+switching between systems, the second pass over a PDF to find the one field that
+was missing. Pass it whenever you can put an honest number on it.
+
+Be conservative and be honest. The number is recorded once, on the event that
+completed the step, and shown from then on exactly as you gave it — nobody
+recalculates it and you cannot revise it later. A figure that flatters the run is
+worse than no figure at all, because the only thing that number is worth is being
+believed.
+
+Roughly, in this world:
+
+| Step | `manual_minutes` |
+|---|---|
+| Reading an arrival notice and pulling the fields out of it | 8 |
+| Rekeying a booking into a second system | 12 |
+| Reconciling an invoice against a PO, line by line | 25 |
+| Chasing a carrier by email and waiting for the reply | 45 |
+
+If you genuinely cannot say — the step is bookkeeping, or you have no idea what
+the manual equivalent even looks like — leave it out. An omitted estimate costs
+nothing. A wild one is a claim that outlives the run.
+
 ## Two more things that matter
 
 **Invent a node_key per step and never change it.**
@@ -167,6 +194,15 @@ no longer applies and add what does.
 Either way call `resolve_instruction` afterwards saying what you did, or why you
 could not. Until you do, the person who clicked the button cannot tell whether
 you heard them.
+
+The test is whether the graph moved. An instruction you acknowledge and then
+carry on unaffected by is worse than one you ignored: the person sees their
+button work, sees nothing change, and learns that the controls are decorative.
+So make the change first and report it second — `cancel_action` or `skip_action`
+for a stop, `add_action` (or a fresh `declare_actions`) for a redirect — and say
+in `resolve_instruction` which steps you actually touched. If you decide you
+cannot comply, that is a real answer and belongs there too. Silently continuing
+is not.
 
 ## Attaching results
 
@@ -216,7 +252,10 @@ declare_actions(run_key="sess_8f21", actions=[
 
 start_action(run_key="sess_8f21", node_key="fetch_invoices")
 report_progress(run_key="sess_8f21", node_key="fetch_invoices", message="fetched 412 of 1,200", percent=34)
-complete_action(run_key="sess_8f21", node_key="fetch_invoices", output_summary="1,200 invoices")
+# manual_minutes: pulling 1,200 invoices out of the billing UI by hand is most
+# of a morning. Say so once, here, and it stays said.
+complete_action(run_key="sess_8f21", node_key="fetch_invoices", output_summary="1,200 invoices",
+                manual_minutes=90)
 
 # The data turns out to be messier than expected: half the invoices are in EUR.
 # That is a step nobody planned. Add it, wire it in, then do it.
@@ -227,7 +266,8 @@ start_action(run_key="sess_8f21", node_key="normalize_currency")
 complete_action(run_key="sess_8f21", node_key="normalize_currency", output_summary="612 invoices converted to USD")
 
 start_action(run_key="sess_8f21", node_key="match_ledger")
-complete_action(run_key="sess_8f21", node_key="match_ledger", output_summary="3 mismatches")
+complete_action(run_key="sess_8f21", node_key="match_ledger", output_summary="3 mismatches",
+                manual_minutes=25)
 check_instructions(run_key="sess_8f21")
 
 start_action(run_key="sess_8f21", node_key="flag_mismatches")
@@ -252,6 +292,7 @@ losing context.
 | Starting a step | `start_action` |
 | Working on it | `report_progress` |
 | It worked | `complete_action` |
+| It replaced work a person would have done by hand | same call, with `manual_minutes` |
 | It broke | `fail_action` (reason required) |
 | Retrying it after a failure | `start_action` again, same node_key |
 | Waiting on a person or a decision | `block_action` reason=`user_decision` |

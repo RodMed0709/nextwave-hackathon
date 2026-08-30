@@ -27,9 +27,11 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 	// run_finished) legitimately have no node.
 	rows, err := db.QueryContext(ctx,
 		"SELECT e.`sequence`, e.`event_type`, e.`node_uuid`, e.`occurred_at`, e.`payload`, e.`idempotency_key`, "+
-			"r.`graph_revision`, "+
+			"r.`graph_revision`, COALESCE(r.`name`, ''), COALESCE(r.`display_summary`, ''), "+
 			"n.`node_key`, n.`name`, n.`agent_label`, n.`planned`, n.`plan_order`, "+
-			"n.`started_at`, n.`finished_at`, n.`input_summary`, n.`output_summary` "+
+			"n.`started_at`, n.`finished_at`, n.`input_summary`, n.`output_summary`, "+
+			"n.`description`, n.`node_type`, n.`tool_name`, n.`status_message`, "+
+			"n.`error_message`, n.`progress_percent` "+
 			"FROM `agent_event` e "+
 			"JOIN `agent_run` r ON r.`uuid` = e.`run_uuid` "+
 			"LEFT JOIN `agent_node` n ON n.`uuid` = e.`node_uuid` "+
@@ -50,6 +52,8 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 			raw        []byte
 			idemKey    string
 			graphRev   int64
+			runName    string
+			runSummary string
 			nodeKey    sql.NullString
 			nodeName   sql.NullString
 			agentLabel sql.NullString
@@ -59,10 +63,18 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 			finishedAt null.Time
 			inputSum   null.String
 			outputSum  null.String
+			descr      null.String
+			nodeType   null.Int64
+			toolName   null.String
+			statusMsg  null.String
+			errorMsg   null.String
+			nodeProg   null.Int64
 		)
 		if err := rows.Scan(&seq, &eventType, &nodeUUID, &occurred, &raw, &idemKey, &graphRev,
+			&runName, &runSummary,
 			&nodeKey, &nodeName, &agentLabel, &planned, &planOrder,
-			&startedAt, &finishedAt, &inputSum, &outputSum); err != nil {
+			&startedAt, &finishedAt, &inputSum, &outputSum,
+			&descr, &nodeType, &toolName, &statusMsg, &errorMsg, &nodeProg); err != nil {
 			return nil, err
 		}
 
@@ -99,6 +111,8 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 			}
 		}
 		liftDetail(&d.Payload)
+		d.Payload.RunName = runName
+		d.Payload.RunSummary = runSummary
 		if d.Payload.NewStatus != enums.AGENT_NODE_STATUS_INVALID {
 			d.Payload.Status = d.Payload.NewStatus.String()
 		}
@@ -113,6 +127,16 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 			d.Payload.FinishedAt = finishedAt
 			d.Payload.InputSummary = inputSum
 			d.Payload.OutputSummary = outputSum
+			d.Payload.Description = descr
+			d.Payload.ToolName = toolName
+			d.Payload.StatusMessage = statusMsg
+			d.Payload.ErrorMessage = errorMsg
+			d.Payload.NodeProgress = nodeProg
+			if nodeType.Valid {
+				if t := enums.AgentNodeType(nodeType.Int64); t != enums.AGENT_NODE_TYPE_INVALID {
+					d.Payload.NodeType = t.String()
+				}
+			}
 			if startedAt.Valid && finishedAt.Valid {
 				secs := int64(finishedAt.Time.Sub(startedAt.Time).Seconds())
 				d.Payload.ActualSeconds = &secs
@@ -124,6 +148,9 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 		return nil, err
 	}
 	if err := enrichInterventions(ctx, db, out); err != nil {
+		return nil, err
+	}
+	if err := enrichArtifacts(ctx, db, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -144,9 +171,23 @@ func liftDetail(payload *deltaPayload) {
 			_ = json.Unmarshal(raw, dst)
 		}
 	}
+	// The numeric counterpart. It writes through a pointer-to-pointer so an
+	// absent or malformed value stays nil rather than becoming a confident zero.
+	assignInt := func(key string, dst **int64) {
+		raw, ok := extra[key]
+		if !ok {
+			return
+		}
+		var value int64
+		if err := json.Unmarshal(raw, &value); err == nil {
+			*dst = &value
+		}
+	}
 	assign("edge_key", &payload.EdgeKey)
 	assign("source_node_key", &payload.SourceNodeKey)
 	assign("target_node_key", &payload.TargetNodeKey)
+	assign("origin", &payload.Origin)
+	assignInt("manual_minutes", &payload.ManualMinutes)
 	if raw, ok := extra["steps"]; ok {
 		payload.Plan = &planWire{}
 		_ = json.Unmarshal(raw, &payload.Plan.Steps)
@@ -181,7 +222,7 @@ func enrichInterventions(ctx context.Context, db *sql.DB, deltas []Delta) error 
 		ids = append(ids, k)
 	}
 	rows, err := db.QueryContext(ctx,
-		"SELECT `uuid`, `type`, COALESCE(`prompt`, '') FROM `intervention` "+
+		"SELECT `uuid`, `type`, COALESCE(`prompt`, ''), `status` FROM `intervention` "+
 			"WHERE `uuid` IN (?"+strings.Repeat(",?", len(ids)-1)+")", ids...)
 	if err != nil {
 		return err
@@ -190,14 +231,74 @@ func enrichInterventions(ctx context.Context, db *sql.DB, deltas []Delta) error 
 
 	for rows.Next() {
 		var id, prompt string
-		var typ int64
-		if err := rows.Scan(&id, &typ, &prompt); err != nil {
+		var typ, status int64
+		if err := rows.Scan(&id, &typ, &prompt, &status); err != nil {
 			return err
 		}
 		for _, i := range want[id] {
 			deltas[i].Payload.Type = enums.InterventionType(typ).String()
 			deltas[i].Payload.Prompt = prompt
+			deltas[i].Payload.InterventionID = id
+			deltas[i].Payload.InterventionStatus = enums.InterventionStatus(status).String()
 		}
 	}
 	return rows.Err()
 }
+
+// enrichArtifacts attaches the name, type and content to artifact_added.
+//
+// The stored payload holds only the artifact uuid, which is unusable on its own:
+// the client has no way to resolve it and no endpoint to resolve it against, so
+// every piece of evidence an agent attached arrived as an event with nothing in
+// it. The UI has been able to render evidence blocks all along and never had the
+// data to fill one.
+//
+// text_content is truncated here rather than at the client: this rides the live
+// stream to every open browser, and an agent that inlines a large document
+// should not be able to make the stream expensive for everyone watching.
+func enrichArtifacts(ctx context.Context, db *sql.DB, deltas []Delta) error {
+	want := map[string][]int{}
+	for i, d := range deltas {
+		if d.Payload.ArtifactUUID != nil {
+			k := d.Payload.ArtifactUUID.String()
+			want[k] = append(want[k], i)
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+
+	ids := make([]any, 0, len(want))
+	for k := range want {
+		ids = append(ids, k)
+	}
+	rows, err := db.QueryContext(ctx,
+		"SELECT `uuid`, `name`, `artifact_type`, COALESCE(`url`, ''), COALESCE(`text_content`, '') "+
+			"FROM `artifact` WHERE `uuid` IN (?"+strings.Repeat(",?", len(ids)-1)+")", ids...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id, name, url, text string
+		var typ int64
+		if err := rows.Scan(&id, &name, &typ, &url, &text); err != nil {
+			return err
+		}
+		if len(text) > artifactTextLimit {
+			text = text[:artifactTextLimit] + "\n… (truncated)"
+		}
+		for _, i := range want[id] {
+			deltas[i].Payload.ArtifactName = name
+			deltas[i].Payload.ArtifactType = enums.ArtifactType(typ).String()
+			deltas[i].Payload.ArtifactURL = url
+			deltas[i].Payload.ArtifactText = text
+		}
+	}
+	return rows.Err()
+}
+
+// artifactTextLimit is how much inline artifact text rides the live stream.
+// Generous enough for an email or a small table, short of a document dump.
+const artifactTextLimit = 4000

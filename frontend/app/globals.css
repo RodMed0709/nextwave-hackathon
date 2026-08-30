@@ -10,6 +10,14 @@
   --chartreuse: #d7f24c;
   --red: #e45145;
   --red-deep: #8f2d29;
+
+  /* One beat for the whole canvas.
+     Node slides, camera fits, card births and edge draws used to run at 620ms,
+     420ms, 380ms and 420ms with four different easings, so a single arriving
+     node produced motion that started and stopped at four different moments.
+     Nothing landed together, which is most of what read as "clunky". */
+  --beat: 420ms;
+  --ease: cubic-bezier(.2, .72, .2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +40,10 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .header {
   min-height: 82px;
   display: grid;
-  grid-template-columns: auto minmax(280px, 1fr) auto auto;
+  /* brand · request · status · savings · actions. The savings block is optional,
+     so the columns are auto-flowing rather than a fixed count — a hard count is
+     what pushed the buttons onto a second row the moment a fifth item appeared. */
+  grid-template-columns: auto minmax(220px, 1fr) repeat(3, auto);
   align-items: center;
   gap: 22px;
   padding: 12px 24px;
@@ -93,22 +104,21 @@ button:disabled { cursor: not-allowed; opacity: .5; }
     radial-gradient(circle at 42% 45%, #12385e 0, #0b2746 34%, transparent 64%),
     linear-gradient(145deg, #071a30, #061526);
 }
-.canvas-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: .2;
-  pointer-events: none;
-  background-image: linear-gradient(#6990b31a 1px, transparent 1px), linear-gradient(90deg, #6990b31a 1px, transparent 1px);
-  background-size: 42px 42px;
-}
+/* The grid is rendered INSIDE React Flow (see <Background> in run-viewer) so it
+   pans and zooms with the graph. As a panel background it stayed nailed to the
+   screen while the cards slid over it, which read as cutouts on wallpaper
+   rather than a canvas you are moving across. */
+.react-flow__background { opacity: .2; }
 .react-flow { width: 100%; height: 100%; }
 .react-flow__pane { cursor: default; }
-.react-flow__node { transition: transform .62s cubic-bezier(.2, .72, .2, 1); }
+.react-flow__node { transition: transform var(--beat) var(--ease); }
+/* Applied only while the app is moving the camera itself — see moveCamera. A
+   permanent transition here would ease hand-panning too, which reads as lag. */
+.react-flow__viewport.camera-moving { transition: transform var(--beat) var(--ease); }
 .react-flow__attribution { display: none; }
 
 .flow-node-shell { position: relative; min-height: 190px; overflow: visible; }
-.flow-node-shell.born { animation: node-birth .38s cubic-bezier(.16, .78, .26, 1) var(--node-enter-delay, 0ms) backwards; }
+.flow-node-shell.born { animation: node-birth var(--beat) var(--ease) var(--node-enter-delay, 0ms) backwards; }
 .flow-node-shell.discovered::before {
   content: "NEW STEP";
   position: absolute;
@@ -200,6 +210,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .subtask-emphasis { color: #45576a; font-weight: 700; }
 .subtask-failed { color: var(--red-deep); }
 .subtask-struck .subtask-label { text-decoration: line-through; }
+.subtask-label { min-width: 0; overflow-wrap: anywhere; }
+.subtask-more { color: #7b858c; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
 .expand-hint { display: block; margin-top: 13px; color: #7b858c; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 
 .card-details { margin-top: 16px; border-top: 1px solid #d8d0c1; cursor: default; }
@@ -257,7 +269,11 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .instruction-milestones time { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .instruction-error { margin-top: 8px!important; color: var(--red-deep)!important; font-weight: 700; }
 
-.runtime-edge { fill: none; stroke-width: 1.8; vector-effect: non-scaling-stroke; transition: stroke .2s ease, stroke-opacity .2s ease; }
+/* stroke-width and filter are transitioned too. Without them, an edge becoming
+   ACTIVE snapped from 1.8px to 2.3px and gained a drop-shadow in one frame, and
+   snapped back when the next step took over — which during a compressed replay
+   is a hard flash several times a second. */
+.runtime-edge { fill: none; stroke-width: 1.8; vector-effect: non-scaling-stroke; transition: stroke .2s ease, stroke-opacity .2s ease, stroke-width .2s ease, filter .2s ease; }
 .runtime-edge-waiting { stroke: #87a8c5; stroke-opacity: .3; }
 .runtime-edge-done { stroke: #b9c9d4; stroke-opacity: .62; }
 .runtime-edge-active { stroke: var(--chartreuse); stroke-width: 2.3; stroke-opacity: .95; stroke-dasharray: 7 9; animation: edge-flow 1s linear infinite; filter: drop-shadow(0 0 5px #d7f24c77); }
@@ -265,7 +281,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .runtime-edge-skipped { stroke: #7991a6; stroke-opacity: .2; stroke-dasharray: 3 8; }
 .runtime-edge-exiting { animation: edge-base-retract .42s ease forwards; }
 .runtime-edge-trace, .runtime-edge-retract { fill: none; stroke-width: 2.4; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
-.runtime-edge-trace { stroke: var(--chartreuse); stroke-dasharray: 1; stroke-dashoffset: 1; animation: edge-draw .42s ease-out var(--edge-enter-delay, 0ms) forwards; }
+.runtime-edge-trace { stroke: var(--chartreuse); stroke-dasharray: 1; stroke-dashoffset: 1; animation: edge-draw .7s ease-out var(--edge-enter-delay, 0ms) forwards; }
 .runtime-edge-trace-waiting { stroke: #86a8c6; }
 .runtime-edge-trace-done { stroke: #c0d0d8; }
 .runtime-edge-trace-blocked, .runtime-edge-trace-failed { stroke: var(--red); }
@@ -323,7 +339,17 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 @keyframes active-glow { 0%, 100% { box-shadow: 0 0 0 1px #d7f24c4a, 0 0 18px #d7f24c22, 0 24px 48px #020b1488; } 50% { box-shadow: 0 0 0 2px #d7f24c80, 0 0 34px #d7f24c3d, 0 28px 56px #020b14a0; } }
 @keyframes removed-decision { 0% { opacity: 1; transform: scale(1); } 48% { opacity: .08; transform: scale(.9); } 100% { opacity: .54; transform: scale(1); } }
 @keyframes edge-flow { to { stroke-dashoffset: -32; } }
-@keyframes edge-draw { to { stroke-dashoffset: 0; } }
+/* The trace draws the edge in, then FADES, handing the edge back to the styled
+   base path underneath. With `to { stroke-dashoffset: 0 }` plus animation-fill
+   `forwards` it held a solid 2.4px line on top forever — which covered the base
+   edge's entire status vocabulary (waiting at .3 opacity, done at .62, skipped
+   dashed) and hid the flowing chartreuse dashes on the active edge completely.
+   Every edge looked identical and the signal animation had never been seen. */
+@keyframes edge-draw {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  60% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
 @keyframes edge-retract { to { stroke-dashoffset: 1; opacity: 0; } }
 @keyframes edge-base-retract { to { opacity: 0; } }
 @keyframes recalculating-word { 0% { opacity: 0; } 12%, 55% { opacity: 1; } 100% { opacity: 0; } }
@@ -366,3 +392,96 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .runtime-edge-trace, .runtime-edge-retract { display: none; }
   .subtask-icon-spinner::before { width: 5px; height: 5px; border: 0; background: #5f7410; animation: none; }
 }
+
+/* ── Detail the backend always had and the card never showed ─────────── */
+.node-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.node-meta span { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 5px; background: #e6e1d5; color: #43596c; font-size: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.node-meta .node-kind { background: transparent; border: 1px solid #cdc6b6; color: #6a7885; text-transform: uppercase; letter-spacing: .07em; font-weight: 900; }
+
+.card-details .failure, .card-details .blocked-reason { margin: 0 -18px; padding-right: 18px!important; padding-left: 18px!important; background: #f4deda; }
+.card-details .failure p, .card-details .blocked-reason p { color: #5e2f2d; font-weight: 600; }
+.card-details .failure .section-label, .card-details .blocked-reason .section-label { color: var(--red-deep); }
+
+/* ── What automating this step was worth ─────────────────────────────── */
+.saving { background: #eef2dc; margin: 0 -18px; padding-right: 18px!important; padding-left: 18px!important; }
+.saving .section-label { color: #4e6118; }
+.saving-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.saving-figures > div { display: grid; gap: 2px; }
+.saving-figures span { color: #66742f; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.saving-figures strong { color: #2f3d10; font-size: 19px; letter-spacing: -.02em; }
+.saving-basis { display: block; margin-top: 9px; color: #6b7742; font-size: 9px; }
+
+.card-saving { display: flex; align-items: baseline; gap: 7px; margin-top: 11px; padding: 6px 9px; border-radius: 7px; background: #eef2dc; }
+.card-saving span { color: #66742f; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.card-saving strong { color: #2f3d10; font-size: 13px; }
+.card-saving em { margin-left: auto; color: #4e6118; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-style: normal; }
+
+.run-saving { display: grid; grid-auto-flow: column; align-items: baseline; gap: 9px; padding: 7px 13px; border: 1px solid #4d6f2a; border-radius: 9px; background: #16321f; }
+.run-saving span { color: #9db772; font-size: 8px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.run-saving strong { color: var(--chartreuse); font-size: 15px; }
+.run-saving em { color: #cfe38a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-style: normal; }
+
+/* ── A step somebody has taken hold of ───────────────────────────────── */
+.flow-card.steered { border-color: #b8862f; box-shadow: 0 0 0 2px #e0a94b40, 0 22px 46px #020b1480; }
+.card-instruction { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; color: #7a5518; font-size: 10px; font-weight: 700; }
+
+/* ── Suggested instructions ──────────────────────────────────────────── */
+.suggestions { margin-top: 13px; }
+.suggestions-label { display: inline-flex; align-items: center; gap: 5px; color: #693d39; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.suggestion-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.suggestion-chip { max-width: 100%; border: 1px dashed #c99a92; border-radius: 999px; padding: 5px 11px; background: #fff8f5; color: #6a3d38; font-size: 10px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-chip:hover, .suggestion-chip:focus-visible { border-style: solid; border-color: var(--red); background: #fff; color: #4d2a26; }
+
+/* ── Stop and steer share one box ────────────────────────────────────── */
+.instruction-form textarea { width: 100%; }
+.instruction-form .instruction-actions { display: flex; gap: 7px; margin-top: 7px; }
+.instruction-form .instruction-actions button { flex: 1; padding: 9px 11px; }
+.instruction-form .instruction-actions .stop { flex: none; border: 1px solid var(--red-deep); background: transparent; color: var(--red-deep); }
+.instruction-form .instruction-actions .stop:hover:not(:disabled) { background: var(--red-deep); color: #fff; }
+.instruction-echo { margin: 7px 0 0!important; color: #6a3d38!important; font-size: 10px!important; font-style: italic; }
+.instruction-response { margin: 9px 0 0!important; padding-top: 8px; border-top: 1px solid #e2cbc6; color: #4f3a37!important; font-size: 10px!important; }
+.artifact-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; color: #3a5268; font-size: 9px; font-weight: 700; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── The detail drawer ───────────────────────────────────────────────────
+   Beside the graph, never inside it. Cards are one fixed size now, so opening
+   this moves nothing on the canvas: the run stays where the person left it. */
+.node-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 430px;
+  max-width: 100%;
+  height: 100%;
+  border-left: 1px solid #d8d0c1;
+  background: linear-gradient(180deg, #fffefb, #f5f1e7);
+  box-shadow: -22px 0 54px #020b1466;
+  animation: drawer-in var(--beat) var(--ease);
+}
+@keyframes drawer-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { .node-drawer { animation: none; } }
+
+.drawer-header { position: relative; padding: 18px 46px 15px 18px; border-bottom: 1px solid #ded7ca; }
+.drawer-header > div { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.drawer-header .owner { display: inline-flex; align-items: center; gap: 5px; color: #5b6b79; font-size: 9px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.drawer-header .status { display: inline-flex; align-items: center; gap: 5px; color: #35485a; font-size: 9px; font-weight: 900; letter-spacing: .09em; }
+.drawer-header .status.needs-human, .drawer-header .status.blocked, .drawer-header .status.failed { color: var(--red-deep); }
+.drawer-header h2 { margin: 11px 0 0; color: #10243a; font-size: 22px; line-height: 1.1; letter-spacing: -.02em; text-wrap: balance; overflow-wrap: anywhere; }
+.drawer-header code { display: inline-block; margin-top: 7px; color: #6d7c88; font-size: 10px; }
+.drawer-close { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #d8d0c1; border-radius: 8px; background: #fffdf7; color: #4a5b6a; }
+.drawer-close:hover { border-color: #9aa7b1; color: #10243a; }
+
+.drawer-body { overflow-y: auto; padding: 0 18px 22px; }
+/* The panel was written for a card, where it needed a rule above it and a bit of
+   negative margin to reach the card's edge. In the drawer it is the whole body. */
+.drawer-body .card-details { margin-top: 0; border-top: 0; }
+
+/* Selection is a ring. It used to be a 130px-wider, 460px-taller card, which
+   pushed every downstream column sideways and re-centred its own column. */
+.flow-card.selected { border-color: #6f8fb5; box-shadow: 0 0 0 2px #9dc0e455, 0 22px 46px #020b1480; }
+
+@media (max-width: 900px) { .node-drawer { width: 100%; } }

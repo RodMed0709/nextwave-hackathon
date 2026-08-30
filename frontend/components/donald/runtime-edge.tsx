@@ -47,4 +47,27 @@ function RuntimeEdgeComponent(props: EdgeProps) {
   )
 }
 
-export const RuntimeEdge = memo(RuntimeEdgeComponent)
+/**
+ * Re-render only when something about THIS edge changed.
+ *
+ * The default memo comparison never held: `data` is rebuilt as a fresh object
+ * for every edge on every event, so each of a run's ~90 events re-rendered every
+ * edge in the graph. Comparing the values that actually reach the DOM — the four
+ * endpoint coordinates and the three data fields — is what turns a replay from a
+ * storm of re-renders into a handful.
+ */
+export const RuntimeEdge = memo(RuntimeEdgeComponent, (previous, next) => {
+  const a = (previous.data ?? {}) as RuntimeEdgeData
+  const b = (next.data ?? {}) as RuntimeEdgeData
+  return (
+    previous.sourceX === next.sourceX &&
+    previous.sourceY === next.sourceY &&
+    previous.targetX === next.targetX &&
+    previous.targetY === next.targetY &&
+    previous.sourcePosition === next.sourcePosition &&
+    previous.targetPosition === next.targetPosition &&
+    a.status === b.status &&
+    a.enterDelayMs === b.enterDelayMs &&
+    a.exiting === b.exiting
+  )
+})

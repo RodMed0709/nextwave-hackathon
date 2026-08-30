@@ -23,6 +23,12 @@ export type OperatorInstructionInput = {
   instruction: string
   optionId?: string | null
   currentSequence: number
+  /**
+   * 'steer' redirects a step, 'stop' asks the agent to abandon it. Both are
+   * advisory - these agents are not ours to control - so the difference is in
+   * what the agent is asked to do, not in any power we have over it.
+   */
+  type?: 'stop' | 'steer'
 }
 
 // Keep the backend write contract in one place until the Donald API publishes a typed client.
@@ -298,13 +304,14 @@ export async function postOperatorInstruction(
     ? `${input.instruction} (chose: ${input.optionId})`
     : input.instruction
 
+  const type = input.type ?? 'steer'
   const response = await fetcher(
     `${apiRoot(baseUrl)}/runs/${encodeURIComponent(runKey)}/interventions`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        type: 'steer',
+        type,
         node_key: input.nodeKey,
         prompt: instruction,
       }),
@@ -327,6 +334,54 @@ export async function postOperatorInstruction(
     agent_label: null,
     node_key: value.node_key ?? input.nodeKey,
     idempotency_key: `intervention_requested:${value.id ?? instruction}`,
-    payload: { type: 'steer', prompt: instruction, status: 'registered' },
+    payload: {
+      type,
+      prompt: instruction,
+      status: 'registered',
+      intervention_id: value.id,
+      // Marks this as a person steering rather than the agent asking. The
+      // reducer uses it to decide whether the step is now blocked: an agent that
+      // asks a question has stopped, an operator who steers has not stopped
+      // anything, and drawing the step as blocked would claim a brake we do not
+      // have.
+      origin: 'operator',
+    },
+  }
+}
+
+export type PromptSuggestion = { label: string; prompt: string }
+
+/**
+ * Suggested instructions for one step, generated server-side from this run's own
+ * content so they name the documents and numbers actually in play.
+ *
+ * Failure is not propagated: suggestions are an assist, and a step you cannot
+ * get advice on is still a step you can type an instruction to. Returning an
+ * empty list simply renders no chips.
+ */
+export async function fetchPromptSuggestions(
+  baseUrl: string | null,
+  runKey: string,
+  nodeKey: string,
+  options: Pick<SourceOptions, 'fetch'> & { signal?: AbortSignal } = {},
+): Promise<PromptSuggestion[]> {
+  if (!baseUrl) return []
+  const fetcher = options.fetch ?? fetch
+  try {
+    const response = await fetcher(
+      `${apiRoot(baseUrl)}/runs/${encodeURIComponent(runKey)}/nodes/${encodeURIComponent(nodeKey)}/suggestions`,
+      { signal: options.signal },
+    )
+    if (!response.ok) return []
+    const body = await response.json() as { suggestions?: unknown }
+    if (!Array.isArray(body.suggestions)) return []
+    return body.suggestions.flatMap((item) => {
+      if (typeof item !== 'object' || item === null) return []
+      const { label, prompt } = item as Record<string, unknown>
+      if (typeof label !== 'string' || typeof prompt !== 'string') return []
+      return [{ label, prompt }]
+    }).slice(0, 3)
+  } catch {
+    return []
   }
 }
