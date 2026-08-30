@@ -33,6 +33,20 @@ export function getLayoutBounds(
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
+
+export function getCombinedLayoutBounds(
+  boundsList: readonly (LayoutBounds | null | undefined)[],
+  padding = 0,
+): LayoutBounds | null {
+  const usable = boundsList.filter((bounds): bounds is LayoutBounds => Boolean(bounds))
+  if (usable.length === 0) return null
+  const left = Math.min(...usable.map((bounds) => bounds.x)) - padding
+  const top = Math.min(...usable.map((bounds) => bounds.y)) - padding
+  const right = Math.max(...usable.map((bounds) => bounds.x + bounds.width)) + padding
+  const bottom = Math.max(...usable.map((bounds) => bounds.y + bounds.height)) + padding
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
 export function getFitViewport(bounds: LayoutBounds, viewport: NodeSize) {
   const zoom = Math.min(
     Math.max(

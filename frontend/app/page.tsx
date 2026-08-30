@@ -1,4 +1,5 @@
-import { RunViewer } from '@/components/donald/run-viewer'
+import { DonaldAccess } from '@/components/access/donald-access'
+import { redirect } from 'next/navigation'
 
 type HomePageProps = {
   searchParams: Promise<{ run?: string | string[] }>
@@ -7,5 +8,7 @@ type HomePageProps = {
 export default async function Page({ searchParams }: HomePageProps) {
   const value = (await searchParams).run
   const requestedRunKey = Array.isArray(value) ? value[0] : value
-  return <RunViewer requestedRunKey={requestedRunKey?.trim() || null} />
+  if (requestedRunKey?.trim()) redirect(`/runs/${encodeURIComponent(requestedRunKey.trim())}`)
+
+  return <DonaldAccess />
 }
