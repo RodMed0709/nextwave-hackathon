@@ -264,8 +264,8 @@ progress("reconcile_confirmations", "Sep 2: unavailable. Trying Sep 3…", 50, a
 progress("reconcile_confirmations", "Sep 3: unavailable. Trying Sep 4…", 75, advance=3.0)
 emit("node_status_changed", {
     "status": "failed",
-    "headline": "No slot confirmed — all 3 failed",
-    "finding": "Sep 2: unavailable. Sep 3: unavailable. Sep 4: unavailable. "
+    "headline": "All 3 dates failed",
+    "finding": "Sep 2, Sep 3 and Sep 4: all declined. "
                "The partner cannot serve this container this week.",
     "error_message": "The plan died here: the partner declined every window.",
     "manual_minutes": 20,
@@ -362,7 +362,7 @@ start("plan_carriers", advance=1.2)
 progress("plan_carriers", "Carrier A: $480, pickup Sep 3", 33, advance=2.6)
 progress("plan_carriers", "Carrier B: $610, pickup Sep 2", 66, advance=2.6)
 done("plan_carriers",
-     "3 carriers ranked — A beats the clock",
+     "Carrier A beats the clock",
      "Carrier A: $480, Sep 3. Carrier B: $610, Sep 2. Carrier C: $395, Sep 8 "
      "— cheapest on paper, but 5 extra days of demurrage erase the saving.",
      manual_minutes=18, advance=2.6)

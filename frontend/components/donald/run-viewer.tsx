@@ -1922,17 +1922,27 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     window.setTimeout(() => {
       emitLocal(mk('node_updated', actKey, 'Lex', { message: 'Executing the decision and preparing the client update…', progress_percent: 55 }))
     }, 2_600)
+    // Unreached planned cards must not sit as eternal pendings beside a
+    // finished run: the path not taken is SKIPPED, visibly.
+    for (const pending of Object.values(state.nodes)) {
+      if (pending.removed || pending.node_key === gateNode.node_key) continue
+      if (pending.status !== 'not_started' && !pending.status.startsWith('blocked_on_')) continue
+      emitLocal(mk('node_status_changed', pending.node_key, 'Rex', {
+        status: 'skipped',
+        headline: 'Skipped — path not taken',
+      }))
+    }
     window.setTimeout(() => {
       emitLocal(mk('artifact_added', actKey, 'Lex', {
         artifact_type: 'text',
-        name: 'Email — routing decision executed',
+        name: 'Email — decision executed',
         text_content:
           'To: imports@muebleriasberrios.pr\n' +
           'From: lex@ops.nauta.ai\n' +
           `Date: ${new Date().toUTCString()}\n` +
-          'Subject: OP-4471 — routing decision confirmed\n\n' +
+          `Subject: ${state.run.key.toUpperCase()} — decision confirmed\n\n` +
           'Dear Berríos Imports Team,\n\n' +
-          `Following the vessel change on OP-4471, the approved course of action is: ${option.label}.\n\n` +
+          `Following the disruption on this operation, the approved course of action is: ${option.label}.\n\n` +
           `${option.rationale ?? 'The carrier has been instructed accordingly and all references will follow.'}\n\n` +
           'We will confirm the updated documentation as soon as the carrier issues it.\n\n' +
           'Kind regards,\n' +
@@ -1946,13 +1956,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }))
       emitLocal(mk('run_finished', null, 'Rex', {
         summary: {
-          headline: `OP-4471 resolved — ${short}`,
+          headline: `Resolved — ${short}`,
           detail: `${option.label}. ${option.rationale ?? ''}`,
         },
       }))
       setEmailPopupKey(actKey)
     }, 6_500)
-  }, [emitLocal])
+  }, [emitLocal, state.nodes, state.run.key])
 
   synthesizeTaskRef.current = synthesizeSteeredTask
   scenarioRef.current = synthesizeChosenScenario
