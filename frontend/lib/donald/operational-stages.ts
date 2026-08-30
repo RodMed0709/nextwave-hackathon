@@ -45,7 +45,7 @@ export const OPERATIONAL_STAGES: OperationalStageDefinition[] = [
   },
   {
     id: 'below',
-    eyebrow: '',
+    eyebrow: 'Opened by the Watch',
     title: 'The Response',
     description: '',
     capabilities: ['Predict', 'Detect', 'Extract', 'Reconcile', 'Explain', 'Impact', 'Plan', 'Decide', 'Act'],

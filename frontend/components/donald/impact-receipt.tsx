@@ -54,7 +54,7 @@ export function ImpactReceipt({ receipt }: { receipt: StageImpactReceipt }) {
           <strong>{formatReceiptUsd(receipt.valueProtectedUsd)}</strong>
           <p className="impact-receipt-line">
             {receipt.valueProtectedUsd
-              ? 'Demurrage & delay exposure avoided on this shipment'
+              ? 'Exposure avoided — 3 containers × 10 days × $138/day D&D benchmark'
               : 'No money at risk on this stage'}
           </p>
         </div>

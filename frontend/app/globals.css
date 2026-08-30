@@ -786,8 +786,63 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   line-height: 1.1;
 }
 .start-case-lede { margin: 0; color: #93a9b8; font-size: 13px; }
-.start-case-bridge { margin: 0; color: #b9cbd9; font-size: 13px; }
+.start-case-bridge { margin: 0; color: #b9cbd9; font-size: 13px; line-height: 1.5; }
 .start-case-bridge strong { color: var(--chartreuse); font-weight: 900; }
+.start-case-flows {
+  margin: 0;
+  padding: 12px 14px 12px 30px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid #1d3f61;
+  border-radius: 12px;
+  background: #071729;
+}
+.start-case-flows li { color: #93a9b8; font-size: 11.5px; line-height: 1.45; }
+.start-case-flows li::marker { color: var(--chartreuse); }
+
+/* Route map popup — reuses the email backdrop. */
+.map-popup {
+  width: min(760px, 100%);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid #24486e;
+  border-radius: 14px;
+  background: #0b2138;
+  box-shadow: 0 30px 80px #020b14cc;
+  animation: node-birth var(--beat) var(--ease);
+  overflow: hidden;
+}
+.map-popup header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 18px;
+  border-bottom: 1px solid #1d3f61;
+}
+.map-popup header strong { color: #f2f7f8; font-size: 15px; font-weight: 800; }
+.map-popup header button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #24486e;
+  border-radius: 8px;
+  background: #102b49;
+  color: #cfe0ec;
+  cursor: pointer;
+}
+.map-popup-canvas { display: block; width: 100%; height: auto; }
+.map-popup-note {
+  margin: 0;
+  padding: 12px 18px 14px;
+  border-top: 1px solid #1d3f61;
+  color: #ffd9a0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.read-email.view-map { border-color: #6f8fb5; background: #eef2f6; color: #2c5e8a; margin-left: 8px; }
 .start-case-shell textarea {
   padding: 14px 16px;
   border: 1px solid #24486e;

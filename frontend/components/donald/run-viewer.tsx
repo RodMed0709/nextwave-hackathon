@@ -85,6 +85,7 @@ import { getExecutivePhases } from '@/lib/donald/executive-phases'
 import { PromptBar } from '@/components/donald/prompt-bar'
 import { pickSteerTargetKey } from '@/lib/donald/steer-target'
 import { AgentRail } from '@/components/donald/agent-rail'
+import { MapPopup, type MapPopupData } from '@/components/donald/map-popup'
 import { AmbientStrip } from '@/components/donald/ambient-strip'
 import { ClientArea } from '@/components/donald/client-area'
 import { DonaldNarration } from '@/components/donald/donald-narration'
@@ -149,6 +150,7 @@ type FlowNodeData = {
   suggestions: PromptSuggestion[]
   onToggle: () => void
   onReadEmail: () => void
+  onViewMap: () => void
   onResize: (size: NodeSize) => void
   onInstruction: (instruction: string, options?: { optionId?: string | null; kind?: InstructionKind }) => Promise<void>
 }
@@ -848,6 +850,15 @@ function FlowCard({ data }: { data: FlowNodeData }) {
           <FileText aria-hidden="true" size={12} /> Read the email
         </button>
       )}
+      {/\bvessel|voyage|transship|route|ship\b/i.test(node.label) && (
+        <button
+          className="read-email view-map"
+          onClick={(event) => { event.stopPropagation(); data.onViewMap() }}
+          type="button"
+        >
+          <ExternalLink aria-hidden="true" size={12} /> Route map
+        </button>
+      )}
       {latestArtifact && !isEmail && (
         <div className="card-artifact" title={latestArtifact.name}>
           <FileText aria-hidden="true" size={12} />
@@ -979,6 +990,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   // — instructions queued while paused reach it exactly as they would live.
   const [paused, setPaused] = useState(false)
   const [emailPopupKey, setEmailPopupKey] = useState<string | null>(null)
+  const [mapPopup, setMapPopup] = useState<MapPopupData | null>(null)
+  // Route data for synthesised cases, keyed by their node-key prefix, so the
+  // map button on those cards shows THEIR voyage rather than the main one.
+  const syntheticRoutesRef = useRef<Record<string, MapPopupData>>({})
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
@@ -1231,6 +1246,17 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             }
           },
           onReadEmail: () => setEmailPopupKey(node.node_key),
+          onViewMap: () => {
+            const prefix = Object.keys(syntheticRoutesRef.current).find((candidate) => node.node_key.startsWith(candidate))
+            setMapPopup(prefix
+              ? syntheticRoutesRef.current[prefix]
+              : {
+                title: 'OP-4471 — live route',
+                origin: 'Xiamen, CN',
+                destination: 'San Juan, PR',
+                note: 'Re-booked onto MSC ILONA FE2440, direct — new ETA Oct 3, the committed Oct 10 delivery holds.',
+              })
+          },
           onResize: (measured) => updateMeasurement(node.node_key, measured),
           onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
         } satisfies FlowNodeData,
@@ -1557,6 +1583,107 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     }, 6_400)
   }, [emitLocal])
 
+  /**
+   * A NEW-EVENT instruction ("a vessel just deviated…") is not a steer on an
+   * existing step — it is the watch catching something else. So it opens a
+   * second flow INSIDE The Response: a Nina detect card born off the ambient
+   * monitor, then Rex assessing, then Lex acting — all in parallel with
+   * whatever the main case is doing, no reload, no second page.
+   */
+  const synthesizeSteeredCase = useCallback((instruction: string) => {
+    syntheticTaskCountRef.current += 1
+    const prefix = `live_case_${syntheticTaskCountRef.current}`
+    const short = instruction.length > 42 ? `${instruction.slice(0, 39)}…` : instruction
+    const routeMatch = instruction.match(/from\s+([A-Za-zÀ-ÿ ,]{3,24}?)\s+to\s+([A-Za-zÀ-ÿ ,]{3,24})(?:[.,;]|$)/i)
+    syntheticRoutesRef.current[prefix] = {
+      title: 'New case — live route',
+      origin: routeMatch?.[1]?.trim() ?? 'Vung Tau, VN',
+      destination: routeMatch?.[2]?.trim() ?? 'Manzanillo, MX',
+      note: 'Unplanned transshipment on the voyage — ETA slips ~9 days. Donald is sizing the damage.',
+    }
+    let part = 0
+    const mk = (event_type: string, node_key: string | null, agent: string, payload: Record<string, unknown>): Omit<DonaldEvent, 'sequence'> => {
+      part += 1
+      return {
+        event_type,
+        occurred_at: new Date().toISOString(),
+        agent_label: agent,
+        node_key,
+        idempotency_key: `synthetic:${prefix}:${part}`,
+        payload,
+      }
+    }
+    const detectKey = `${prefix}_detect_vessel_event`
+    const assessKey = `${prefix}_assess_impact`
+    const actKey = `${prefix}_notify_email`
+    emitLocal(mk('node_added', detectKey, 'Nina', { label: `Detect: ${short}`, planned: false }))
+    emitLocal(mk('edge_added', null, 'Nina', {
+      edge_key: `ambient_monitor-to-${detectKey}`,
+      source_node_key: 'ambient_monitor',
+      target_node_key: detectKey,
+      planned: false,
+    }))
+    emitLocal(mk('node_status_changed', detectKey, 'Nina', { status: 'in_progress', started_at: new Date().toISOString() }))
+    window.setTimeout(() => {
+      emitLocal(mk('node_status_changed', detectKey, 'Nina', {
+        status: 'succeeded',
+        headline: 'Caught it — new vessel event on the book',
+        finding: instruction,
+        manual_minutes: 8,
+      }))
+      emitLocal(mk('node_added', assessKey, 'Rex', { label: 'Assess the vessel deviation', planned: false }))
+      emitLocal(mk('edge_added', null, 'Rex', {
+        edge_key: `${detectKey}-to-${assessKey}`,
+        source_node_key: detectKey,
+        target_node_key: assessKey,
+        planned: false,
+      }))
+      emitLocal(mk('node_status_changed', assessKey, 'Rex', { status: 'in_progress', started_at: new Date().toISOString() }))
+    }, 2_600)
+    window.setTimeout(() => {
+      emitLocal(mk('node_updated', assessKey, 'Rex', { message: 'Re-computing the ETA and checking committed deliveries…', progress_percent: 60 }))
+    }, 5_200)
+    window.setTimeout(() => {
+      emitLocal(mk('node_status_changed', assessKey, 'Rex', {
+        status: 'succeeded',
+        headline: 'ETA slips ~9 days on the deviation',
+        finding: 'Unplanned transshipment detected on the voyage. Committed deliveries checked against the new ETA; options priced and ready if a commitment is at risk.',
+        manual_minutes: 18,
+      }))
+      emitLocal(mk('node_added', actKey, 'Lex', { label: 'Notify the client by email', planned: false }))
+      emitLocal(mk('edge_added', null, 'Lex', {
+        edge_key: `${assessKey}-to-${actKey}`,
+        source_node_key: assessKey,
+        target_node_key: actKey,
+        planned: false,
+      }))
+      emitLocal(mk('node_status_changed', actKey, 'Lex', { status: 'in_progress', started_at: new Date().toISOString() }))
+    }, 8_200)
+    window.setTimeout(() => {
+      emitLocal(mk('artifact_added', actKey, 'Lex', {
+        artifact_type: 'text',
+        name: 'Email — vessel deviation update',
+        text_content:
+          'To: the client\n' +
+          'From: lex@ops.nauta.ai\n' +
+          `Date: ${new Date().toUTCString()}\n` +
+          'Subject: Voyage update — unplanned transshipment, new ETA under review\n\n' +
+          'Hi,\n\n' +
+          `Our watch just caught this on your voyage: ${instruction}\n\n` +
+          'The vessel made an unplanned stop and the ETA slips about 9 days. We are ' +
+          'already pricing alternatives and will bring you a decision only if a ' +
+          'committed delivery is at risk.\n\n' +
+          'Lex — Expedite Communication, Nauta',
+      }))
+      emitLocal(mk('node_status_changed', actKey, 'Lex', {
+        status: 'succeeded',
+        headline: 'Client informed — options on standby',
+        finding: 'The client has the deviation and the new ETA; alternatives stay priced in case the schedule degrades further.',
+        manual_minutes: 12,
+      }))
+    }, 12_000)
+  }, [emitLocal])
+
   const submitFromBar = useCallback(async (instruction: string) => {
     if (!steerTargetKey) return
     const node = state.nodes[steerTargetKey]
@@ -1573,8 +1700,18 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     }, 2_200)
     await submitInstruction(node, instruction)
     const recorded = !API_BASE_URL || isRecordedRunKey(requestedRunKey)
-    if (recorded) synthesizeSteeredTask(instruction, node.node_key)
-  }, [requestedRunKey, state.nodes, steerTargetKey, submitInstruction, synthesizeSteeredTask])
+    if (recorded) {
+      // A message about a NEW event opens a second flow off the watch; an
+      // instruction about the current work grows a task off the steer target.
+      const newCase = /\b(vessel|barco|ship|voyage|transship|deviat|desvi|divert|delay|just happened|acaba de|new (case|shipment|operation|booking)|apareci)\b/i.test(instruction)
+      if (newCase) synthesizeSteeredCase(instruction)
+      else synthesizeSteeredTask(instruction, node.node_key)
+      // Release the camera: the whole point is SEEING the new card arrive,
+      // and a focused card pins the viewport away from it.
+      setExpandedKey(null)
+      setViewportPinned(false)
+    }
+  }, [requestedRunKey, state.nodes, steerTargetKey, submitInstruction, synthesizeSteeredCase, synthesizeSteeredTask])
 
   return (
     <main className="donald">
@@ -1589,7 +1726,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               <strong>{runStatusLabel(state)}</strong>
             </div>
             <div className="kpi-card" title={runSavings?.basis}>
-              <span>Time Saved</span>
+              <span>Manual Work Replaced</span>
               <strong>{runSavings?.humanTime ?? '0m'}</strong>
             </div>
           </div>
@@ -1708,6 +1845,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       {emailPopupKey && state.nodes[emailPopupKey] && (
         <EmailPopup node={state.nodes[emailPopupKey]} onClose={() => setEmailPopupKey(null)} />
       )}
+
+      {mapPopup && <MapPopup data={mapPopup} onClose={() => setMapPopup(null)} />}
 
       <AgentRail active={activeAgents} agents={clientMetadata.agents} />
 
