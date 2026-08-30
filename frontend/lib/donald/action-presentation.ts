@@ -19,7 +19,7 @@ export type DonaldActionId = typeof DONALD_ACTION_IDS[number]
 export type DonaldAnimationKind = DonaldActionId | 'default' | 'email'
 
 export type ActionPresentation = {
-  id: DonaldActionId
+  id: DonaldAnimationKind
   label: string
   petAsset: string
   animationKind: DonaldAnimationKind
@@ -32,6 +32,13 @@ export type DecisionOptionPresentation = {
 }
 
 export const DEFAULT_DONALD_PET_ASSET = '/donald_favicon.png'
+
+export const DEFAULT_ACTION_PRESENTATION: ActionPresentation = {
+  id: 'default',
+  label: 'Work',
+  petAsset: DEFAULT_DONALD_PET_ASSET,
+  animationKind: 'default',
+}
 
 export const ACTION_PRESENTATIONS: Record<DonaldActionId, ActionPresentation> = {
   ingest: {
@@ -112,28 +119,46 @@ const ACTION_KEYWORDS: Record<DonaldActionId, string[]> = {
   ingest: ['ingest', 'receive', 'read', 'load', 'collect'],
   identify: ['identify', 'resolve', 'match-entity', 'entity'],
   extract: ['extract', 'parse', 'pull'],
-  reconcile: ['reconcile', 'compare', 'match-record'],
-  monitor: ['monitor', 'watch', 'track', 'clock'],
+  reconcile: ['reconcile', 'compare', 'match-record', 'review', 'verify', 'cross-check', 'booking'],
+  monitor: ['monitor', 'watch', 'track', 'clock', 'check', 'update', 'poll', 'refresh'],
   detect: ['detect', 'spot', 'confirm', 'exception', 'anomaly', 'conflict'],
-  explain: ['explain', 'root-cause', 'root cause', 'cause'],
-  impact: ['impact', 'exposure', 'quantify', 'calculate', 'consequence'],
+  explain: ['explain', 'root-cause', 'root cause', 'cause', 'analyze', 'analyse', 'diagnose', 'root', 'why'],
+  impact: ['impact', 'exposure', 'quantify', 'calculate', 'consequence', 'assess', 'estimate', 'implication', 'financial', 'cost'],
   predict: ['predict', 'forecast', 'risk', 'overrun'],
-  plan: ['plan', 'response', 'rank', 'option'],
-  decide: ['decide', 'decision', 'approve', 'gate'],
-  act: ['act', 'execute', 'book', 'send', 'apply'],
+  plan: ['plan', 'response', 'rank', 'option', 'propose', 'mitigation', 'alternative', 'recommend'],
+  decide: ['decide', 'decision', 'approve', 'gate', 'escalate', 'approval', 'confirm'],
+  act: ['act', 'execute', 'book', 'send', 'apply', 'notify', 'email', 'draft', 'dispatch'],
 }
 
 function normalize(value: string): string {
-  return value.toLowerCase().replace(/[_/]+/g, '-')
+  return value.toLowerCase().replace(/[_/\s]+/g, '-')
 }
 
 function hasActionWord(candidate: string, word: string): boolean {
   const normalized = normalize(candidate)
   const normalizedWord = normalize(word)
-  return normalized === normalizedWord ||
-    normalized.startsWith(`${normalizedWord}-`) ||
-    normalized.includes(`-${normalizedWord}-`) ||
-    normalized.endsWith(`-${normalizedWord}`)
+  const wordForms = normalizedWord.endsWith('s')
+    ? [normalizedWord, normalizedWord.slice(0, -1)]
+    : [normalizedWord, `${normalizedWord}s`]
+
+  return wordForms.some((wordForm) => (
+    normalized === wordForm ||
+    normalized.startsWith(`${wordForm}-`) ||
+    normalized.includes(`-${wordForm}-`) ||
+    normalized.endsWith(`-${wordForm}`)
+  ))
+}
+
+// These recorded steps predate canonical prefixes and intentionally render as
+// neutral work. Keep them stable as the generic vocabulary grows.
+const ACTION_ID_OVERRIDES: Record<string, DonaldActionId | null> = {
+  'brief-boss-email': null,
+  'check-product-classifications': null,
+  // The ACT split: without these, the broadened synonyms reclassify them
+  // ('update' -> monitor sends the client email to the ambient lane; 'booking'
+  // -> reconcile strips the booking step of its value contribution).
+  'update-client-email': 'act',
+  'confirm-booking': 'act',
 }
 
 /**
@@ -165,7 +190,8 @@ export function actionPresentationForNode(input: {
   if (isEmailNode(input)) {
     return { ...ACTION_PRESENTATIONS.act, label: 'Email', animationKind: 'email' }
   }
-  return ACTION_PRESENTATIONS[donaldActionIdForNode(input) ?? 'ingest']
+  const actionId = donaldActionIdForNode(input)
+  return actionId ? ACTION_PRESENTATIONS[actionId] : DEFAULT_ACTION_PRESENTATION
 }
 
 export function donaldActionIdForNode(input: {
@@ -178,6 +204,10 @@ export function donaldActionIdForNode(input: {
 }): DonaldActionId | null {
   for (const actionId of DONALD_ACTION_IDS) {
     if (hasActionWord(input.nodeKey, actionId)) return actionId
+  }
+  const normalizedNodeKey = normalize(input.nodeKey)
+  if (Object.hasOwn(ACTION_ID_OVERRIDES, normalizedNodeKey)) {
+    return ACTION_ID_OVERRIDES[normalizedNodeKey]
   }
   const haystack = [
     input.nodeKey,
