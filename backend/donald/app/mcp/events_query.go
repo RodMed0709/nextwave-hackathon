@@ -98,29 +98,7 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 				}
 			}
 		}
-		// detail carries the type-specific extras the stored payload has no
-		// columns for: edge endpoints, and the declared plan. Lifting them into
-		// named fields means a client never has to parse a nested JSON string.
-		if d.Payload.Detail.Valid {
-			var extra map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(d.Payload.Detail.String), &extra); err == nil {
-				assign := func(key string, dst *string) {
-					if raw, ok := extra[key]; ok {
-						_ = json.Unmarshal(raw, dst)
-					}
-				}
-				assign("edge_key", &d.Payload.EdgeKey)
-				assign("source_node_key", &d.Payload.SourceNodeKey)
-				assign("target_node_key", &d.Payload.TargetNodeKey)
-				if raw, ok := extra["steps"]; ok {
-					d.Payload.Plan = &planWire{}
-					_ = json.Unmarshal(raw, &d.Payload.Plan.Steps)
-					if e, ok := extra["edges"]; ok {
-						_ = json.Unmarshal(e, &d.Payload.Plan.Edges)
-					}
-				}
-			}
-		}
+		liftDetail(&d.Payload)
 		if d.Payload.NewStatus != enums.AGENT_NODE_STATUS_INVALID {
 			d.Payload.Status = d.Payload.NewStatus.String()
 		}
@@ -149,6 +127,39 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 		return nil, err
 	}
 	return out, nil
+}
+
+// liftDetail exposes type-specific extras as ordinary delta fields while
+// retaining the raw detail for clients that already consume its other keys.
+func liftDetail(payload *deltaPayload) {
+	if !payload.Detail.Valid {
+		return
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload.Detail.String), &extra); err != nil {
+		return
+	}
+	assign := func(key string, dst *string) {
+		if raw, ok := extra[key]; ok {
+			_ = json.Unmarshal(raw, dst)
+		}
+	}
+	assign("edge_key", &payload.EdgeKey)
+	assign("source_node_key", &payload.SourceNodeKey)
+	assign("target_node_key", &payload.TargetNodeKey)
+	if raw, ok := extra["steps"]; ok {
+		payload.Plan = &planWire{}
+		_ = json.Unmarshal(raw, &payload.Plan.Steps)
+		if edges, ok := extra["edges"]; ok {
+			_ = json.Unmarshal(edges, &payload.Plan.Edges)
+		}
+	}
+	if raw, ok := extra["subtasks"]; ok {
+		var subtasks []Subtask
+		if err := json.Unmarshal(raw, &subtasks); err == nil {
+			payload.Subtasks = &subtasks
+		}
+	}
 }
 
 // enrichInterventions attaches the type and prompt to the stop/steer events, so

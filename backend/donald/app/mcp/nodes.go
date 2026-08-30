@@ -225,16 +225,72 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 // Tools: start_action / report_progress / complete_action / fail_action / skip_action
 // ─────────────────────────────────────────────
 
+type Subtask struct {
+	Key    string `json:"key" jsonschema:"Stable key, unique within this node"`
+	Label  string `json:"label" jsonschema:"Short user-facing description in English"`
+	Status string `json:"status,omitempty" jsonschema:"Subtask state: pending, running, done, skipped, or failed. Defaults to pending."`
+}
+
+func normalizeSubtasks(subtasks []Subtask) ([]Subtask, error) {
+	if subtasks == nil {
+		return nil, nil
+	}
+	normalized := make([]Subtask, len(subtasks))
+	seen := make(map[string]bool, len(subtasks))
+	for i, subtask := range subtasks {
+		if strings.TrimSpace(subtask.Key) == "" {
+			return nil, fmt.Errorf("subtasks[%d].key is required", i)
+		}
+		if strings.TrimSpace(subtask.Label) == "" {
+			return nil, fmt.Errorf("subtasks[%d].label is required", i)
+		}
+		if seen[subtask.Key] {
+			return nil, fmt.Errorf("subtasks[%d].key %q is duplicated; keys must be unique within the node", i, subtask.Key)
+		}
+		seen[subtask.Key] = true
+		if subtask.Status == "" {
+			subtask.Status = "pending"
+		}
+		switch subtask.Status {
+		case "pending", "running", "done", "skipped", "failed":
+		default:
+			return nil, fmt.Errorf("subtasks[%d].status must be one of pending, running, done, skipped, failed (got %q)", i, subtask.Status)
+		}
+		normalized[i] = subtask
+	}
+	return normalized, nil
+}
+
+func detailWithSubtasks(existing map[string]any, subtasks []Subtask) null.String {
+	if existing == nil && subtasks == nil {
+		return null.String{}
+	}
+	detail := make(map[string]any, len(existing)+1)
+	for key, value := range existing {
+		detail[key] = value
+	}
+	if subtasks != nil {
+		detail["subtasks"] = subtasks
+	}
+	return detailJSON(detail)
+}
+
 type StartActionParams struct {
-	RunKey       string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
-	NodeKey      string `json:"node_key" jsonschema:"The action you are starting"`
-	InputSummary string `json:"input_summary,omitempty" jsonschema:"Short summary of the inputs. Never put credentials or personal data here."`
+	RunKey       string    `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey      string    `json:"node_key" jsonschema:"The action you are starting"`
+	InputSummary string    `json:"input_summary,omitempty" jsonschema:"Short summary of the inputs. Never put credentials or personal data here."`
+	Subtasks     []Subtask `json:"subtasks,omitempty" jsonschema:"Complete ordered subtask snapshot. Declare it when starting the step."`
 }
 
 func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, args StartActionParams) (*mcp.CallToolResult, any, error) {
+	subtasks, err := normalizeSubtasks(args.Subtasks)
+	if err != nil {
+		return nil, nil, err
+	}
 	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
 		to:                enums.AGENT_NODE_STATUS_IN_PROGRESS,
 		idempotencySuffix: "start",
+		detail:            detailWithSubtasks(nil, subtasks),
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
 			n.StartedAt = nullTime(&now)
@@ -252,15 +308,20 @@ func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, arg
 }
 
 type ReportProgressParams struct {
-	RunKey  string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
-	NodeKey string `json:"node_key" jsonschema:"The action you are working on"`
-	Message string `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
-	Percent *int64 `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	RunKey   string    `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey  string    `json:"node_key" jsonschema:"The action you are working on"`
+	Message  string    `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
+	Percent  *int64    `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	Subtasks []Subtask `json:"subtasks,omitempty" jsonschema:"Complete ordered subtask snapshot for this update."`
 }
 
 // ReportProgress is the highest-frequency tool in the surface, so it stays
 // deliberately thin: no status change, no structural change, one short line.
 func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, args ReportProgressParams) (*mcp.CallToolResult, any, error) {
+	subtasks, err := normalizeSubtasks(args.Subtasks)
+	if err != nil {
+		return nil, nil, err
+	}
 	run, err := h.resolveRun(ctx, args.RunKey)
 	if err != nil {
 		return nil, nil, err
@@ -285,6 +346,7 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 			Message:         nullString(args.Message),
 			ProgressPercent: nullInt64(args.Percent),
 			NewStatus:       node.Status,
+			Detail:          detailWithSubtasks(nil, subtasks),
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.StatusMessage = nullString(args.Message)
@@ -548,6 +610,7 @@ type transitionSpec struct {
 	to                enums.AgentNodeStatus
 	idempotencySuffix string
 	message           string
+	detail            null.String
 	mutate            func(*agent_node_entity.AgentNode)
 }
 
@@ -605,6 +668,7 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 			PreviousStatus: previous,
 			NewStatus:      spec.to,
 			Message:        nullString(spec.message),
+			Detail:         spec.detail,
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.Status = spec.to
