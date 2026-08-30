@@ -206,7 +206,30 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
       }
       break
     }
-    case 'node_added':
+    case 'node_added': {
+      // A discovered node usually arrives WITH the edge that hangs it off its
+      // predecessor: add_action creates both in one atomic mutation, so there is
+      // no separate edge_added to wait for. Missing this made every discovered
+      // node look like a root and pushed it to the far left of the graph,
+      // alongside step one, instead of after the step that found it.
+      const source = stringValue(event.payload.source_node_key)
+      const target = stringValue(event.payload.target_node_key)
+      if (source && target) {
+        const edgeKey = stringValue(event.payload.edge_key) ?? `${source}->${target}`
+        next = {
+          ...next,
+          edges: {
+            ...next.edges,
+            [edgeKey]: {
+              edge_key: edgeKey,
+              source_node_key: source,
+              target_node_key: target,
+              status: 'pending',
+              planned: false,
+            },
+          },
+        }
+      }
       next = withNode(next, event, (node) => ({
         ...node,
         label: stringValue(event.payload.label) ?? node.label,
@@ -219,6 +242,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
         removal_reason: null,
       }))
       break
+    }
     case 'node_removed':
       next = withNode(next, event, (node) => ({
         ...node,

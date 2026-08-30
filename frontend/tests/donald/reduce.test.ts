@@ -162,3 +162,40 @@ test('a plan declaration does not clobber a node that already reported', () => {
   assert.equal(state.nodes.a.status, 'in_progress')
   assert.equal(state.nodes.a.label, 'Ingest')
 })
+
+test('a discovered node arrives with the edge that anchors it', () => {
+  // add_action creates the node and its `after` edge in one mutation, so the
+  // edge rides on node_added. Without this the node has no predecessor, Kahn's
+  // layout ranks it depth 0, and it renders at the start of the flow rather
+  // than after the step that discovered it.
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, {
+    sequence: 1,
+    event_type: 'plan_declared',
+    occurred_at: '2026-08-29T11:20:00Z',
+    agent_label: null,
+    node_key: null,
+    idempotency_key: 'plan',
+    payload: { plan: { steps: [{ node_key: 'first', label: 'First', plan_order: 1 }], edges: [] } },
+  })
+  state = applyEvent(state, {
+    sequence: 2,
+    event_type: 'node_added',
+    occurred_at: '2026-08-29T11:20:05Z',
+    agent_label: 'Theo',
+    node_key: 'discovered',
+    idempotency_key: 'added',
+    payload: {
+      label: 'Discovered mid-run',
+      edge_key: 'first->discovered',
+      source_node_key: 'first',
+      target_node_key: 'discovered',
+    },
+  })
+
+  assert.ok(state.nodes.discovered, 'the node exists')
+  assert.equal(state.edges['first->discovered']?.source_node_key, 'first')
+  assert.equal(state.edges['first->discovered']?.target_node_key, 'discovered')
+  // Discovered work is not part of the declared plan.
+  assert.equal(state.edges['first->discovered']?.planned, false)
+})

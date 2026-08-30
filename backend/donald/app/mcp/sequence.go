@@ -258,6 +258,12 @@ func detailJSON(v any) null.String {
 	if v == nil {
 		return null.String{}
 	}
+	// A typed nil map still satisfies `any != nil`, and json.Marshal turns it
+	// into the string "null" — which then reaches the client as a detail field
+	// containing the literal null. Catch that here rather than at every caller.
+	if m, ok := v.(map[string]string); ok && m == nil {
+		return null.String{}
+	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return null.String{}
