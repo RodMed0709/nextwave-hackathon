@@ -15,7 +15,7 @@ import {
   metricRows,
   keepStillRemovedKeys,
 } from '../../lib/donald/presentation'
-import type { DonaldEvent, RunNode } from '../../lib/donald/types'
+import { getRunStatusLabel, type DonaldEvent, type RunNode } from '../../lib/donald/types'
 
 function event(
   sequence: number,
@@ -165,6 +165,17 @@ test('the operator request comes from run state and falls back to the run key', 
   assert.equal(getRunRequest(run), 'Resolve the delayed OP-4471 shipment')
   assert.equal(getRunRequest({ ...run, name: null }), 'Validate the change')
   assert.equal(getRunRequest({ ...run, name: null, plan_summary: null }), 'OP-4471')
+})
+
+test('recoverable run blocks use specific waiting labels and never look failed', () => {
+  const labels = [
+    getRunStatusLabel('blocked_on_missing_data'),
+    getRunStatusLabel('blocked_on_provider_outage'),
+    getRunStatusLabel('blocked_on_user_decision'),
+  ]
+
+  assert.deepEqual(labels, ['WAITING FOR DATA', 'WAITING FOR PROVIDER', 'NEEDS INPUT'])
+  assert.equal(labels.includes('FAILED'), false)
 })
 
 test('metrics put money before days and render operational labels', () => {

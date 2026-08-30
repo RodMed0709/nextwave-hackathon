@@ -107,6 +107,33 @@ function withNode(state: RunState, event: DonaldEvent, update: (node: RunNode) =
   return { ...state, nodes: { ...state.nodes, [current.node_key]: update(current) } }
 }
 
+type RecoverableRunStatus =
+  | 'blocked_on_user_decision'
+  | 'blocked_on_missing_data'
+  | 'blocked_on_provider_outage'
+
+function recoverableRunStatus(value: RunNode['status'] | RunState['run']['status']): RecoverableRunStatus | null {
+  switch (value) {
+    case 'blocked_on_user_decision':
+    case 'blocked_on_missing_data':
+    case 'blocked_on_provider_outage':
+      return value
+    default:
+      return null
+  }
+}
+
+function runStatusFromBlockedNodes(state: RunState): RunState['run']['status'] {
+  const remaining = Object.values(state.nodes)
+    .filter((node) => !node.removed)
+    .flatMap((node) => {
+      const status = recoverableRunStatus(node.status)
+      return status ? [status] : []
+    })
+  const current = recoverableRunStatus(state.run.status)
+  return current && remaining.includes(current) ? current : remaining[0] ?? 'running'
+}
+
 export function applyEvent(state: RunState, event: DonaldEvent): RunState {
   if (state.applied_idempotency_keys[event.idempotency_key] || event.sequence <= state.last_sequence) return state
 
@@ -281,6 +308,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
     case 'node_status_changed': {
       const status = event.payload.status
       if (!isNodeStatus(status)) break
+      const previousNodeStatus = event.node_key ? next.nodes[event.node_key]?.status : null
       next = withNode(next, event, (node) => ({
         ...node,
         status,
@@ -292,6 +320,18 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
           : node.finished_at,
         progress_percent: status === 'succeeded' ? 100 : node.progress_percent,
       }))
+      if (
+        status === 'blocked_on_user_decision' ||
+        status === 'blocked_on_missing_data' ||
+        status === 'blocked_on_provider_outage'
+      ) {
+        next = { ...next, run: { ...next.run, status } }
+      } else if (
+        status === 'in_progress' &&
+        recoverableRunStatus(previousNodeStatus ?? 'not_started')
+      ) {
+        next = { ...next, run: { ...next.run, status: runStatusFromBlockedNodes(next) } }
+      }
       if (event.node_key && status === 'succeeded') {
         next = {
           ...next,
@@ -319,6 +359,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
       next = withNode(next, event, (node) => ({ ...node, status: 'blocked_on_user_decision' }))
       next = {
         ...next,
+        run: { ...next.run, status: 'blocked_on_user_decision' },
         open_intervention: {
           type: stringValue(event.payload.type) ?? 'steer',
           node_key: event.node_key,
@@ -336,7 +377,14 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
           next = { ...next, nodes: { ...next.nodes, [node.node_key]: { ...node, status: 'not_started' } } }
         }
       }
-      next = { ...next, open_intervention: null }
+      next = {
+        ...next,
+        run: {
+          ...next.run,
+          status: runStatusFromBlockedNodes(next),
+        },
+        open_intervention: null,
+      }
       break
     case 'run_updated':
       next = {

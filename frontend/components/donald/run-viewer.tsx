@@ -60,15 +60,16 @@ import {
   recordedSource,
   type DonaldEventSource,
 } from '@/lib/donald/source'
-import type {
-  DonaldEvent,
-  InterventionOption,
-  NodeStatus,
-  OpenIntervention,
-  RunArtifact,
-  RunEdge,
-  RunNode,
-  RunState,
+import {
+  getRunStatusLabel,
+  type DonaldEvent,
+  type InterventionOption,
+  type NodeStatus,
+  type OpenIntervention,
+  type RunArtifact,
+  type RunEdge,
+  type RunNode,
+  type RunState,
 } from '@/lib/donald/types'
 import '@xyflow/react/dist/style.css'
 
@@ -119,14 +120,8 @@ function displayStatus(node: RunNode): DisplayStatus {
 }
 
 function runStatusLabel(state: RunState): string {
-  if (state.open_intervention) return 'NEEDS HUMAN'
-  switch (state.run.status) {
-    case 'running': return 'RUNNING'
-    case 'finished': return 'DONE'
-    case 'failed': return 'FAILED'
-    case 'cancelled': return 'CANCELLED'
-    case 'not_started': return 'CONNECTING'
-  }
+  if (state.open_intervention) return getRunStatusLabel('blocked_on_user_decision')
+  return getRunStatusLabel(state.run.status)
 }
 
 function statusClass(status: DisplayStatus): string {

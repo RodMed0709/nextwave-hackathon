@@ -10,7 +10,28 @@ export type NodeStatus =
   | 'skipped'
 
 export type EdgeStatus = 'pending' | 'traversed' | 'skipped' | 'removed'
-export type RunStatus = 'not_started' | 'running' | 'finished' | 'failed' | 'cancelled'
+export type RunStatus =
+  | 'not_started'
+  | 'running'
+  | 'finished'
+  | 'failed'
+  | 'blocked_on_user_decision'
+  | 'blocked_on_missing_data'
+  | 'blocked_on_provider_outage'
+  | 'cancelled'
+
+export function getRunStatusLabel(status: RunStatus): string {
+  switch (status) {
+    case 'running': return 'RUNNING'
+    case 'finished': return 'DONE'
+    case 'failed': return 'FAILED'
+    case 'blocked_on_user_decision': return 'NEEDS INPUT'
+    case 'blocked_on_missing_data': return 'WAITING FOR DATA'
+    case 'blocked_on_provider_outage': return 'WAITING FOR PROVIDER'
+    case 'cancelled': return 'CANCELLED'
+    case 'not_started': return 'CONNECTING'
+  }
+}
 
 export type DonaldEvent = {
   sequence: number

@@ -61,6 +61,7 @@ test('run and intervention display metadata are retained from event payloads', (
 
   assert.equal(state.run.key, 'OP-4471')
   assert.equal(state.run.name, 'Resolve the delayed OP-4471 shipment')
+  assert.equal(state.run.status, 'blocked_on_user_decision')
   assert.deepEqual(state.open_intervention?.options[0], {
     id: 'secure-new-bl',
     label: 'Prioritize documentation',
@@ -70,6 +71,109 @@ test('run and intervention display metadata are retained from event payloads', (
     client_commitment: '10-SEP-2026',
     document: 'BL-77120',
   })
+})
+
+test('a missing-data block makes the run wait for data and keeps its explanation in the event log', () => {
+  const state = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'collect-invoice'),
+    event(3, 'node_status_changed', {
+      status: 'blocked_on_missing_data',
+      detail: 'The commercial invoice is required before calculation.',
+    }, 'collect-invoice'),
+  ])
+
+  assert.equal(state.run.status, 'blocked_on_missing_data')
+  assert.equal(
+    state.event_log.at(-1)?.payload.detail,
+    'The commercial invoice is required before calculation.',
+  )
+})
+
+test('a provider-outage block makes the run wait for the provider', () => {
+  const state = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'submit-entry'),
+    event(3, 'node_status_changed', {
+      status: 'blocked_on_provider_outage',
+      detail: 'The customs provider is temporarily unavailable.',
+    }, 'submit-entry'),
+  ])
+
+  assert.equal(state.run.status, 'blocked_on_provider_outage')
+})
+
+test('a user-decision block makes the run wait for input', () => {
+  const state = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'approve-entry'),
+    event(3, 'node_status_changed', {
+      status: 'blocked_on_user_decision',
+      detail: 'Choose whether to submit the entry.',
+    }, 'approve-entry'),
+  ])
+
+  assert.equal(state.run.status, 'blocked_on_user_decision')
+})
+
+test('resolving a user intervention clears the recoverable run wait', () => {
+  const blockedState = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'intervention_requested', { prompt: 'Choose whether to submit.' }, 'approve-entry'),
+  ])
+
+  const state = applyEvent(
+    blockedState,
+    event(3, 'intervention_resolved', { option_id: 'submit' }, 'approve-entry'),
+  )
+
+  assert.equal(state.run.status, 'running')
+  assert.equal(state.open_intervention, null)
+})
+
+test('resuming the same blocked node returns the run to running', () => {
+  const blockedState = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'collect-invoice'),
+    event(3, 'node_status_changed', { status: 'blocked_on_missing_data' }, 'collect-invoice'),
+  ])
+
+  const state = applyEvent(
+    blockedState,
+    event(4, 'node_status_changed', { status: 'in_progress' }, 'collect-invoice'),
+  )
+
+  assert.equal(state.nodes['collect-invoice'].status, 'in_progress')
+  assert.equal(state.run.status, 'running')
+})
+
+test('resuming one blocked node preserves another parallel node block', () => {
+  const state = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'collect-invoice'),
+    event(3, 'node_status_changed', { status: 'blocked_on_missing_data' }, 'collect-invoice'),
+    event(4, 'node_status_changed', { status: 'in_progress' }, 'submit-entry'),
+    event(5, 'node_status_changed', { status: 'blocked_on_provider_outage' }, 'submit-entry'),
+    event(6, 'node_status_changed', { status: 'in_progress' }, 'submit-entry'),
+  ])
+
+  assert.equal(state.nodes['collect-invoice'].status, 'blocked_on_missing_data')
+  assert.equal(state.nodes['submit-entry'].status, 'in_progress')
+  assert.equal(state.run.status, 'blocked_on_missing_data')
+})
+
+test('resolving an intervention preserves another parallel node block', () => {
+  const state = applyEvents(createInitialRunState(), [
+    event(1, 'run_started', { run_key: 'run-1' }),
+    event(2, 'node_status_changed', { status: 'in_progress' }, 'collect-invoice'),
+    event(3, 'node_status_changed', { status: 'blocked_on_missing_data' }, 'collect-invoice'),
+    event(4, 'intervention_requested', { prompt: 'Choose whether to submit.' }, 'approve-entry'),
+    event(5, 'intervention_resolved', { option_id: 'submit' }, 'approve-entry'),
+  ])
+
+  assert.equal(state.nodes['collect-invoice'].status, 'blocked_on_missing_data')
+  assert.equal(state.run.status, 'blocked_on_missing_data')
+  assert.equal(state.open_intervention, null)
 })
 
 test('the complete recording rewires the graph and closes the intervention', () => {
