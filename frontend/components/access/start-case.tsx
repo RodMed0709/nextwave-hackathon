@@ -15,8 +15,10 @@ const STANDING_PROMPT =
 
 /**
  * The second screen of the demo flow: who the client is and what they asked
- * Donald to do. The prompt is the standing order behind the whole Berríos
- * case — editable so a demo can improvise, prefilled so it never has to be.
+ * NAUTA to handle — the client speaks to their forwarder, never to Donald.
+ * Donald is the operational brain Nauta runs the request on, which is the
+ * reveal the next screen delivers. Editable so a demo can improvise,
+ * prefilled so it never has to be.
  */
 export function StartCase() {
   const router = useRouter()
@@ -33,15 +35,16 @@ export function StartCase() {
       <section className="start-case-shell" aria-label="Start a case">
         <span className="start-case-eyebrow">Client workspace</span>
         <h1><UserRound aria-hidden="true" size={26} /> {CLIENT_NAME}</h1>
-        <p className="start-case-lede">This is what the client asked Donald to do:</p>
+        <p className="start-case-lede">What they asked Nauta:</p>
         <textarea
-          aria-label="Standing instruction for Donald"
+          aria-label="Standing request to Nauta"
           onChange={(event) => setPrompt(event.target.value)}
           rows={4}
           value={prompt}
         />
+        <p className="start-case-bridge">Nauta runs this request on <strong>Donald</strong> — its operational brain.</p>
         <button disabled={leaving} onClick={launch} type="button">
-          Run Donald <ArrowRight aria-hidden="true" size={16} />
+          See Donald run it <ArrowRight aria-hidden="true" size={16} />
         </button>
       </section>
     </main>

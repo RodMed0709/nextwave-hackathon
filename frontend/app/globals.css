@@ -723,6 +723,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   line-height: 1.1;
 }
 .start-case-lede { margin: 0; color: #93a9b8; font-size: 13px; }
+.start-case-bridge { margin: 0; color: #b9cbd9; font-size: 13px; }
+.start-case-bridge strong { color: var(--chartreuse); font-weight: 900; }
 .start-case-shell textarea {
   padding: 14px 16px;
   border: 1px solid #24486e;
