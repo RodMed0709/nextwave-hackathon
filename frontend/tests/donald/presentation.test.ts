@@ -145,6 +145,21 @@ test('live status surfaces the latest node-scoped agent message', () => {
   })
 })
 
+test('live status never exposes raw detail for a typed subtask snapshot', () => {
+  const activeNode = node('approve-animation-slice', 'in_progress', 1)
+  const subtasks = [{ key: 'review-frames', label: 'Review the key frames', status: 'pending' }]
+  const started = event(1, 'node_status_changed', activeNode.node_key, {
+    status: 'in_progress',
+    detail: JSON.stringify({ subtasks }),
+    subtasks,
+  })
+
+  assert.deepEqual(getLatestNodeStatus(activeNode, [started]), {
+    key: 'event-1',
+    text: 'Nina is starting approve animation slice',
+  })
+})
+
 test('subtask presentation maps every status to its icon and label treatment', () => {
   assert.deepEqual([
     getSubtaskPresentation('pending'),

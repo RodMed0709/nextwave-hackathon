@@ -57,17 +57,7 @@ function placeholderNode(event: DonaldEvent): RunNode | null {
 
 function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSummary | null): NodeSummary | null {
   const headline = stringValue(payload.headline) ?? previous?.headline ?? null
-  const rawDetail = stringValue(payload.detail)
-  let findingDetail = rawDetail
-  if (rawDetail) {
-    try {
-      const parsed: unknown = JSON.parse(rawDetail)
-      const detailObject = objectValue(parsed)
-      if (detailObject && Object.hasOwn(detailObject, 'subtasks')) findingDetail = null
-    } catch {
-      // Plain-text detail remains a valid finding.
-    }
-  }
+  const findingDetail = Array.isArray(payload.subtasks) ? null : stringValue(payload.detail)
   const detail = stringValue(payload.finding) ?? findingDetail ?? previous?.detail ?? null
   const metricsObject = objectValue(payload.metrics)
   const metrics = { ...(previous?.metrics ?? {}) }

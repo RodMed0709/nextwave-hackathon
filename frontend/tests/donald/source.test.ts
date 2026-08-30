@@ -71,7 +71,7 @@ test('liveSource sanitizes typed subtask snapshots without collapsing absent and
   const body = [
     'data: {"sequence":1,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:00Z","node_key":"build","idempotency_key":"a","payload":{}}\n\n',
     'data: {"sequence":2,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:01Z","node_key":"build","idempotency_key":"b","payload":{"subtasks":[]}}\n\n',
-    'data: {"sequence":3,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:02Z","node_key":"build","idempotency_key":"c","payload":{"subtasks":[{"key":"write-test","label":"Write the failing test","status":"running"},{"key":"implement","label":"Implement the change"},{"key":"verify","label":"Verify the result","status":"waiting"},null,{"key":"broken"}]}}\n\n',
+    'data: {"sequence":3,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:02Z","node_key":"build","idempotency_key":"c","payload":{"subtasks":[{"key":"write-test","label":"Write the failing test","status":"running"},{"key":"implement","label":"Implement the change"},{"key":"implement","label":"Duplicate key","status":"done"},{"key":"verify","label":"Verify the result","status":"waiting"},null,{"key":"broken"}]}}\n\n',
   ].join('')
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

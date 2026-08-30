@@ -106,11 +106,14 @@ type DonaldDelta = {
 
 function adaptSubtasks(value: unknown): RunSubtask[] | null {
   if (!Array.isArray(value)) return null
+  const seen = new Set<string>()
   return value.flatMap((item) => {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
     const candidate = item as Record<string, unknown>
     if (typeof candidate.key !== 'string' || !candidate.key.trim()) return []
     if (typeof candidate.label !== 'string' || !candidate.label.trim()) return []
+    if (seen.has(candidate.key)) return []
+    seen.add(candidate.key)
     return [{
       key: candidate.key,
       label: candidate.label,

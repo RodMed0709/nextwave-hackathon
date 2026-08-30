@@ -331,11 +331,12 @@ export function getLatestNodeStatus(
       event.event_type !== 'agent_message'
     ) continue
 
+    const detail = Array.isArray(event.payload.subtasks) ? null : stringValue(event.payload.detail)
     const text = stringValue(event.payload.status_message) ??
       stringValue(event.payload.message) ??
       stringValue(event.payload.headline) ??
       stringValue(event.payload.finding) ??
-      stringValue(event.payload.detail) ??
+      detail ??
       fallbackStatus(node, event)
     return { key: event.idempotency_key, text }
   }
