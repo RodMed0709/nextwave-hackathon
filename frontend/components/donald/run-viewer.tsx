@@ -1640,7 +1640,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
   const latestReplan = getLatestReplan(state.event_log)
   const latestRecalculation = getLatestRecalculation(state.event_log)
-  const request = getRunRequest(state.run)
+  // Pre-render there are no events yet: the raw run key is not an objective.
+  const request = state.event_log.length > 0
+    ? getRunRequest(state.run)
+    : 'Watching the book — nothing needs you yet'
   const runSavings = getRunSavings(state.nodes)
   const activeAgents = currentAgentNames(state.nodes, visiblyActiveKeys, state.event_log)
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)

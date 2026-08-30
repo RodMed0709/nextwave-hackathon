@@ -46,13 +46,16 @@ const PHASE_COPY: Record<ExecutivePhaseId, { title: string; detail: string }> = 
 const TERMINAL = new Set<RunNode['status']>(['succeeded', 'skipped', 'cancelled', 'failed'])
 
 function phaseForNode(node: RunNode): ExecutivePhaseId {
-  if (isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })) return 'act'
+  // The action id decides first: a DETECT step that happens to read an email
+  // (detect_pickup_email) belongs to the watch, not to Acting.
   const actionId = donaldActionIdForNode({
     nodeKey: node.node_key,
     label: node.label,
     nodeType: node.node_type,
     toolName: node.tool_name,
   })
+  if (actionId && PHASE_OF_ACTION[actionId] !== 'act') return PHASE_OF_ACTION[actionId]
+  if (isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })) return 'act'
   return actionId ? PHASE_OF_ACTION[actionId] : 'solve'
 }
 
