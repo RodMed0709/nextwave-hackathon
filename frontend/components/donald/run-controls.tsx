@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Maximize2, Play, Share2, Square, type LucideIcon } from 'lucide-react'
+import { Maximize2, Pause, Share2, SlidersHorizontal, Square, type LucideIcon } from 'lucide-react'
 
 type RunControlsProps = {
+  onAdjust: () => void
   onFit: () => void
   onReplay: () => void
   /** True while a replay is running, so the same control stops it. */
@@ -71,7 +72,7 @@ async function copyCurrentUrl() {
   document.body.removeChild(textarea)
 }
 
-export function RunControls({ onFit, onReplay, replaying, canReplay }: RunControlsProps) {
+export function RunControls({ onAdjust, onFit, onReplay, replaying, canReplay }: RunControlsProps) {
   const [shareState, setShareState] = useState<'idle' | 'copied'>('idle')
 
   useEffect(() => {
@@ -95,18 +96,24 @@ export function RunControls({ onFit, onReplay, replaying, canReplay }: RunContro
     setShareState('copied')
   }, [])
 
-  // The first control used to be labelled Pause and wired to a reset, which is
-  // a different thing entirely. It replays the run at the pace it happened -
-  // the control the demo actually needs - and stops it on a second press.
   const items: ControlItem[] = [
     {
-      id: 'replay',
-      label: replaying ? 'Stop' : 'Replay',
-      icon: replaying ? Square : Play,
-      disabled: !canReplay,
+      id: 'adjust',
+      label: 'Adjust',
+      icon: SlidersHorizontal,
+      title: 'Open the current adjustment panel when a step can be steered',
+      onClick: onAdjust,
+    },
+    {
+      id: 'pause',
+      label: replaying ? 'Stop' : 'Pause',
+      icon: replaying ? Square : Pause,
+      disabled: !replaying,
       title: replaying
         ? 'Stop the replay and return to live'
-        : 'Watch this run again from the beginning, at the pace it happened',
+        : canReplay
+          ? 'Runtime pause is not available for this recorded replay'
+          : 'Runtime pause is not available for this live run',
       onClick: onReplay,
     },
     { id: 'share', label: shareState === 'copied' ? 'Copied' : 'Share', icon: Share2, onClick: handleShare },

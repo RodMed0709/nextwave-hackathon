@@ -13,6 +13,7 @@ import {
 } from 'react'
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   ChevronDown,
   ChevronUp,
@@ -43,6 +44,7 @@ import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/com
 import {
   FIT_PADDING,
   getFitViewport,
+  getFocusedNodeViewport,
   getLayoutBounds,
   getVisibleNodeViewport,
   layoutGraph,
@@ -82,6 +84,7 @@ import {
 import { RunControls } from '@/components/donald/run-controls'
 import { ClientArea } from '@/components/donald/client-area'
 import { DonaldNarration } from '@/components/donald/donald-narration'
+import { ImpactReceipt } from '@/components/donald/impact-receipt'
 import { OperationalStageAccordion, stageDomId } from '@/components/donald/operational-stage'
 import { ActionAnimation } from '@/components/donald/animations/action-animation'
 import {
@@ -96,6 +99,8 @@ import {
   type OperationalStageId,
   type OperationalStageSummary,
 } from '@/lib/donald/operational-stages'
+import { getStageImpactReceipt } from '@/lib/donald/impact-receipt'
+import { getNextTaskSummary } from '@/lib/donald/next-task'
 import type {
   DonaldEvent,
   InterventionOption,
@@ -841,7 +846,7 @@ function FlowNodeRenderer(props: NodeProps) {
     observer.observe(element)
     return () => observer.disconnect()
   }, [data])
-  // One width, always. Selection is a ring, not a size change — see NodeDrawer.
+  // One width, always. Selection expands downward inside the graph.
   const style = {
     '--node-enter-delay': `${data.appearance.delayMs}ms`,
     width: `${COLLAPSED_SIZE.width}px`,
@@ -853,6 +858,11 @@ function FlowNodeRenderer(props: NodeProps) {
       style={style}
     >
       <FlowCard data={data} />
+      {data.selected && (
+        <div className="card-details-embed">
+          <ExpandedDetails data={data} />
+        </div>
+      )}
     </div>
   )
 }
@@ -1175,6 +1185,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       nodes,
       edges,
       height,
+      receipt: getStageImpactReceipt(stage.id, Object.values(stageNodes)),
       transitions: crossStageTransitions(stage, stageSummaries, state.nodes, state.edges),
     }
   }), [expandedKey, graphPresentation.edges, graphPresentation.nodes, nodeSizes, stageLayouts, stageSummaries, state.edges, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKey])
@@ -1289,15 +1300,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     return () => { for (const cleanup of cleanups) cleanup() }
   }, [flowInstances, stageSummaries])
 
-  /**
-   * Keep the selected card clear of the drawer.
-   *
-   * The drawer covers the right-hand strip of the stage workspace, so selecting
-   * a card that sits under it would hide the very thing being described. This
-   * pans by the minimum needed, treating the drawer as part of the right margin.
-   * It preserves the person's zoom unless the card is physically wider or taller
-   * than the available area; only then does it zoom out enough to fit. A card
-   * already fully visible causes no movement at all.
+  /** Center selected cards inside their own stage canvas. Normal inspection now
+   * happens in the graph, so the camera moves to the card instead of opening a
+   * separate drawer. Human intervention may still render the drawer below.
    */
   useEffect(() => {
     if (!expandedKey) return
@@ -1311,16 +1316,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
     const viewport = instance.getViewport()
     const { width, height } = container.getBoundingClientRect()
-    const drawerWidth = container.querySelector<HTMLElement>('.node-drawer')
-      ?.getBoundingClientRect().width ?? DRAWER_WIDTH
-    const margin = 24
-    const next = getVisibleNodeViewport(position, size, viewport, { width, height }, {
-      top: margin,
-      right: margin + drawerWidth,
-      bottom: margin,
-      left: margin,
-    })
-
+    const next = getFocusedNodeViewport(position, size, { width, height })
     if (
       Math.abs(next.x - viewport.x) < 1 &&
       Math.abs(next.y - viewport.y) < 1 &&
@@ -1411,6 +1407,18 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const runSavings = getRunSavings(state.nodes)
   const activeAgent = currentAgentName(state.nodes, visiblyActiveKey, state.event_log)
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
+  const nextTask = getNextTaskSummary(state)
+  const adjust = useCallback(() => {
+    const candidateKey = state.open_intervention?.node_key ??
+      nextTask.nodeKeys.find((nodeKey) => canIntervene(state.nodes[nodeKey])) ??
+      (visiblyActiveKey && canIntervene(state.nodes[visiblyActiveKey]) ? visiblyActiveKey : null) ??
+      Object.values(state.nodes).find((node) => canIntervene(node))?.node_key ??
+      null
+    if (!candidateKey) return
+    setExpandedKey(candidateKey)
+    document.getElementById(stageDomId(operationalStageForNode(state.nodes[candidateKey])))
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [nextTask.nodeKeys, state.nodes, state.open_intervention?.node_key, visiblyActiveKey])
 
   return (
     <main className="donald">
@@ -1442,13 +1450,19 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               <strong>{runSavings?.humanTime ?? '0m'}</strong>
             </div>
             <div className="kpi-card" title={runSavings?.basis}>
-              <span>Value Saved</span>
+              <span>Value Protected</span>
               <strong>{runSavings?.money ?? '$0'}</strong>
             </div>
             <div className="kpi-card">
               <span>Events</span>
               <strong>{state.event_log.length}</strong>
             </div>
+          </div>
+          <div className={`next-task-card state-${nextTask.state}`} aria-label="Next task in line">
+            <span>{nextTask.label}</span>
+            <strong>{nextTask.titles[0]}</strong>
+            {nextTask.titles[1] && <small>{nextTask.titles[1]}</small>}
+            <ArrowRight aria-hidden="true" size={16} />
           </div>
           <div className="run-metadata" aria-label="Run metadata">
             <code>{state.run.key}</code>
@@ -1461,6 +1475,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         </div>
         <RunControls
           canReplay={state.event_log.length >= 2}
+          onAdjust={adjust}
           onFit={() => { setViewportPinned(false); zoomToFit() }}
           onReplay={() => replaying ? void reset() : replay()}
           replaying={replaying}
@@ -1484,9 +1499,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           </div>
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
-        {selectedNodeData && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
+        {selectedNodeData?.intervention && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
         <div className="operational-stage-stack">
-          {stageGraphs.map(({ stage, nodes, edges, height, transitions }, index) => {
+          {stageGraphs.map(({ stage, nodes, edges, height, receipt, transitions }, index) => {
             const expanded = expandedStageIds.has(stage.id)
             return (
               <div className="operational-stage-group" key={stage.id}>
@@ -1524,6 +1539,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                         onPaneClick={() => setExpandedKey(null)}
                         onlyRenderVisibleElements={false}
                         panOnDrag
+                        panOnScroll={false}
+                        preventScrolling={false}
+                        zoomOnScroll={false}
                         style={{ width: '100%', height: '100%' }}
                         zoomOnDoubleClick={false}
                       >
@@ -1531,6 +1549,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                       </ReactFlow>
                     </div>
                   )}
+                  {stage.id !== 'unclassified' && <ImpactReceipt receipt={receipt} />}
                 </OperationalStageAccordion>
               </div>
             )

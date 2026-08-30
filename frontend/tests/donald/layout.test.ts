@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CARD_GAP, getFitViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
+import { CARD_GAP, getFitViewport, getFocusedNodeViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -194,4 +194,19 @@ test('getVisibleNodeViewport preserves the camera when the drawer covers the vie
   )
 
   assert.deepEqual(viewport, current)
+})
+
+
+test('getFocusedNodeViewport centers the selected card at a readable zoom', () => {
+  const viewport = getFocusedNodeViewport(
+    { x: 512, y: 240 },
+    { width: 380, height: 460 },
+    { width: 1200, height: 760 },
+  )
+
+  const centerX = (512 + 190) * viewport.zoom + viewport.x
+  const centerY = (240 + 230) * viewport.zoom + viewport.y
+  assert.equal(Math.round(centerX), 600)
+  assert.equal(Math.round(centerY), 380)
+  assert.ok(viewport.zoom > 1)
 })

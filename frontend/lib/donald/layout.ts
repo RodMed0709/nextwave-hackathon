@@ -51,6 +51,30 @@ export function getFitViewport(bounds: LayoutBounds, viewport: NodeSize) {
   }
 }
 
+export function getFocusedNodeViewport(
+  position: Pick<LayoutPosition, 'x' | 'y'>,
+  size: NodeSize,
+  container: NodeSize,
+  preferredZoom = 1.08,
+): ViewportTransform {
+  const zoom = Math.min(
+    MAX_FIT_ZOOM,
+    Math.max(
+      MIN_FIT_ZOOM,
+      Math.min(
+        preferredZoom,
+        (container.width * 0.9) / Math.max(1, size.width),
+        (container.height * 0.9) / Math.max(1, size.height),
+      ),
+    ),
+  )
+  return {
+    x: container.width / 2 - (position.x + size.width / 2) * zoom,
+    y: container.height / 2 - (position.y + size.height / 2) * zoom,
+    zoom,
+  }
+}
+
 export function getVisibleNodeViewport(
   position: Pick<LayoutPosition, 'x' | 'y'>,
   size: NodeSize,
