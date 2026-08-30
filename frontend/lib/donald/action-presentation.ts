@@ -143,7 +143,7 @@ function hasActionWord(candidate: string, word: string): boolean {
  */
 const EMAIL_KEYWORDS = ['email', 'mail', 'brief', 'notify', 'inform']
 
-function isEmailNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
+export function isEmailNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
   const haystack = [input.nodeKey, input.label, input.toolName ?? ''].filter(Boolean).join(' ')
   return EMAIL_KEYWORDS.some((keyword) => hasActionWord(haystack, keyword))
 }

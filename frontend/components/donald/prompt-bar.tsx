@@ -119,9 +119,9 @@ export function PromptBar({ targetLabel, paused, submitting, error, onSubmit }: 
           title={micState === 'recording' ? 'Stop recording' : 'Dictate an instruction'}
           type="button"
         >
-          {micState === 'recording' ? <Square size={15} aria-hidden="true" /> :
-            micState === 'transcribing' ? <Loader2 size={15} aria-hidden="true" className="prompt-bar-spin" /> :
-            <Mic size={15} aria-hidden="true" />}
+          {micState === 'recording' ? <Square size={18} aria-hidden="true" /> :
+            micState === 'transcribing' ? <Loader2 size={18} aria-hidden="true" className="prompt-bar-spin" /> :
+            <Mic size={18} aria-hidden="true" />}
         </button>
         <button
           aria-label="Send instruction"
@@ -131,7 +131,7 @@ export function PromptBar({ targetLabel, paused, submitting, error, onSubmit }: 
           title={targetLabel ? 'Send instruction' : 'Nothing left to steer in this run'}
           type="button"
         >
-          {submitting ? <Loader2 size={15} aria-hidden="true" className="prompt-bar-spin" /> : <Send size={15} aria-hidden="true" />}
+          {submitting ? <Loader2 size={18} aria-hidden="true" className="prompt-bar-spin" /> : <Send size={18} aria-hidden="true" />}
         </button>
       </div>
     </div>

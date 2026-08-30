@@ -16,9 +16,14 @@ export function pickSteerTargetKey(
   visiblyActiveKeys: readonly string[],
 ): string | null {
   const steerable = (key: string) => Boolean(state.nodes[key] && canIntervene(state.nodes[key]))
+  const remaining = Object.values(state.nodes).filter((node) => !node.removed)
   return state.open_intervention?.node_key ??
     nextTaskKeys.find(steerable) ??
     visiblyActiveKeys.find(steerable) ??
-    Object.values(state.nodes).find((node) => canIntervene(node))?.node_key ??
+    remaining.find((node) => canIntervene(node))?.node_key ??
+    // A finished run still accepts a message: it lands on the last step so a
+    // person can ask for more after the fact ("also send this to the client").
+    // Steering is advisory either way, so addressing a done step is not a lie.
+    remaining[remaining.length - 1]?.node_key ??
     null
 }

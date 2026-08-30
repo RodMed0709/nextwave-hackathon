@@ -52,7 +52,6 @@ import {
 } from '@/lib/donald/layout'
 import {
   canIntervene,
-  getAutomationSaving,
   getGraphPresentation,
   getLatestArtifact,
   getLatestNodeStatus,
@@ -100,6 +99,7 @@ import {
   type OperationalStageSummary,
 } from '@/lib/donald/operational-stages'
 import { getStageImpactReceipt } from '@/lib/donald/impact-receipt'
+import { humanizeStepTitle } from '@/lib/donald/humanize'
 import { getNextTaskSummary } from '@/lib/donald/next-task'
 import type {
   DonaldEvent,
@@ -561,7 +561,6 @@ function ArtifactList({ node }: { node: RunNode }) {
 function ExpandedDetails({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
   const metrics = metricRows(node.output_summary?.metrics ?? {})
-  const saving = getAutomationSaving(node)
   const finding = node.output_summary?.detail
   return (
     <div className="card-details" onClick={(event) => event.stopPropagation()}>
@@ -618,19 +617,6 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
         <div><Clock3 size={13} /><span>Duration</span><b>{formatDuration(node)}</b></div>
       </section>
 
-      {saving && (
-        <section className="saving">
-          <div className="section-label">Saved by automating this</div>
-          <div className="saving-figures">
-            <div><span>Human time</span><strong>{saving.humanTime}</strong></div>
-            <div><span>Cost</span><strong>{saving.money}</strong></div>
-          </div>
-          {/* The basis is shown, not hidden. A savings number whose arithmetic
-              you cannot see is a claim; one that shows its rate is an argument. */}
-          <small className="saving-basis">{saving.basis}</small>
-        </section>
-      )}
-
       {metrics.length > 0 && (
         <section>
           <div className="section-label">Impact</div>
@@ -674,7 +660,13 @@ function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void
             <StatusMark status={data.displayStatus} /> {data.displayStatus}
           </span>
         </div>
-        <h2>{node.output_summary?.headline ?? node.label}</h2>
+        <h2>{humanizeStepTitle({
+          nodeKey: node.node_key,
+          label: node.label,
+          nodeType: node.node_type,
+          toolName: node.tool_name,
+          headline: node.output_summary?.headline,
+        }).title}</h2>
         <code>{node.node_key}</code>
         <button aria-label="Close details" className="drawer-close" onClick={onClose} type="button">
           <X size={16} />
@@ -691,11 +683,16 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
   const latestArtifact = getLatestArtifact(node.artifacts)
   const primaryMetric = getPrimaryMetric(node.output_summary?.metrics ?? {})
-  const saving = getAutomationSaving(node)
   const pendingIntervention = data.interventions.find((record) =>
     record.origin === 'operator' && record.status !== 'resolved',
   ) ?? null
-  const title = node.output_summary?.headline ?? node.label
+  const humanTitle = humanizeStepTitle({
+    nodeKey: node.node_key,
+    label: node.label,
+    nodeType: node.node_type,
+    toolName: node.tool_name,
+    headline: node.output_summary?.headline,
+  })
   const classes = [
     'flow-card',
     `action-${data.actionPresentation.id}`,
@@ -725,18 +722,13 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <span className="owner"><UserRound size={12} /> {node.agent_label ?? 'Donald'}</span>
         <span className="status"><StatusMark status={data.displayStatus} /> {data.displayStatus}</span>
       </div>
-      <h2>{title}</h2>
+      <h2 title={humanTitle.original ?? undefined}>{humanTitle.title}</h2>
       <ActionAnimation
         presentation={data.actionPresentation}
         state={animationState(data.displayStatus)}
       />
       {data.intervention && <InstructionBox data={data} />}
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
-      {saving && (
-        <div className="card-saving" title={saving.basis}>
-          <span>Saved</span><strong>{saving.humanTime}</strong><em>{saving.money}</em>
-        </div>
-      )}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
       {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
       {pendingIntervention && (
@@ -1108,7 +1100,18 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           instructionError: selected ? instructionError : null,
           submitting: submittingNodeKey === node.node_key,
           suggestions: suggestions[`${node.node_key}:${state.run.graph_revision}`] ?? [],
-          onToggle: () => setExpandedKey((current) => current === node.node_key ? null : node.node_key),
+          onToggle: () => {
+            // Second click on the open card closes it AND releases the camera,
+            // so the auto-fit zooms back out to the whole stage. Without the
+            // unpin, a hand-adjusted viewport stayed zoomed into the card and
+            // there was no way back to the full picture.
+            if (expandedKey === node.node_key) {
+              setViewportPinned(false)
+              setExpandedKey(null)
+            } else {
+              setExpandedKey(node.node_key)
+            }
+          },
           onResize: (measured) => updateMeasurement(node.node_key, measured),
           onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
         } satisfies FlowNodeData,
@@ -1157,7 +1160,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
   useEffect(() => {
     if (!expandedKey) return
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setExpandedKey(null) }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setViewportPinned(false)
+      setExpandedKey(null)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expandedKey])
@@ -1370,15 +1377,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           <i className="live-dot" />
           {runStatusLabel(state)}
         </div>
-        <RunControls
-          canPause
-          onAdjust={adjust}
-          onFit={() => { setViewportPinned(false); zoomToFit() }}
-          onPause={togglePause}
-          onZoomIn={() => changeZoom('in')}
-          onZoomOut={() => changeZoom('out')}
-          paused={paused}
-        />
       </header>
 
       <DonaldNarration
@@ -1428,7 +1426,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                         onInit={(instance) => {
                           setFlowInstances((current) => ({ ...current, [stage.id]: instance }))
                         }}
-                        onPaneClick={() => setExpandedKey(null)}
+                        onPaneClick={() => {
+                          // Closing a card from the pane also releases the
+                          // camera so the stage fits again; a bare pane click
+                          // with nothing open keeps the person's own viewport.
+                          if (expandedKey) setViewportPinned(false)
+                          setExpandedKey(null)
+                        }}
                         onlyRenderVisibleElements={false}
                         panOnDrag
                         panOnScroll={false}
@@ -1448,13 +1452,24 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         </div>
       </section>
 
-      <PromptBar
-        error={instructionError}
-        onSubmit={submitFromBar}
-        paused={paused}
-        submitting={submittingNodeKey !== null}
-        targetLabel={steerTargetKey ? state.nodes[steerTargetKey]?.label ?? null : null}
-      />
+      <div className="prompt-dock">
+        <RunControls
+          canPause
+          onAdjust={adjust}
+          onFit={() => { setViewportPinned(false); zoomToFit() }}
+          onPause={togglePause}
+          onZoomIn={() => changeZoom('in')}
+          onZoomOut={() => changeZoom('out')}
+          paused={paused}
+        />
+        <PromptBar
+          error={instructionError}
+          onSubmit={submitFromBar}
+          paused={paused}
+          submitting={submittingNodeKey !== null}
+          targetLabel={steerTargetKey ? state.nodes[steerTargetKey]?.label ?? null : null}
+        />
+      </div>
     </main>
   )
 }

@@ -16,7 +16,7 @@ export function ClientArea({ metadata, currentTask }: ClientAreaProps) {
           <strong>{metadata.clientName ?? 'Unavailable'}</strong>
         </div>
         <div className="current-task-block">
-          <span>What happened</span>
+          <span>The objective</span>
           <strong>{currentTask}</strong>
         </div>
       </div>

@@ -60,10 +60,15 @@ test('falls through next-task, then visibly active, then any steerable node', ()
   assert.equal(pickSteerTargetKey({ nodes, open_intervention: null }, [], []), 'running')
 })
 
-test('a finished run has nothing to steer', () => {
+test('a finished run still accepts a message on its last step', () => {
   const nodes = {
-    done: node({ node_key: 'done', label: 'Done', status: 'succeeded' }),
+    first: node({ node_key: 'first', label: 'First', status: 'succeeded' }),
+    last: node({ node_key: 'last', label: 'Last', status: 'succeeded' }),
     gone: node({ node_key: 'gone', label: 'Gone', status: 'in_progress', removed: true }),
   }
-  assert.equal(pickSteerTargetKey({ nodes, open_intervention: null }, [], []), null)
+  assert.equal(pickSteerTargetKey({ nodes, open_intervention: null }, [], []), 'last')
+})
+
+test('an empty run has nothing to steer', () => {
+  assert.equal(pickSteerTargetKey({ nodes: {}, open_intervention: null }, [], []), null)
 })

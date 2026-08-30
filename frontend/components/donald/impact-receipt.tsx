@@ -35,7 +35,7 @@ function ContextBlock({ receipt, kind }: { receipt: StageImpactReceipt; kind: 't
   return (
     <div className="impact-receipt-context">
       <span>Industry Context</span>
-      <p>{context.text}</p>
+      <p title={context.text}>{context.text}</p>
       <small>{context.source}</small>
     </div>
   )

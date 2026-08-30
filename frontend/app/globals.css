@@ -43,14 +43,32 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   padding-bottom: 96px;
 }
 
-/* Run-level prompt bar, pinned under everything like a chat composer. */
-.prompt-bar {
+/* Bottom dock: run controls + prompt bar travel together and follow the page,
+   like a chat composer. The controls used to hang off the header and scrolled
+   away exactly when someone deep in the graph wanted them. */
+.prompt-dock {
   position: fixed;
-  bottom: 14px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
-  width: min(680px, calc(100vw - 28px));
+  width: min(860px, calc(100vw - 24px));
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.prompt-dock .run-controls-notch {
+  position: static;
+  transform: none;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 999px;
+  animation: none;
+}
+.prompt-dock .run-controls-wing { display: none; }
+.prompt-bar {
+  width: 100%;
   display: grid;
   gap: 6px;
 }
@@ -80,15 +98,15 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   backdrop-filter: blur(6px);
 }
 .prompt-bar-row textarea {
-  min-height: 34px;
-  max-height: 120px;
-  padding: 7px 10px;
+  min-height: 44px;
+  max-height: 140px;
+  padding: 11px 14px;
   border: none;
-  border-radius: 9px;
+  border-radius: 11px;
   background: #071729;
   color: #eef4f5;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.45;
   resize: none;
 }
 .prompt-bar-row textarea:focus { outline: 1px solid var(--chartreuse); }
@@ -97,15 +115,17 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .prompt-bar-send {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border: 1px solid #24486e;
-  border-radius: 9px;
+  border-radius: 11px;
   background: #102b49;
   color: #cfe0ec;
   cursor: pointer;
   transition: border-color var(--beat) var(--ease), color var(--beat) var(--ease);
 }
+.prompt-bar-send { background: var(--chartreuse); border-color: var(--chartreuse); color: #1c2a06; }
+.prompt-bar-send:hover { color: #000; }
 .prompt-bar-mic:hover,
 .prompt-bar-send:hover { border-color: var(--chartreuse); color: var(--chartreuse); }
 .prompt-bar-mic:disabled,
@@ -786,9 +806,15 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .impact-receipt-context p {
   margin: 0;
-  color: #dce8ed;
-  font-size: 12px;
-  line-height: 1.35;
+  color: #b9cbd9;
+  font-size: 10px;
+  line-height: 1.3;
+  /* Context is a nod, not a paragraph: two lines max, the source carries the
+     credibility and the tooltip carries the rest. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .impact-receipt-context small {
   color: #8eaac0;
@@ -941,7 +967,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .failed .status { color: var(--red-deep); }
 .spinner { width: 13px; height: 13px; display: inline-block; border: 2px solid #94a44766; border-top-color: #5f7410; border-radius: 50%; animation: spin .72s linear infinite; }
 .flow-card .spinner { width: 16px; height: 16px; }
-.flow-card h2 { margin: 18px 0 0; color: inherit; font-size: 28px; line-height: 1.08; letter-spacing: -.02em; text-wrap: balance; overflow-wrap: anywhere; }
+.flow-card h2 { margin: 18px 0 0; color: inherit; font-size: 30px; font-weight: 800; line-height: 1.06; letter-spacing: -.02em; text-wrap: balance; overflow-wrap: anywhere; }
 .flow-card.action-decide {
   border-color: #a2b63f;
   box-shadow: inset 0 1px #ffffff, 0 0 0 2px #d7f24c55, 0 18px 36px #020a1344;
@@ -1210,9 +1236,13 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .intervention { margin: 0 -18px; padding: 16px 18px!important; background: #f6e9cf; }
 .flow-card.decision-open .intervention { margin: 16px -23px -18px; border-radius: 0 0 18px 18px; padding: 16px 22px 18px!important; }
 .intervention-prompt { color: #5c451a!important; font-weight: 700; }
-.decision-options { display: grid; gap: 8px; margin-top: 12px; }
-.decision-option, .acknowledge { width: 100%; border: 1px solid #d0af7c; border-radius: 10px; padding: 10px 12px; background: #fffaf1; color: #2b3036; text-align: left; }
-.decision-option { position: relative; min-height: 58px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 10px; padding-right: 92px; }
+/* Options read as little cards stacked under the step, not a totem of text:
+   each one is a self-contained choice you could tap, price up front. */
+.decision-options { display: grid; gap: 10px; margin-top: 12px; }
+.decision-option, .acknowledge { width: 100%; border: 1px solid #d0af7c; border-radius: 12px; padding: 12px 14px; background: #fffaf1; color: #2b3036; text-align: left; box-shadow: 0 4px 12px #0a1c3214; }
+.decision-option { position: relative; min-height: 62px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 10px; padding-right: 96px; }
+.decision-option:hover { transform: translateY(-1px); box-shadow: 0 8px 18px #0a1c3222; }
+.decision-option { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .decision-option:hover, .decision-option:focus-visible, .acknowledge:hover { border-color: var(--amber); box-shadow: 0 0 0 2px #e8a23d26; }
 .decision-option.recommended { border-color: #a7ba39; background: #f7f9e7; }
 .option-price { color: var(--amber-deep); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 24px; letter-spacing: -.04em; white-space: nowrap; }
