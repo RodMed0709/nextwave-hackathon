@@ -166,7 +166,7 @@ const STAGE_GRAPH_MIN_HEIGHT = 360
 // recordings stay served from the bundle so the stage demo cannot depend on
 // the backend, while any other run key - an agent working right now, a run a
 // judge just asked for - streams from the real API and accepts interventions.
-const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup'])
+const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup', 'berrios-op4471'])
 
 function createSource(runKey: string | null): DonaldEventSource {
   const recorded = runKey === null || RECORDED_RUNS.has(runKey)
