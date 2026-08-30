@@ -50,6 +50,7 @@ import {
   canIntervene,
   getAutomationSaving,
   getGraphPresentation,
+  getLatestArtifact,
   getLatestNodeStatus,
   getLatestRecalculation,
   getLatestReplan,
@@ -60,6 +61,7 @@ import {
   getRunSavings,
   getVisiblyActiveNodeKey,
   metricRows,
+  shouldShowInstructionForm,
   type LiveNodeStatus,
   type NodePresentation,
 } from '@/lib/donald/presentation'
@@ -427,9 +429,12 @@ function OptionButton({
 
 function InstructionBox({ data }: { data: FlowNodeData }) {
   const [instruction, setInstruction] = useState('')
+  const [customInstructionKey, setCustomInstructionKey] = useState<string | null>(null)
   const options = [...(data.intervention?.options ?? [])].sort((left, right) =>
     (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER),
   )
+  const gateKey = data.intervention?.id ?? data.runtimeNode.node_key
+  const showInstructionForm = shouldShowInstructionForm(options.length, customInstructionKey === gateKey)
   const pending = data.interventions.find((record) => record.status !== 'resolved') ?? null
   const busy = data.submitting || Boolean(pending)
 
@@ -470,6 +475,16 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
               </button>
             )}
           </div>
+          {!showInstructionForm && (
+            <button
+              aria-expanded="false"
+              className="custom-instruction-toggle"
+              onClick={() => setCustomInstructionKey(gateKey)}
+              type="button"
+            >
+              Or give a custom instruction…
+            </button>
+          )}
         </>
       )}
 
@@ -481,68 +496,72 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
         </div>
       )}
 
-      {data.suggestions.length > 0 && !busy && (
-        <div className="suggestions">
-          <span className="suggestions-label"><Sparkles size={11} /> Suggested</span>
-          <div className="suggestion-chips">
-            {data.suggestions.map((suggestion) => (
+      {showInstructionForm && (
+        <>
+          {data.suggestions.length > 0 && !busy && (
+            <div className="suggestions">
+              <span className="suggestions-label"><Sparkles size={11} /> Suggested</span>
+              <div className="suggestion-chips">
+                {data.suggestions.map((suggestion) => (
+                  <button
+                    className="suggestion-chip"
+                    key={suggestion.label}
+                    onClick={(event) => { event.stopPropagation(); setInstruction(suggestion.prompt) }}
+                    title={suggestion.prompt}
+                    type="button"
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <form className="instruction-form" onSubmit={(event) => { event.preventDefault(); send('steer') }}>
+            <label htmlFor={`instruction-${data.runtimeNode.node_key}`}>
+              {data.displayStatus === 'PROPOSED' || data.displayStatus === 'WAITING'
+                ? 'Tell the agent how to do this step'
+                : 'Give the agent an instruction'}
+            </label>
+            <textarea
+              disabled={busy}
+              id={`instruction-${data.runtimeNode.node_key}`}
+              onChange={(event) => setInstruction(event.target.value)}
+              placeholder="Type a concrete instruction for this step…"
+              rows={3}
+              value={instruction}
+            />
+            <div className="instruction-actions">
+              {/* Stop and steer are the same channel with different intent, so they
+                  share one box. Both are advisory - the agent honours them on its
+                  next check - and the wording says so rather than implying a kill
+                  switch we do not have. */}
               <button
-                className="suggestion-chip"
-                key={suggestion.label}
-                onClick={(event) => { event.stopPropagation(); setInstruction(suggestion.prompt) }}
-                title={suggestion.prompt}
+                className="steer"
+                disabled={!instruction.trim() || busy}
+                type="submit"
+              >
+                <Send size={13} /> Steer
+              </button>
+              <button
+                className="stop"
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void data.onInstruction(
+                    instruction.trim() || `Stop ${data.runtimeNode.label} and do not continue with it.`,
+                    { kind: 'stop' },
+                  )
+                  setInstruction('')
+                }}
                 type="button"
               >
-                {suggestion.label}
+                Stop this step
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+          </form>
+        </>
       )}
-
-      <form className="instruction-form" onSubmit={(event) => { event.preventDefault(); send('steer') }}>
-        <label htmlFor={`instruction-${data.runtimeNode.node_key}`}>
-          {data.displayStatus === 'PROPOSED' || data.displayStatus === 'WAITING'
-            ? 'Tell the agent how to do this step'
-            : 'Give the agent an instruction'}
-        </label>
-        <textarea
-          disabled={busy}
-          id={`instruction-${data.runtimeNode.node_key}`}
-          onChange={(event) => setInstruction(event.target.value)}
-          placeholder="Type a concrete instruction for this step…"
-          rows={3}
-          value={instruction}
-        />
-        <div className="instruction-actions">
-          {/* Stop and steer are the same channel with different intent, so they
-              share one box. Both are advisory - the agent honours them on its
-              next check - and the wording says so rather than implying a kill
-              switch we do not have. */}
-          <button
-            className="steer"
-            disabled={!instruction.trim() || busy}
-            type="submit"
-          >
-            <Send size={13} /> Steer
-          </button>
-          <button
-            className="stop"
-            disabled={busy}
-            onClick={(event) => {
-              event.stopPropagation()
-              void data.onInstruction(
-                instruction.trim() || `Stop ${data.runtimeNode.label} and do not continue with it.`,
-                { kind: 'stop' },
-              )
-              setInstruction('')
-            }}
-            type="button"
-          >
-            Stop this step
-          </button>
-        </div>
-      </form>
 
       {data.interventions.map((record) => <InstructionTrail key={record.id} record={record} />)}
       {data.instructionError && <p className="instruction-error">{data.instructionError}</p>}
@@ -695,6 +714,7 @@ function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void
 
 function FlowCard({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
+  const latestArtifact = getLatestArtifact(node.artifacts)
   const primaryMetric = getPrimaryMetric(node.output_summary?.metrics ?? {})
   const saving = getAutomationSaving(node)
   const pendingIntervention = data.interventions.find((record) => record.status !== 'resolved') ?? null
@@ -737,6 +757,12 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
       {pendingIntervention && (
         <p className="card-instruction"><Hand size={11} /> {pendingIntervention.type === 'stop' ? 'Stop' : 'Steer'} sent — {pendingIntervention.status === 'queued' ? 'waiting for the agent' : 'agent has it'}</p>
+      )}
+      {latestArtifact && (
+        <div className="card-artifact" title={latestArtifact.name}>
+          <FileText aria-hidden="true" size={12} />
+          <span>{latestArtifact.name}</span>
+        </div>
       )}
       <span className="expand-hint">
         {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}
