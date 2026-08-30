@@ -1415,22 +1415,50 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   return (
     <main className="donald">
       <header className="header">
-        <ClientArea metadata={clientMetadata} activeAgent={activeAgent} currentTask={request} />
+        <ClientArea metadata={clientMetadata} currentTask={request} />
+        <section className="operational-intelligence" aria-label="Operational intelligence">
+          <div className="client-meta-field connected-agents-field">
+            <span>Connected Nauta</span>
+            <div className="agent-chip-list">
+              {clientMetadata.agents.length === 0 && <strong>Unavailable</strong>}
+              {clientMetadata.agents.map((agent) => (
+                <span
+                  className={agent.label === activeAgent ? 'agent-chip active' : 'agent-chip'}
+                  key={`${agent.label}-${agent.role ?? 'agent'}`}
+                  title={agent.role ?? agent.label}
+                >
+                  {agent.label}{agent.role ? ` / ${agent.role}` : ''}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="kpi-grid" aria-label="Run KPIs">
+            <div className="kpi-card">
+              <span>Status</span>
+              <strong>{replaying ? 'REPLAY' : runStatusLabel(state)}</strong>
+            </div>
+            <div className="kpi-card" title={runSavings?.basis}>
+              <span>Time Saved</span>
+              <strong>{runSavings?.humanTime ?? '0m'}</strong>
+            </div>
+            <div className="kpi-card" title={runSavings?.basis}>
+              <span>Value Saved</span>
+              <strong>{runSavings?.money ?? '$0'}</strong>
+            </div>
+            <div className="kpi-card">
+              <span>Events</span>
+              <strong>{state.event_log.length}</strong>
+            </div>
+          </div>
+          <div className="run-metadata" aria-label="Run metadata">
+            <code>{state.run.key}</code>
+            <small>· revision {state.run.graph_revision}</small>
+          </div>
+        </section>
         <div className="run-status-pill" aria-label={`Run status: ${replaying ? 'Replaying' : runStatusLabel(state)}`}>
           <i className="live-dot" />
           {replaying ? 'REPLAY' : runStatusLabel(state)}
         </div>
-        <div className="run-metadata" aria-label="Run metadata">
-          <code>{state.run.key}</code>
-          <small>{state.event_log.length} events · revision {state.run.graph_revision}</small>
-        </div>
-        {runSavings && (
-          <div className="run-saving" title={runSavings.basis}>
-            <span>Saved so far</span>
-            <strong>{runSavings.humanTime}</strong>
-            <em>{runSavings.money}</em>
-          </div>
-        )}
         <RunControls
           canReplay={state.event_log.length >= 2}
           onFit={() => { setViewportPinned(false); zoomToFit() }}
