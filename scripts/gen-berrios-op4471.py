@@ -4,7 +4,7 @@ Above/Below the Line: Nina's three ambient tasks (ingest/identify/monitor) open
 the run already done — they never stop, they just hand off. The seven
 Below-the-Line steps (detect -> act) are the declared plan. El ritmo sale de
 occurred_at: recordedSource espera la diferencia entre eventos consecutivos.
-Todo el run dura ~105 s.
+Todo el run dura ~68 s.
 """
 import hashlib
 import json
@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 OUT = "events.berrios-op4471.jsonl"
 RUN_KEY = "berrios-op4471"
 T0 = datetime(2026, 8, 29, 5, 20, 4, tzinfo=timezone.utc)
+PACE = 0.6  # global pace factor: scales every advance so the run reads at ~68 s
 
 events = []
 clock = 0.0
@@ -24,7 +25,7 @@ def stamp(offset):
 
 def emit(event_type, payload, node_key=None, agent=None, advance=0.0):
     global clock
-    clock += advance
+    clock += advance * PACE
     idem = hashlib.sha256(
         f"{event_type}:{node_key}:{len(events)}:{RUN_KEY}".encode()
     ).hexdigest()
@@ -165,7 +166,7 @@ for a, b in EDGES:
 
 
 def start(key, subtasks=None, advance=1.4, input_summary=None):
-    payload = {"status": "in_progress", "started_at": stamp(clock + advance)}
+    payload = {"status": "in_progress", "started_at": stamp(clock + advance * PACE)}
     if input_summary:
         payload["input_summary"] = input_summary
     if subtasks is not None:
@@ -243,14 +244,14 @@ progress("explain_change", "MSC service bulletin: AURORA reassigned to another l
 # in parallel with the rest of the chain — its events interleave with IMPACT
 # and PLAN below.
 BB = [
-    sub("draft_boss_email", "Draft the summary email"),
-    sub("send_boss_email", "Send to operations director"),
+    sub("draft_boss_email", "Drafting the summary email"),
+    sub("send_boss_email", "Sending to the operations director"),
     sub("boss_email_sent", "Sent"),
 ]
 def bb(states):
     return [dict(s, status=st) for s, st in zip(BB, states)]
 
-emit("node_added", {"label": "Brief the boss by email", "planned": False},
+emit("node_added", {"label": "Communicating the news to the boss", "planned": False},
      node_key="brief_boss_email", agent="Rex", advance=0.7)
 emit("edge_added", {
     "edge_key": "explain_change-to-brief_boss_email",
@@ -347,7 +348,7 @@ done("plan_options",
 # The side card lands before the gate: the director is briefed while the main
 # chain was still pricing options.
 done("brief_boss_email",
-     "Email sent — director briefed",
+     "Email sent — the director is briefed",
      "The operations director has the root cause in plain language before the "
      "gate opens: carrier-side reshuffle, 10-day fallback slip, direct re-book "
      "at $0 already priced. No reply needed to proceed.",

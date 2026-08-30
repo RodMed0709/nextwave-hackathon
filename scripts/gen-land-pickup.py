@@ -1,7 +1,7 @@
 """Genera events.land-pickup.jsonl — use case 08, con subtareas por tarjeta.
 
 El ritmo sale de occurred_at: recordedSource espera la diferencia entre eventos
-consecutivos. Todo el run dura ~105 s, suficiente para leer cada subtarea sin
+consecutivos. Todo el run dura ~68 s, suficiente para leer cada subtarea sin
 que la demo se haga eterna.
 """
 import hashlib
@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 OUT = "events.land-pickup.jsonl"
 RUN_KEY = "nauta-land-pickup-008"
+PACE = 0.6  # global pace factor: scales every advance so the run reads at ~68 s
 T0 = datetime(2026, 8, 29, 14, 2, 3, tzinfo=timezone.utc)
 
 events = []
@@ -22,7 +23,7 @@ def stamp(offset):
 
 def emit(event_type, payload, node_key=None, agent="Ari", advance=0.0):
     global clock
-    clock += advance
+    clock += advance * PACE
     idem = hashlib.sha256(
         f"{event_type}:{node_key}:{len(events)}:{RUN_KEY}".encode()
     ).hexdigest()
@@ -114,7 +115,7 @@ for a, b in EDGES:
 
 
 def start(key, subtasks=None, advance=1.4, input_summary=None):
-    payload = {"status": "in_progress", "started_at": stamp(clock + advance)}
+    payload = {"status": "in_progress", "started_at": stamp(clock + advance * PACE)}
     if input_summary:
         payload["input_summary"] = input_summary
     if subtasks is not None:

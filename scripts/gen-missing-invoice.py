@@ -1,7 +1,7 @@
 """Genera events.missing-invoice.jsonl — use case 02, la factura que nunca llegó.
 
 El ritmo sale de occurred_at: recordedSource espera la diferencia entre eventos
-consecutivos. Todo el run dura ~115 s: siete pasos de aduana, el paso 3 descubre
+consecutivos. Todo el run dura ~69 s: siete pasos de aduana, el paso 3 descubre
 trabajo nuevo (la tarjeta que crece hacia abajo) que se queda ámbar esperando al
 proveedor — pero el run NO se detiene: un gate decide presentar con valor
 provisional y tres pasos completan en paralelo mientras el nodo ámbar sigue
@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 OUT = "events.missing-invoice.jsonl"
 RUN_KEY = "nauta-missing-invoice-002"
+PACE = 0.6  # global pace factor: scales every advance so the run reads at ~69 s
 T0 = datetime(2026, 8, 29, 15, 41, 12, tzinfo=timezone.utc)
 
 events = []
@@ -37,7 +38,7 @@ AGENT_FOR = {
 
 def emit(event_type, payload, node_key=None, advance=0.0):
     global clock
-    clock += advance
+    clock += advance * PACE
     idem = hashlib.sha256(
         f"{event_type}:{node_key}:{len(events)}:{RUN_KEY}".encode()
     ).hexdigest()
@@ -125,7 +126,7 @@ for a, b in EDGES:
 
 
 def start(key, subtasks=None, advance=1.4, input_summary=None):
-    payload = {"status": "in_progress", "started_at": stamp(clock + advance)}
+    payload = {"status": "in_progress", "started_at": stamp(clock + advance * PACE)}
     if input_summary:
         payload["input_summary"] = input_summary
     if subtasks is not None:
@@ -371,7 +372,7 @@ emit("artifact_added", {
 
 emit("node_status_changed", {
     "status": "in_progress",
-    "started_at": stamp(clock + 1.6),
+    "started_at": stamp(clock + 1.6 * PACE),
     "message": "The supplier replied. Reading the attached invoice.",
     "subtasks": ob(["done", "done", "running"]),
 }, node_key="obtain_missing_invoice", advance=1.6)
