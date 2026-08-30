@@ -37,6 +37,15 @@ type mutation struct {
 	occurredAt     time.Time
 	payload        payload_entity.AgentEventPayload
 
+	// nodeUUIDRef lets apply() report the node it created.
+	//
+	// A node's uuid does not exist until apply() inserts it inside the
+	// transaction, which is after the mutation struct is built — so node_added
+	// was written with a null node_uuid, and every client that keys on node_key
+	// silently dropped the label and lane that arrived with it. Pointing this at
+	// a local variable lets commit pick the id up after apply has run.
+	nodeUUIDRef *uuid.UUID
+
 	// structural is true when the change alters the shape of the graph (a node
 	// or edge added or removed) rather than just a status. Only structural
 	// changes bump graph_revision, so a client can cheaply tell "re-layout" from
@@ -160,6 +169,10 @@ func (h *Handler) commit(ctx context.Context, m mutation) (int64, int64, error) 
 		if err := m.apply(ctx, tx); err != nil {
 			return 0, 0, err
 		}
+	}
+	// apply may have created the node this event is about; see nodeUUIDRef.
+	if m.nodeUUID == nil && m.nodeUUIDRef != nil && !m.nodeUUIDRef.IsNil() {
+		m.nodeUUID = m.nodeUUIDRef
 	}
 
 	seq := lastSeq + 1

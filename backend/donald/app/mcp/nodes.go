@@ -165,8 +165,13 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("node_key and name are both required")
 	}
 
+	// Filled in by apply() below, then read by commit so the event carries the
+	// node it just created.
+	var createdID uuid.UUID
+
 	seq, rev, err := h.commit(ctx, mutation{
 		runUUID:        run.UUID,
+		nodeUUIDRef:    &createdID,
 		eventType:      enums.AGENT_EVENT_TYPE_NODE_ADDED,
 		agentLabel:     args.AgentLabel,
 		idempotencyKey: "node_added:" + run.RunKey + ":" + key,
@@ -198,7 +203,7 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 			if err != nil {
 				return err
 			}
-			_ = id
+			createdID = id
 			if strings.TrimSpace(args.After) != "" {
 				prev, err := h.resolveNode(ctx, run.UUID, args.After)
 				if err != nil {
