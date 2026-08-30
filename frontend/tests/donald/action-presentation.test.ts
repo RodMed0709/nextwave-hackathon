@@ -154,9 +154,9 @@ test('decision options show operational ETA deltas, never absolute dates, when t
   }
   const gate = [rebook, transload, fallback]
 
-  assert.equal(decisionOptionPresentation(transload, gate).consequence, 'ETA same day')
-  assert.equal(decisionOptionPresentation(rebook, gate).consequence, 'direct San Juan, ETA +2 days')
-  assert.equal(decisionOptionPresentation(fallback, gate).consequence, 'ETA +6 days, notify only')
+  assert.equal(decisionOptionPresentation(transload, gate).consequence, 'same day')
+  assert.equal(decisionOptionPresentation(rebook, gate).consequence, 'direct San Juan, +2 days')
+  assert.equal(decisionOptionPresentation(fallback, gate).consequence, '+6 days, notify only')
   // The price stays the big lead of the "PRICE -> consequence" format.
   assert.equal(decisionOptionPresentation(transload, gate).price, '+$2,400')
 })

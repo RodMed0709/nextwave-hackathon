@@ -9,10 +9,7 @@ const RUN_KEY = 'berrios-op4471'
 const CLIENT_NAME = 'Mueblerías Berríos — Puerto Rico'
 
 const STANDING_PROMPT =
-  'We are Mueblerías Berríos, a furniture retailer in Puerto Rico. We import from Asia ' +
-  'through MSC and other carriers, and at any moment we have dozens of operations on the ' +
-  'water, several of them feeding committed store deliveries.\n\n' +
-  'Watch every one of them, around the clock. When a carrier changes a vessel, a routing ' +
+  'Watch every operation on our book, around the clock. When a carrier changes a vessel, a routing ' +
   'or an ETA, find out why it happened, check it against our original booking, and measure ' +
   'what it costs us in days and dollars. Solve what can be solved without us — and bring ' +
   'us the decision only when money or a committed delivery is at risk.\n\n' +
@@ -46,11 +43,11 @@ export function StartCase() {
         <textarea
           aria-label="Standing request to Nauta"
           onChange={(event) => setPrompt(event.target.value)}
-          rows={11}
+          rows={8}
           value={prompt}
         />
         <p className="start-case-bridge">
-          <strong>Donald</strong> reads Nauta&apos;s agents and renders its own live interface.
+          <strong>Donald</strong> will execute the Mueblerías Berríos flow and render its own live interface.
         </p>
         <button disabled={leaving} onClick={launch} type="button">
           See Donald run it <ArrowRight aria-hidden="true" size={16} />

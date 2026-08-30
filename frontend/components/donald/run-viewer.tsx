@@ -88,7 +88,6 @@ import { AgentRail } from '@/components/donald/agent-rail'
 import { MapPopup, type MapPopupData } from '@/components/donald/map-popup'
 import { AmbientStrip } from '@/components/donald/ambient-strip'
 import { ClientArea } from '@/components/donald/client-area'
-import { DonaldNarration } from '@/components/donald/donald-narration'
 import { ImpactReceipt } from '@/components/donald/impact-receipt'
 import { OperationalStage, stageDomId } from '@/components/donald/operational-stage'
 import { ActionAnimation } from '@/components/donald/animations/action-animation'
@@ -238,7 +237,7 @@ const VIEWPORT_QUANTUM = 380
 // not open magnified to fill the screen and then crawl back out as work arrives.
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
-const STAGE_GRAPH_MIN_HEIGHT = 360
+const STAGE_GRAPH_MIN_HEIGHT = 300
 
 // The pitch demos are recordings and everything else is live. The named
 // recordings stay served from the bundle so the stage demo cannot depend on
@@ -532,6 +531,9 @@ function OptionButton({
   onChoose: (option: InterventionOption) => void
 }) {
   const presentation = decisionOptionPresentation(option, siblings)
+  // Extra money and extra days are the two numbers a decision hangs on —
+  // they render red so the trade-off reads without reading.
+  const consequenceParts = presentation.consequence.split(/(\+\d+ days?)/)
   return (
     <button
       className={`decision-option ${option.rank === 1 ? 'recommended' : ''}`}
@@ -543,9 +545,14 @@ function OptionButton({
       title={presentation.tooltip}
       type="button"
     >
-      <strong className="option-price">{presentation.price}</strong>
+      <strong className={presentation.price.startsWith('+$') ? 'option-price cost' : 'option-price'}>{presentation.price}</strong>
       <span className="option-arrow" aria-hidden="true">→</span>
-      <span className="option-consequence">{presentation.consequence}</span>
+      <span className="option-consequence">
+        {consequenceParts.map((part, index) =>
+          /^\+\d+ days?$/.test(part)
+            ? <b className="option-delta-bad" key={index}>{part}</b>
+            : <span key={index}>{part}</span>)}
+      </span>
       {option.rank === 1 && <em>Recommended</em>}
     </button>
   )
@@ -1073,6 +1080,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   // buffering, and resume drains from the cursor. The agent itself never stops
   // — instructions queued while paused reach it exactly as they would live.
   const [paused, setPaused] = useState(false)
+  // True once the operator picked a NON-recommended gate option on a recorded
+  // run: the recording only knows the recommended path, so the reader stops
+  // and a synthesized ending that honours the actual choice takes over.
+  const [diverged, setDiverged] = useState(false)
   const [emailPopupKey, setEmailPopupKey] = useState<string | null>(null)
   const [mapPopup, setMapPopup] = useState<MapPopupData | null>(null)
   // A document opened on demand ("open the invoice we received"): a paper
@@ -1130,7 +1141,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [])
 
   useEffect(() => {
-    if (paused) return
+    if (paused || diverged) return
     if (state.open_intervention) return
     let cancelled = false
     void (async () => {
@@ -1151,7 +1162,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       // still-live loop open one more read that landed an event mid-pause.
       abortRef.current?.abort()
     }
-  }, [paused, readNext, state.open_intervention])
+  }, [diverged, paused, readNext, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -1209,6 +1220,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [])
 
   const synthesizeTaskRef = useRef<(instruction: string, parentKey: string) => void>(() => {})
+  const scenarioRef = useRef<(option: InterventionOption, node: RunNode) => void>(() => {})
   const drainingRef = useRef(false)
 
   const submitInstruction = useCallback(async (
@@ -1240,7 +1252,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       })
       setState((current) => applyEvent(current, event))
       const gateOpenHere = state.open_intervention?.node_key === node.node_key
-      if (recorded && (options.optionId || gateOpenHere) && !drainingRef.current) {
+      const chosenOption = options.optionId
+        ? state.open_intervention?.options.find((candidate) => candidate.id === options.optionId) ?? null
+        : null
+      if (recorded && chosenOption && chosenOption.rank !== 1) {
+        // The recording only knows the recommended path. Any other choice
+        // forks: the reader stops and a synthesized ending plays out the
+        // scenario that was ACTUALLY chosen — no more "picked the transload,
+        // watched the direct re-book happen anyway".
+        scenarioRef.current(chosenOption, node)
+      } else if (recorded && (options.optionId || gateOpenHere) && !drainingRef.current) {
         // A recording already contains the gate's resolution and the path the
         // choice opens; play it forward immediately so the choice registers and
         // the UI advances without waiting out the recorded timestamps. Custom
@@ -1838,7 +1859,78 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     }, 12_000)
   }, [emitLocal])
 
+  /**
+   * Plays out the gate option the operator ACTUALLY chose, built from the
+   * option's own label, rationale and cost — nothing hardcoded per scenario.
+   */
+  const synthesizeChosenScenario = useCallback((option: InterventionOption, gateNode: RunNode) => {
+    setDiverged(true)
+    const short = option.label.length > 48 ? `${option.label.slice(0, 45).trimEnd()}…` : option.label
+    let part = 0
+    const mk = (event_type: string, node_key: string | null, agent: string, payload: Record<string, unknown>): Omit<DonaldEvent, 'sequence'> => {
+      part += 1
+      return {
+        event_type,
+        occurred_at: new Date().toISOString(),
+        agent_label: agent,
+        node_key,
+        idempotency_key: `synthetic:scenario:${option.id}:${part}`,
+        payload,
+      }
+    }
+    emitLocal(mk('intervention_resolved', gateNode.node_key, 'Rex', { option_id: option.id, origin: 'operator' }))
+    emitLocal(mk('node_status_changed', gateNode.node_key, 'Rex', {
+      status: 'succeeded',
+      headline: `Operator chose: ${short}`,
+      finding: option.rationale ?? option.label,
+      manual_minutes: 8,
+    }))
+    const actKey = `scenario_${option.id}_email`
+    emitLocal(mk('node_added', actKey, 'Lex', { label: 'Execute the chosen option', planned: false }))
+    emitLocal(mk('edge_added', null, 'Lex', {
+      edge_key: `${gateNode.node_key}-to-${actKey}`,
+      source_node_key: gateNode.node_key,
+      target_node_key: actKey,
+      planned: false,
+    }))
+    emitLocal(mk('node_status_changed', actKey, 'Lex', { status: 'in_progress', started_at: new Date().toISOString() }))
+    window.setTimeout(() => {
+      emitLocal(mk('node_updated', actKey, 'Lex', { message: 'Executing the decision and preparing the client update…', progress_percent: 55 }))
+    }, 2_600)
+    window.setTimeout(() => {
+      emitLocal(mk('artifact_added', actKey, 'Lex', {
+        artifact_type: 'text',
+        name: 'Email — routing decision executed',
+        text_content:
+          'To: imports@muebleriasberrios.pr\n' +
+          'From: lex@ops.nauta.ai\n' +
+          `Date: ${new Date().toUTCString()}\n` +
+          'Subject: OP-4471 — routing decision confirmed\n\n' +
+          'Dear Berríos Imports Team,\n\n' +
+          `Following the vessel change on OP-4471, the approved course of action is: ${option.label}.\n\n` +
+          `${option.rationale ?? 'The carrier has been instructed accordingly and all references will follow.'}\n\n` +
+          'We will confirm the updated documentation as soon as the carrier issues it.\n\n' +
+          'Kind regards,\n' +
+          'Lex — Expedite Communication, Nauta',
+      }))
+      emitLocal(mk('node_status_changed', actKey, 'Lex', {
+        status: 'succeeded',
+        headline: 'Decision executed — client informed',
+        finding: `${short}. The carrier has been instructed and the client update is out.`,
+        manual_minutes: 15,
+      }))
+      emitLocal(mk('run_finished', null, 'Rex', {
+        summary: {
+          headline: `OP-4471 resolved — ${short}`,
+          detail: `${option.label}. ${option.rationale ?? ''}`,
+        },
+      }))
+      setEmailPopupKey(actKey)
+    }, 6_500)
+  }, [emitLocal])
+
   synthesizeTaskRef.current = synthesizeSteeredTask
+  scenarioRef.current = synthesizeChosenScenario
 
   const submitFromBar = useCallback(async (instruction: string) => {
     if (!steerTargetKey) return
@@ -1975,10 +2067,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             nodes={ambientNodes}
           />
         )}
-      />
-
-      <DonaldNarration
-        stages={stageSummaries}
       />
 
       <section className="canvas-panel">

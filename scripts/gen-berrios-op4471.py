@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 OUT = "events.berrios-op4471.jsonl"
 RUN_KEY = "berrios-op4471"
 T0 = datetime(2026, 8, 29, 5, 20, 4, tzinfo=timezone.utc)
-PACE = 0.85  # global pace factor: ~98 s — fast enough to hold a room, slow enough to read
+PACE = 0.95  # global pace factor: ~116 s — slow enough that each step lands before the next
 
 events = []
 clock = 0.0
@@ -150,7 +150,7 @@ emit("plan_declared", {
         ],
     },
     "total_estimated_seconds": sum(s for _, _, s in STEPS),
-})
+}, advance=8.5)
 
 for i, (key, label, secs) in enumerate(STEPS, start=1):
     emit("node_added", {
@@ -202,7 +202,7 @@ def done(key, headline, finding=None, manual_minutes=None, metrics=None,
 
 
 # ── 1 · DETECT · Nina — the ambient watch surfaces the mismatch ─────────────
-start("detect_schedule_change", advance=9.0,
+start("detect_schedule_change", advance=2.0,
       input_summary="MSC schedule change notification — OP-4471")
 progress("detect_schedule_change",
          "Carrier notice does not match the last known schedule", 60, advance=2.8)
@@ -319,11 +319,9 @@ emit("artifact_added", {
 
 done("quantify_impact",
      "10-day slip — Oct 10 delivery at risk",
-     "The carrier's fallback slips the ETA 10 days (Sep 27 to Oct 7), past "
-     "the 5-day gate threshold. Three POs ride on the booking: PO-7731 feeds "
-     "a committed store delivery on Oct 10 that an Oct 7 arrival would miss "
-     "once discharge and inland transit are counted; PO-7745 and PO-7752 "
-     "carry no committed dates. This crosses the line: a human decides.",
+     "The late arrival misses PO-7731's committed Oct 10 store delivery. "
+     "Demurrage risk while containers sit at the port: about $4,140 (3 "
+     "containers at $138 per day). This crosses the line: a human decides.",
      manual_minutes=22,
      metrics={"fallback_slip_days": 10, "affected_pos": 3, "committed_deliveries_at_risk": 1},
      subtasks=im(["done"] * 3), advance=3.8)
@@ -366,7 +364,7 @@ done("brief_boss_email",
 start("decide_response", advance=1.4)
 emit("intervention_requested", {
     "type": "steer",
-    "prompt": "The carrier's fallback slips OP-4471 ten days, past the 5-day threshold, and PO-7731 has a committed Oct 10 store delivery. How should Nauta respond to MSC's change?",
+    "prompt": "MSC dropped our vessel. Their fallback arrives 10 days late and risks the Oct 10 store delivery. Your call:",
     "options": [
         {"id": "alternative-routing", "label": "Re-book MSC ILONA FE2440 - direct San Juan, ETA Oct 3, $0",
          "rationale": "Recovers 4 days vs the fallback, protects PO-7731's committed Oct 10 delivery, and costs nothing to amend.",

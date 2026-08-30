@@ -4,46 +4,280 @@
 <meta charset="utf-8">
 <title>Commercial Invoice — INV-2026-0841</title>
 <style>
-  body { margin: 0; padding: 28px; background: #e8e4d8; font-family: Georgia, 'Times New Roman', serif; color: #1c2430; }
-  .sheet { max-width: 720px; margin: 0 auto; background: #fffdf7; border: 1px solid #cfc9b8; box-shadow: 0 10px 30px rgba(10,28,50,.18); padding: 40px 46px; }
-  h1 { margin: 0 0 2px; font-size: 21px; letter-spacing: .06em; }
-  .muted { color: #6b7280; font-size: 12px; }
-  .row { display: flex; justify-content: space-between; gap: 24px; margin-top: 22px; }
-  .block { font-size: 13px; line-height: 1.5; }
-  .block b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6b7280; margin-bottom: 3px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 13px; }
-  th { text-align: left; border-bottom: 2px solid #1c2430; padding: 6px 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
-  td { border-bottom: 1px solid #ddd6c4; padding: 8px 4px; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .totals { margin-top: 14px; margin-left: auto; width: 260px; font-size: 13px; }
-  .totals div { display: flex; justify-content: space-between; padding: 4px 4px; }
-  .totals .grand { border-top: 2px solid #1c2430; font-weight: bold; font-size: 15px; }
-  .stamp { margin-top: 30px; display: inline-block; border: 2px solid #8f2d29; color: #8f2d29; padding: 5px 14px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; transform: rotate(-3deg); }
-  .foot { margin-top: 26px; font-size: 11px; color: #6b7280; border-top: 1px solid #ddd6c4; padding-top: 10px; }
+  body { margin: 0; padding: 28px 14px; background: #e8e4d8; font-family: Georgia, 'Times New Roman', serif; color: #17202b; }
+  .sheet { max-width: 720px; margin: 0 auto 30px; background: #fffdf6; border: 1px solid #cfc9b8; box-shadow: 0 10px 30px rgba(10,28,50,.18); padding: 34px 42px 26px; position: relative; box-sizing: border-box; }
+  /* letterhead */
+  .lh { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px double #17202b; padding-bottom: 12px; }
+  .lh .cn { font-size: 20px; letter-spacing: .28em; font-weight: bold; }
+  .lh .en { font-size: 15px; letter-spacing: .05em; font-weight: bold; margin-top: 2px; }
+  .lh .addr { font-size: 10.5px; color: #444d59; line-height: 1.55; margin-top: 5px; }
+  .lh .reg { text-align: right; font-size: 10px; color: #444d59; line-height: 1.6; white-space: nowrap; }
+  .doctitle { text-align: center; margin: 16px 0 4px; }
+  .doctitle .t1 { font-size: 19px; letter-spacing: .3em; font-weight: bold; }
+  .doctitle .t2 { font-size: 12px; letter-spacing: .5em; color: #444d59; }
+  /* meta grid */
+  table.meta { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11.5px; }
+  table.meta td { border: 1px solid #b9b29d; padding: 4px 7px; vertical-align: top; }
+  table.meta td b { display: block; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #6b7280; font-weight: normal; margin-bottom: 1px; }
+  /* parties */
+  table.party { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11.5px; }
+  table.party td { border: 1px solid #b9b29d; padding: 6px 8px; vertical-align: top; width: 50%; line-height: 1.5; }
+  table.party td b { display: block; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #6b7280; font-weight: normal; margin-bottom: 2px; }
+  /* items */
+  table.items { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 11.5px; }
+  table.items th { border: 1px solid #17202b; border-bottom: 2px solid #17202b; background: #f2eee0; padding: 5px 6px; font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; text-align: left; }
+  table.items td { border: 1px solid #b9b29d; padding: 6px 6px; vertical-align: top; line-height: 1.45; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sub { font-size: 10px; color: #57606c; }
+  tr.totline td { border-top: 2px solid #17202b; font-weight: bold; }
+  .words { margin-top: 10px; font-size: 11px; border: 1px solid #b9b29d; padding: 6px 8px; background: #faf7ec; }
+  .words b { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #6b7280; font-weight: normal; display: block; margin-bottom: 2px; }
+  .marks { font-size: 11px; line-height: 1.6; }
+  .pgfoot { margin-top: 22px; border-top: 1px solid #b9b29d; padding-top: 7px; font-size: 9.5px; color: #6b7280; display: flex; justify-content: space-between; }
+  /* page 2 blocks */
+  h3.sec { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; border-bottom: 1px solid #17202b; padding-bottom: 3px; margin: 20px 0 8px; }
+  table.pack { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.pack th { border: 1px solid #17202b; background: #f2eee0; padding: 4px 6px; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; text-align: left; }
+  table.pack td { border: 1px solid #b9b29d; padding: 5px 6px; }
+  .bank { font-size: 11.5px; line-height: 1.8; border: 1px solid #b9b29d; background: #faf7ec; padding: 8px 12px; }
+  .bank b { display: inline-block; width: 165px; color: #6b7280; font-weight: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+  .decl { font-size: 10.5px; line-height: 1.6; text-align: justify; color: #2a3440; }
+  .signrow { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 26px; }
+  .signblock { font-size: 11px; line-height: 1.5; position: relative; }
+  .signblock .line { border-bottom: 1px solid #17202b; width: 230px; height: 34px; position: relative; }
+  .signblock .sig { position: absolute; bottom: 2px; left: 28px; font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 21px; color: #1a2a6b; transform: rotate(-4deg); }
+  .chop { position: absolute; right: -18px; bottom: -26px; width: 108px; height: 108px; border: 3px solid rgba(190,32,28,.75); border-radius: 50%; color: rgba(190,32,28,.8); text-align: center; transform: rotate(-14deg); font-size: 9.5px; line-height: 1.25; padding: 14px 6px; box-sizing: border-box; pointer-events: none; }
+  .chop .star { font-size: 20px; line-height: 1; margin: 4px 0 3px; }
+  .rcvd { display: inline-block; border: 2px solid #2b4f8f; color: #2b4f8f; padding: 4px 12px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; transform: rotate(-3deg); opacity: .85; margin-top: 18px; }
+  .legal { margin-top: 18px; font-size: 8.5px; color: #7a8290; line-height: 1.55; text-align: justify; }
 </style>
 </head>
 <body>
+
+<!-- ============================ PAGE 1 / 2 ============================ -->
 <div class="sheet">
-  <h1>COMMERCIAL INVOICE</h1>
-  <div class="muted">Invoice No. INV-2026-0841 &nbsp;·&nbsp; Date: 12 Aug 2026 &nbsp;·&nbsp; Ref: OP-4471 / BKG-4471-R2</div>
-  <div class="row">
-    <div class="block"><b>Seller / Exporter</b>Fujian Coastal Furniture Co., Ltd.<br>No. 88 Haicang Avenue<br>Xiamen, Fujian, China</div>
-    <div class="block"><b>Buyer / Importer</b>Mueblerías Berríos<br>Carr. #2 Km 47.3, Manatí<br>Puerto Rico 00674, USA</div>
-    <div class="block"><b>Terms</b>FOB Xiamen<br>Payment: T/T 30 days<br>Currency: USD</div>
+  <div class="lh">
+    <div>
+      <div class="cn">福建海岸家具有限公司</div>
+      <div class="en">FUJIAN COASTAL FURNITURE CO., LTD.</div>
+      <div class="addr">No. 88 Haicang Avenue, Haicang District, Xiamen 361026, Fujian, P.R. China<br>
+      Tel: +86 592 6802 1188 &nbsp;·&nbsp; Fax: +86 592 6802 1190 &nbsp;·&nbsp; E-mail: export@fjcoastal.example.cn</div>
+    </div>
+    <div class="reg">
+      USCC: 91350205MA8L4XXK2A<br>
+      Export Licence No.: 3502264401886<br>
+      Customs Reg. No.: 3502960KJ22<br>
+      VAT Reg.: Xiamen-GT-0441522
+    </div>
   </div>
-  <table>
-    <tr><th>PO</th><th>Description</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Amount</th></tr>
-    <tr><td>PO-7731</td><td>Upholstered sofa sets, model Costa (KD, boxed)</td><td class="num">120</td><td class="num">$118.00</td><td class="num">$14,160.00</td></tr>
-    <tr><td>PO-7745</td><td>Dining tables, rubberwood, model Cala</td><td class="num">85</td><td class="num">$74.50</td><td class="num">$6,332.50</td></tr>
-    <tr><td>PO-7752</td><td>Bedroom chests, 5-drawer, model Reef</td><td class="num">140</td><td class="num">$52.00</td><td class="num">$7,280.00</td></tr>
+
+  <div class="doctitle">
+    <div class="t1">COMMERCIAL INVOICE</div>
+    <div class="t2">商 业 发 票</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td><b>Invoice No. 发票号</b>INV-2026-0841</td>
+      <td><b>Invoice Date 日期</b>12 Aug 2026</td>
+      <td><b>Page 页次</b>1 of 2</td>
+      <td><b>Sales Contract No.</b>FCF-MB-2026-018</td>
+    </tr>
+    <tr>
+      <td><b>S/C No.</b>SC26-0334</td>
+      <td><b>Buyer Ref. / Operation</b>OP-4471</td>
+      <td><b>Purchase Orders</b>PO-7731 / PO-7745 / PO-7752</td>
+      <td><b>Case Ref.</b>CS-0830</td>
+    </tr>
+    <tr>
+      <td><b>Terms of Delivery</b>FOB XIAMEN (Incoterms® 2020)</td>
+      <td><b>Terms of Payment</b>T/T 30 days after B/L date</td>
+      <td><b>Currency</b>USD (United States Dollars)</td>
+      <td><b>Freight</b>COLLECT — for buyer's account</td>
+    </tr>
   </table>
-  <div class="totals">
-    <div><span>Subtotal</span><span>$27,772.50</span></div>
-    <div><span>Inland haulage (Xiamen)</span><span>$640.00</span></div>
-    <div class="grand"><span>Total FOB</span><span>$28,412.50</span></div>
+
+  <table class="party">
+    <tr>
+      <td><b>Seller / Exporter 卖方</b>
+        FUJIAN COASTAL FURNITURE CO., LTD.<br>
+        No. 88 Haicang Avenue, Haicang District<br>
+        Xiamen 361026, Fujian, P.R. China
+      </td>
+      <td><b>Buyer / Consignee 买方</b>
+        MUEBLERÍAS BERRÍOS, INC.<br>
+        Carr. #2 Km 47.3, Barrio Coto Norte<br>
+        Manatí, Puerto Rico 00674, U.S.A.<br>
+        Importer of Record — EIN on file
+      </td>
+    </tr>
+    <tr>
+      <td><b>Notify Party 通知方</b>
+        SAME AS CONSIGNEE<br>
+        Attn: Import Operations — Ref. OP-4471
+      </td>
+      <td><b>Country of Origin / Destination</b>
+        Origin: PEOPLE'S REPUBLIC OF CHINA<br>
+        Destination: UNITED STATES (PUERTO RICO)<br>
+        Manufacturer: same as Seller
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta" style="margin-top:10px">
+    <tr>
+      <td><b>Ocean Vessel / Voyage</b>MSC ILONA / FE2440</td>
+      <td><b>Bill of Lading No.</b>MSCUXM4471R2</td>
+      <td><b>Booking No.</b>BKG-4471-R2</td>
+    </tr>
+    <tr>
+      <td><b>Port of Loading</b>XIAMEN, CHINA (CNXMN)</td>
+      <td><b>Port of Discharge</b>SAN JUAN, PUERTO RICO (USSJU)</td>
+      <td><b>ETD / ETA</b>06 Sep 2026 / 03 Oct 2026</td>
+    </tr>
+    <tr>
+      <td><b>Equipment</b>1 × 40'HC — MEDU7734519 / Seal CN882417</td>
+      <td><b>Routing</b>DIRECT — no transshipment</td>
+      <td><b>Marks &amp; Nos.</b>
+        <span class="marks">BERRÍOS — SAN JUAN<br>PO 7731 / 7745 / 7752<br>C/No. 1–465 · MADE IN CHINA</span>
+      </td>
+    </tr>
+  </table>
+
+  <table class="items">
+    <tr>
+      <th style="width:66px">PO No.</th>
+      <th>Description of Goods 货物名称</th>
+      <th style="width:78px">HS Code</th>
+      <th class="num" style="width:56px">Qty</th>
+      <th class="num" style="width:70px">Unit Price<br>USD (FOB)</th>
+      <th class="num" style="width:80px">Amount<br>USD</th>
+    </tr>
+    <tr>
+      <td>PO-7731</td>
+      <td>Upholstered sofa sets, model <i>Costa</i> — wooden frame, polyester fabric, knock-down, boxed<br>
+        <span class="sub">Packed 2 ctns/set · 240 ctns · carton + exempt plywood packing (ISPM-15 n/a)</span></td>
+      <td>9401.61.00</td>
+      <td class="num">120 SETS</td>
+      <td class="num">118.00</td>
+      <td class="num">14,160.00</td>
+    </tr>
+    <tr>
+      <td>PO-7745</td>
+      <td>Dining tables, solid rubberwood (<i>Hevea brasiliensis</i>), model <i>Cala</i>, NC-lacquer finish<br>
+        <span class="sub">Packed 1 ctn/pc · 85 ctns · Lacey Act declaration filed by importer</span></td>
+      <td>9403.60.80</td>
+      <td class="num">85 PCS</td>
+      <td class="num">74.50</td>
+      <td class="num">6,332.50</td>
+    </tr>
+    <tr>
+      <td>PO-7752</td>
+      <td>Bedroom chests, 5-drawer, model <i>Reef</i> — MDF/rubberwood, anti-tip restraint incl. (ASTM F2057)<br>
+        <span class="sub">Packed 1 ctn/pc · 140 ctns</span></td>
+      <td>9403.50.90</td>
+      <td class="num">140 PCS</td>
+      <td class="num">52.00</td>
+      <td class="num">7,280.00</td>
+    </tr>
+    <tr>
+      <td colspan="5">Subtotal — goods, FOB Xiamen</td>
+      <td class="num">27,772.50</td>
+    </tr>
+    <tr>
+      <td colspan="5">Inland haulage &amp; port charges, factory → Xiamen Songyu CT (per contract cl. 6.2)</td>
+      <td class="num">640.00</td>
+    </tr>
+    <tr class="totline">
+      <td colspan="3">TOTAL FOB XIAMEN</td>
+      <td class="num">345 PCS/SETS</td>
+      <td class="num">USD</td>
+      <td class="num">28,412.50</td>
+    </tr>
+  </table>
+
+  <div class="words">
+    <b>Total Amount in Words 大写金额</b>
+    SAY U.S. DOLLARS TWENTY-EIGHT THOUSAND FOUR HUNDRED AND TWELVE AND CENTS FIFTY ONLY.
   </div>
-  <div class="stamp">Received · Nauta Ops</div>
-  <div class="foot">Container: 1 × 40'HC · Vessel: MSC ILONA FE2440 (amended from MSC AURORA FE2431) · POL Xiamen → POD San Juan · Case CS-0830</div>
+
+  <div class="pgfoot">
+    <span>FUJIAN COASTAL FURNITURE CO., LTD. — Commercial Invoice INV-2026-0841</span>
+    <span>E. &amp; O. E. &nbsp;·&nbsp; Page 1 of 2</span>
+  </div>
 </div>
+
+<!-- ============================ PAGE 2 / 2 ============================ -->
+<div class="sheet">
+  <div class="lh" style="padding-bottom:8px">
+    <div>
+      <div class="en">FUJIAN COASTAL FURNITURE CO., LTD. <span style="font-weight:normal;color:#6b7280">— continuation sheet</span></div>
+    </div>
+    <div class="reg">Invoice No. INV-2026-0841 · 12 Aug 2026</div>
+  </div>
+
+  <h3 class="sec">Packing Summary 装箱摘要</h3>
+  <table class="pack">
+    <tr>
+      <th>PO No.</th><th>Cartons</th><th class="num">Net Wt. (kgs)</th><th class="num">Gross Wt. (kgs)</th><th class="num">Meas. (CBM)</th>
+    </tr>
+    <tr><td>PO-7731 — sofa sets <i>Costa</i></td><td>240</td><td class="num">3,600.00</td><td class="num">4,020.00</td><td class="num">39.60</td></tr>
+    <tr><td>PO-7745 — dining tables <i>Cala</i></td><td>85</td><td class="num">1,870.00</td><td class="num">2,082.50</td><td class="num">17.85</td></tr>
+    <tr><td>PO-7752 — chests <i>Reef</i></td><td>140</td><td class="num">2,660.00</td><td class="num">2,940.00</td><td class="num">9.52</td></tr>
+    <tr class="totline"><td><b>TOTAL — 1 × 40'HC (MEDU7734519)</b></td><td><b>465 CTNS</b></td><td class="num"><b>8,130.00</b></td><td class="num"><b>9,042.50</b></td><td class="num"><b>66.97</b></td></tr>
+  </table>
+  <div class="sub" style="margin-top:6px">VGM (SOLAS VI/2, Method 1): cargo gross 9,042.50 kgs + container tare 3,750 kgs = <b>12,792.50 kgs</b>, declared separately to carrier before VGM cut-off.</div>
+
+  <h3 class="sec">Beneficiary Bank Details 受益人银行</h3>
+  <div class="bank">
+    <div><b>Beneficiary</b>FUJIAN COASTAL FURNITURE CO., LTD.</div>
+    <div><b>Beneficiary Bank</b>CHINA COASTAL COMMERCIAL BANK, XIAMEN SIMING SUB-BRANCH</div>
+    <div><b>Bank Address</b>No. 215 Hubin South Road, Siming District, Xiamen, Fujian, P.R. China</div>
+    <div><b>SWIFT / BIC</b>CCCBCNSX441</div>
+    <div><b>USD Account No.</b>4417 8802 3319 076</div>
+    <div><b>Payment Reference</b>INV-2026-0841 / SC26-0334 — bank charges outside China for buyer's account</div>
+  </div>
+
+  <h3 class="sec">Declarations 声明</h3>
+  <div class="decl">
+    <p>We hereby certify that this invoice is true and correct, that it is the only invoice issued by us
+    for the goods described herein, that the prices stated are the actual prices paid or payable, that no
+    other invoice differing therefrom has been or will be issued, and that no rebate, drawback or bounty
+    has been allowed other than as stated on this invoice.</p>
+    <p>We further certify that the goods described above are of <b>Chinese origin</b>, wholly manufactured
+    at our facility in Haicang District, Xiamen, and that all wood species used are declared accurately for
+    the purposes of the U.S. Lacey Act (16 U.S.C. §3371 et seq.). No solid-wood packing material is used;
+    all packing is carton and plywood exempt from ISPM-15 treatment requirements.</p>
+    <p>Shipment effected per S/C SC26-0334 against Purchase Orders 7731, 7745 and 7752 of Mueblerías
+    Berríos, Inc.; ocean carriage under Bill of Lading <b>MSCUXM4471R2</b>, booking <b>BKG-4471-R2</b>,
+    vessel <b>MSC ILONA voy. FE2440</b>, Xiamen → San Juan, revised ETA 03 Oct 2026 (amended sailing —
+    supersedes MSC AURORA FE2431 via Caucedo).</p>
+  </div>
+
+  <div class="signrow">
+    <div class="rcvd">Received · Nauta Ops · CS-0830</div>
+    <div class="signblock">
+      For and on behalf of<br><b>FUJIAN COASTAL FURNITURE CO., LTD.</b>
+      <div class="line"><span class="sig">Lin Wenjie</span></div>
+      LIN WENJIE — Export Sales Manager<br>
+      Xiamen, 12 Aug 2026
+      <div class="chop">福建海岸家具<br>有限公司<div class="star">★</div>INVOICE CHOP<br>发票专用章</div>
+    </div>
+  </div>
+
+  <div class="legal">
+    This document is issued subject to the Seller's General Conditions of Sale (rev. 2025-03) and to sales
+    contract FCF-MB-2026-018. Title to the goods passes upon receipt of payment in full; risk passes FOB
+    Xiamen per Incoterms® 2020. Any discrepancy must be notified in writing within 15 days of cargo
+    availability at destination. This invoice is generated for customs and banking purposes; unit prices are
+    confidential between the parties. E. &amp; O. E.
+  </div>
+
+  <div class="pgfoot">
+    <span>FUJIAN COASTAL FURNITURE CO., LTD. — Commercial Invoice INV-2026-0841</span>
+    <span>E. &amp; O. E. &nbsp;·&nbsp; Page 2 of 2</span>
+  </div>
+</div>
+
 </body>
 </html>

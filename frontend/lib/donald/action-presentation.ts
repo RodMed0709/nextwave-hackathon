@@ -258,8 +258,8 @@ function etaDelta(label: string, baseline: number | null): string | null {
   if (day === null) return null
   if (day < baseline) day += 365 // year wrap: a Jan ETA against a Dec baseline
   const delta = day - baseline
-  if (delta === 0) return 'ETA same day'
-  return `ETA +${delta} ${delta === 1 ? 'day' : 'days'}`
+  if (delta === 0) return 'same day'
+  return `+${delta} ${delta === 1 ? 'day' : 'days'}`
 }
 
 export function decisionOptionPresentation(

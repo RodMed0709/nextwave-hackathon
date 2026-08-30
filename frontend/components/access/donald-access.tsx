@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 import SplitFlapText from '@/components/ui/split-flap-text'
 
-const DEMO_CLIENT_ID = 'berrios-op4471'
+const DEMO_CLIENT_ID = 'mueblerias-berrios'
 
 export function DonaldAccess() {
   const router = useRouter()
@@ -97,7 +97,7 @@ export function DonaldAccess() {
                 setClientId(event.target.value)
                 setError('')
               }}
-              placeholder="berrios-op4471"
+              placeholder="mueblerias-berrios"
               type="text"
               value={clientId}
             />
