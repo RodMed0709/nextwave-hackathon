@@ -56,7 +56,8 @@ AGENT = {
     "decide_carrier": "Rex",
     "act_confirm_email": "Lex",
     "fork_flow": "Nina",
-    "act_pay_record": "Rio",
+    "trigger_new_plan": "Nina",
+    "act_pay_record": "Lex",
 }
 
 AMBIENT = [
@@ -70,6 +71,18 @@ STEPS = [
     ("decide_new_date", "Pick a new date", 10),
     ("reconcile_confirmations", "Confirm the date", 18),
     ("explain_notify_email", "Notify accountable party", 10),
+]
+
+EDGES = [
+    ("detect_pickup_email", "decide_new_date"),
+    ("decide_new_date", "reconcile_confirmations"),
+    ("reconcile_confirmations", "explain_notify_email"),
+]
+
+# Attempt 2 - declared only AFTER the first plan dies. The flow does not
+# patch over the failure: it visibly restarts from a new trigger card.
+STEPS2 = [
+    ("trigger_new_plan", "Restart: new plan", 6),
     ("quantify_demurrage", "Cost clock running", 12),
     ("plan_carriers", "Find alternate carriers", 16),
     ("decide_carrier", "Pick a carrier", 10),
@@ -77,15 +90,11 @@ STEPS = [
     ("act_pay_record", "Pay and record", 10),
 ]
 
-EDGES = [
-    ("detect_pickup_email", "decide_new_date"),
-    ("decide_new_date", "reconcile_confirmations"),
-    ("reconcile_confirmations", "explain_notify_email"),
-    ("reconcile_confirmations", "quantify_demurrage"),
+EDGES2 = [
+    ("trigger_new_plan", "quantify_demurrage"),
     ("quantify_demurrage", "plan_carriers"),
     ("plan_carriers", "decide_carrier"),
     ("decide_carrier", "act_confirm_email"),
-    ("act_confirm_email", "act_pay_record"),
 ]
 
 emit("run_started", {
@@ -99,7 +108,6 @@ emit("run_started", {
         {"label": "Theo", "role": "Freight Anomaly"},
         {"label": "Rex", "role": "Root Cause"},
         {"label": "Lex", "role": "Expedite Communication"},
-        {"label": "Rio", "role": "Landed Cost"},
     ],
 })
 
@@ -254,11 +262,14 @@ start("reconcile_confirmations", advance=1.2)
 progress("reconcile_confirmations", "Confirming the picked window with the partner…", 25, advance=3.0)
 progress("reconcile_confirmations", "Sep 2: unavailable. Trying Sep 3…", 50, advance=3.0)
 progress("reconcile_confirmations", "Sep 3: unavailable. Trying Sep 4…", 75, advance=3.0)
-done("reconcile_confirmations",
-     "No slot confirmed — all 3 failed",
-     "Sep 2: unavailable. Sep 3: unavailable. Sep 4: unavailable. "
-     "The partner cannot serve this container at all this week.",
-     manual_minutes=20, advance=2.8)
+emit("node_status_changed", {
+    "status": "failed",
+    "headline": "No slot confirmed — all 3 failed",
+    "finding": "Sep 2: unavailable. Sep 3: unavailable. Sep 4: unavailable. "
+               "The partner cannot serve this container this week.",
+    "error_message": "The plan died here: the partner declined every window.",
+    "manual_minutes": 20,
+}, node_key="reconcile_confirmations", agent="Theo", advance=2.8)
 
 # ── 4 · EXPLAIN · notify the accountable party ──────────────────────────────
 start("explain_notify_email", advance=1.2)
@@ -285,6 +296,55 @@ done("explain_notify_email",
      "Failure notice sent",
      "Partner and ops lead informed: no window held. Alternates in motion.",
      manual_minutes=12, advance=2.0)
+
+# ── the plan died: ask Nina, declare a NEW plan below ───────────────────────
+emit("agent_message", {
+    "message": "Asking Nina for a new solution…",
+}, node_key="explain_notify_email", agent="Nina", advance=3.0)
+
+emit("plan_declared", {
+    "graph_revision": 2,
+    "proposed": True,
+    "revisable": True,
+    "basis": "restart after confirmation failure — alternate carrier plan",
+    "plan": {
+        "graph_revision": 2,
+        "basis": "restart after confirmation failure — alternate carrier plan",
+        "summary": "The partner is out. New plan: price the clock, rank carriers, book one.",
+        "steps": [
+            {"node_key": k, "agent_label": AGENT[k], "label": lbl, "estimated_seconds": sec}
+            for k, lbl, sec in STEPS2
+        ],
+        "edges": [
+            {"edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b}
+            for a, b in EDGES2
+        ],
+    },
+    "total_estimated_seconds": sum(sec for _, _, sec in STEPS2),
+}, advance=2.2)
+
+for i, (key, label, sec) in enumerate(STEPS2, start=1):
+    emit("node_added", {
+        "label": label, "estimated_seconds": sec, "planned": True, "plan_order": len(STEPS) + i,
+    }, node_key=key, agent=AGENT[key], advance=0.08)
+
+emit("edge_added", {
+    "edge_key": "explain_notify_email-to-trigger_new_plan",
+    "source_node_key": "explain_notify_email",
+    "target_node_key": "trigger_new_plan",
+    "planned": False,
+}, advance=0.05)
+for a, b in EDGES2:
+    emit("edge_added", {
+        "edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b, "planned": True,
+    }, advance=0.05)
+
+# ── 1 (again) · the restart trigger — this is where it starts over ─────────
+start("trigger_new_plan", advance=1.4)
+done("trigger_new_plan",
+     "Attempt 2 starts here",
+     "Nina reset the flow: same container, fresh plan, the old one on file.",
+     manual_minutes=4, advance=2.0)
 
 # ── 5 · IMPACT · the demurrage clock ────────────────────────────────────────
 start("quantify_demurrage", advance=1.2)
@@ -373,6 +433,12 @@ emit("edge_added", {
     "target_node_key": "fork_flow",
     "planned": False,
 }, advance=0.4)
+emit("edge_added", {
+    "edge_key": "fork_flow-to-act_pay_record",
+    "source_node_key": "fork_flow",
+    "target_node_key": "act_pay_record",
+    "planned": False,
+}, advance=0.3)
 emit("node_status_changed", {"status": "in_progress", "started_at": stamp(clock + 0.5)},
      node_key="fork_flow", agent="Nina", advance=0.5)
 done("fork_flow",
@@ -396,9 +462,9 @@ emit("artifact_added", {
         "Service:      Port pickup — Sep 3\n"
         "References:   New flow (live) + original flow (reference)\n"
         "Copied to:    accounting@muebleriasberrios.pr\n\n"
-        "Recorded for audit by Rio — Landed Cost, Nauta."
+        "Recorded for audit — Nauta Operations."
     ),
-}, node_key="act_pay_record", agent="Rio", advance=2.4)
+}, node_key="act_pay_record", agent="Lex", advance=2.4)
 done("act_pay_record",
      "Paid and recorded — $480",
      "Payment out, receipt with both flow references sent to Accounting.",
@@ -443,6 +509,12 @@ assert "reference" in fork["payload"]["finding"], "fork must state the original 
 dones = [e for e in lines if e["event_type"] == "node_status_changed"
          and e["payload"].get("status") == "succeeded"]
 assert all("manual_minutes" in e["payload"] for e in dones), "a done is missing manual_minutes"
+failed = next(e for e in lines if e["payload"].get("status") == "failed")
+assert failed["node_key"] == "reconcile_confirmations", "the failure lives on reconcile"
+plans = [e for e in lines if e["event_type"] == "plan_declared"]
+assert len(plans) == 2, "expected the restart to declare a second plan"
+restart = next(e for e in lines if e["node_key"] == "trigger_new_plan" and e["event_type"] == "node_added")
+assert restart["sequence"] > failed["sequence"], "attempt 2 must not exist before the failure"
 finished = [e for e in lines if e["event_type"] == "run_finished"]
 assert len(finished) == 1 and "3M" in finished[0]["payload"]["summary"]["detail"]
 print(f"check ok: {len(lines)} lines, 2 gates (choice + steer), 4 artifacts, "

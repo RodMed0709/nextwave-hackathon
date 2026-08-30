@@ -661,6 +661,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   line-height: 1.35;
 }
 .stage-eyebrow {
+  margin-bottom: 6px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -670,7 +671,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   letter-spacing: .12em;
   text-transform: uppercase;
 }
-.stage-below .stage-eyebrow { color: var(--amber); }
+.stage-below .stage-eyebrow {
+  margin-bottom: 6px; color: var(--amber); }
 .operational-stage-title h2 {
   margin: 2px 0 0;
   color: #f2f7f8;
@@ -1180,6 +1182,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .stage-live { display: inline-flex; align-items: center; gap: 8px; color: var(--chartreuse); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
 .stage-eyebrow {
+  margin-bottom: 6px;
   color: var(--chartreuse);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
@@ -2189,3 +2192,29 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .flow-card.selected { border-color: #6f8fb5; border-radius: 20px 20px 8px 8px; box-shadow: 0 0 0 2px #9dc0e455, 0 22px 46px #020b1480; }
 
 @media (max-width: 900px) { .node-drawer { width: 100%; } }
+
+/* DONE screams done: solid green pill with a big check. */
+.flow-card.done .card-header .status {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #5f7410;
+  color: #f7fbe8;
+  font-weight: 900;
+  box-shadow: 0 0 0 2px #d7f24c55, 0 0 14px #d7f24c44;
+}
+.flow-card.done .card-header .status svg { color: #f7fbe8; width: 16px; height: 16px; }
+/* FAILED is a whole red card, inside the identity palette. */
+.flow-card.failed {
+  border-color: var(--red);
+  background: #fbeae7;
+  box-shadow: 0 0 0 2px #e4514555, 0 14px 30px #8f2d2933;
+}
+.flow-card.failed .card-header .status {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-weight: 900;
+  animation: action-pulse 1.4s ease-in-out infinite;
+}
+.flow-card.failed h2 { color: var(--red-deep); }

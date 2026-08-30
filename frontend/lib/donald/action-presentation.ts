@@ -16,7 +16,7 @@ export const DONALD_ACTION_IDS = [
 ] as const
 
 export type DonaldActionId = typeof DONALD_ACTION_IDS[number]
-export type DonaldAnimationKind = DonaldActionId | 'default' | 'email'
+export type DonaldAnimationKind = DonaldActionId | 'default' | 'email' | 'payment'
 
 export type ActionPresentation = {
   id: DonaldAnimationKind
@@ -167,6 +167,15 @@ const ACTION_ID_OVERRIDES: Record<string, DonaldActionId | null> = {
  * letter leaving instead of the generic execute pulse.
  */
 const EMAIL_KEYWORDS = ['email', 'mail', 'brief', 'notify', 'inform']
+const PAYMENT_KEYWORDS = ['pay', 'payment', 'paid']
+
+export function isPaymentNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
+  const tokens = [input.nodeKey, input.label, input.toolName ?? '']
+    .join(' ')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+  return PAYMENT_KEYWORDS.some((keyword) => tokens.includes(keyword))
+}
 
 export function isEmailNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
   // Token match, not hasActionWord: that helper treats only dashes as word
@@ -187,6 +196,9 @@ export function actionPresentationForNode(input: {
   headline?: string | null
   detail?: string | null
 }): ActionPresentation {
+  if (isPaymentNode(input)) {
+    return { ...ACTION_PRESENTATIONS.act, label: 'Payment', animationKind: 'payment' }
+  }
   if (isEmailNode(input)) {
     return { ...ACTION_PRESENTATIONS.act, label: 'Email', animationKind: 'email' }
   }

@@ -23,6 +23,7 @@ const icons = {
   route: `${SVG_REPO_BASE}/8882115/route-planner.svg`,
   decision: `${SVG_REPO_BASE}/340133/decision-tree.svg`,
   send: `${SVG_REPO_BASE}/389782/paper-plane-send.svg`,
+  money: `${SVG_REPO_BASE}/9382/money.svg`,
 } as const
 
 function spec(kind: DonaldAnimationKind, className: string, iconUrl: string): ActionAnimationSpec {
@@ -44,6 +45,7 @@ export const ACTION_ANIMATION_REGISTRY: Record<DonaldAnimationKind, ActionAnimat
   decide: spec('decide', 'action-animation-decide', icons.decision),
   act: spec('act', 'action-animation-act', icons.send),
   email: spec('email', 'action-animation-email', icons.email),
+  payment: spec('payment', 'action-animation-act', icons.money),
 }
 
 
