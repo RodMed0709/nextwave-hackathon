@@ -26,7 +26,10 @@ export async function POST(request: Request): Promise<Response> {
   upstream.append('file', audio, audio instanceof File ? audio.name : 'instruction.webm')
   upstream.append('model', 'whisper-1')
 
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  // The translations endpoint always outputs ENGLISH, whatever language the
+  // operator dictated in - the demo's interface language is English and a
+  // Spanish dictation must not flip the prompt bar's language.
+  const response = await fetch('https://api.openai.com/v1/audio/translations', {
     method: 'POST',
     headers: { authorization: `Bearer ${key}` },
     body: upstream,

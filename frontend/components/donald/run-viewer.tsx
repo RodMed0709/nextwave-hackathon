@@ -127,6 +127,35 @@ type DisplayStatus = 'PROPOSED' | 'WAITING' | 'RUNNING' | 'DONE' | 'NEEDS HUMAN'
 
 type InstructionKind = 'stop' | 'steer'
 
+/** What the live Scenario Director (/api/interpret) says a bar prompt means. */
+type InterpretedFlow = {
+  detectLabel?: string
+  detectHeadline?: string
+  assessHeadline?: string
+  assessFinding?: string
+  actLabel?: string
+  emailSubject?: string
+  emailBody?: string
+  origin?: string
+  destination?: string
+  mapNote?: string
+}
+type InterpretedTask = {
+  label?: string
+  doneHeadline?: string
+  finding?: string
+  email?: boolean
+  emailSubject?: string
+  emailBody?: string
+  document?: { name?: string; body?: string }
+}
+type InterpretResult = {
+  intent?: 'show_map' | 'new_flow' | 'task'
+  summary?: string
+  flow?: InterpretedFlow
+  task?: InterpretedTask
+}
+
 /** Why a read ended. See readNext for why this is not just `event | null`. */
 type ReadOutcome =
   | { status: 'event'; event: DonaldEvent }
@@ -860,10 +889,14 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         </button>
       )}
       {latestArtifact && !isEmail && (
-        <div className="card-artifact" title={latestArtifact.name}>
-          <FileText aria-hidden="true" size={12} />
-          <span>{latestArtifact.name}</span>
-        </div>
+        <button
+          className="read-email view-doc"
+          onClick={(event) => { event.stopPropagation(); data.onReadEmail() }}
+          title={latestArtifact.name}
+          type="button"
+        >
+          <FileText aria-hidden="true" size={12} /> Open the document
+        </button>
       )}
       {!data.intervention && (
         <span className="expand-hint">
@@ -1544,12 +1577,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
    * INSTRUCTION — that runs and completes locally. Live runs skip this: the
    * real agent picks the instruction up and grows the graph itself.
    */
-  const synthesizeSteeredTask = useCallback((instruction: string, parentKey: string) => {
+  const synthesizeSteeredTask = useCallback((instruction: string, parentKey: string, content?: InterpretResult) => {
     syntheticTaskCountRef.current += 1
     const key = `steer_task_${syntheticTaskCountRef.current}`
-    const emailish = /\b(mail|email|send|notify|inform|write|client|customer)\b/i.test(instruction)
-    const label = instruction.length > 46 ? `${instruction.slice(0, 43)}…` : instruction
-    const agent = emailish ? 'Lex' : 'Rex'
+    const task = content?.task
+    const emailish = task?.email ?? /\b(mail|email|send|notify|inform|write|client|customer)\b/i.test(instruction)
+    const label = task?.label ?? (instruction.length > 46 ? `${instruction.slice(0, 43)}…` : instruction)
+    const agent = emailish ? 'Lex' : task?.document ? 'Theo' : 'Rex'
     let part = 0
     const mk = (event_type: string, node_key: string | null, payload: Record<string, unknown>): Omit<DonaldEvent, 'sequence'> => {
       part += 1
@@ -1582,19 +1616,27 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             'To: the recipient you asked for\n' +
             'From: lex@ops.nauta.ai\n' +
             `Date: ${new Date().toUTCString()}\n` +
-            `Subject: ${label}\n\n` +
-            'Hi,\n\n' +
-            `As requested: ${instruction}\n\n` +
-            'Context on OP-4471: the shipment was re-booked onto MSC ILONA FE2440, ' +
-            'sailing direct to San Juan at no extra cost, with the new ETA on Oct 3. ' +
-            'The committed Oct 10 delivery holds.\n\n' +
-            'Lex — Expedite Communication, Nauta',
+            `Subject: ${task?.emailSubject ?? label}\n\n` +
+            (task?.emailBody ??
+              'Hi,\n\n' +
+              `As requested: ${instruction}\n\n` +
+              'Context on OP-4471: the shipment was re-booked onto MSC ILONA FE2440, ' +
+              'sailing direct to San Juan at no extra cost, with the new ETA on Oct 3. ' +
+              'The committed Oct 10 delivery holds.\n\n' +
+              'Lex — Expedite Communication, Nauta'),
+        }))
+      }
+      if (task?.document?.body) {
+        emitLocal(mk('artifact_added', key, {
+          artifact_type: 'text',
+          name: task.document.name ?? 'Document extract',
+          text_content: task.document.body,
         }))
       }
       emitLocal(mk('node_status_changed', key, {
         status: 'succeeded',
-        headline: emailish ? 'Sent — as instructed' : 'Done — as instructed',
-        finding: `Completed from your instruction: ${instruction}`,
+        headline: task?.doneHeadline ?? (emailish ? 'Sent — as instructed' : 'Done — as instructed'),
+        finding: task?.finding ?? content?.summary ?? `Completed from your instruction: ${instruction}`,
         manual_minutes: 10,
       }))
     }, 6_400)
@@ -1607,16 +1649,17 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
    * monitor, then Rex assessing, then Lex acting — all in parallel with
    * whatever the main case is doing, no reload, no second page.
    */
-  const synthesizeSteeredCase = useCallback((instruction: string) => {
+  const synthesizeSteeredCase = useCallback((instruction: string, content?: InterpretResult) => {
     syntheticTaskCountRef.current += 1
     const prefix = `live_case_${syntheticTaskCountRef.current}`
+    const flow = content?.flow
     const short = instruction.length > 42 ? `${instruction.slice(0, 39)}…` : instruction
     const routeMatch = instruction.match(/from\s+([A-Za-zÀ-ÿ ,]{3,24}?)\s+to\s+([A-Za-zÀ-ÿ ,]{3,24})(?:[.,;]|$)/i)
     syntheticRoutesRef.current[prefix] = {
       title: 'New case — live route',
-      origin: routeMatch?.[1]?.trim() ?? 'Vung Tau, VN',
-      destination: routeMatch?.[2]?.trim() ?? 'Manzanillo, MX',
-      note: 'Unplanned transshipment on the voyage — ETA slips ~9 days. Donald is sizing the damage.',
+      origin: flow?.origin ?? routeMatch?.[1]?.trim() ?? 'Vung Tau, VN',
+      destination: flow?.destination ?? routeMatch?.[2]?.trim() ?? 'Manzanillo, MX',
+      note: flow?.mapNote ?? 'Unplanned transshipment on the voyage — ETA slips ~9 days. Donald is sizing the damage.',
     }
     let part = 0
     const mk = (event_type: string, node_key: string | null, agent: string, payload: Record<string, unknown>): Omit<DonaldEvent, 'sequence'> => {
@@ -1633,7 +1676,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     const detectKey = `${prefix}_detect_vessel_event`
     const assessKey = `${prefix}_assess_impact`
     const actKey = `${prefix}_notify_email`
-    emitLocal(mk('node_added', detectKey, 'Nina', { label: `Detect: ${short}`, planned: false }))
+    emitLocal(mk('node_added', detectKey, 'Nina', { label: flow?.detectLabel ?? `Detect: ${short}`, planned: false }))
     emitLocal(mk('edge_added', null, 'Nina', {
       edge_key: `ambient_monitor-to-${detectKey}`,
       source_node_key: 'ambient_monitor',
@@ -1644,8 +1687,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     window.setTimeout(() => {
       emitLocal(mk('node_status_changed', detectKey, 'Nina', {
         status: 'succeeded',
-        headline: 'Caught it — new vessel event on the book',
-        finding: instruction,
+        headline: flow?.detectHeadline ?? 'Caught it — new vessel event on the book',
+        finding: content?.summary ?? instruction,
         manual_minutes: 8,
       }))
       emitLocal(mk('node_added', assessKey, 'Rex', { label: 'Assess the vessel deviation', planned: false }))
@@ -1663,11 +1706,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     window.setTimeout(() => {
       emitLocal(mk('node_status_changed', assessKey, 'Rex', {
         status: 'succeeded',
-        headline: 'ETA slips ~9 days on the deviation',
-        finding: 'Unplanned transshipment detected on the voyage. Committed deliveries checked against the new ETA; options priced and ready if a commitment is at risk.',
+        headline: flow?.assessHeadline ?? 'ETA slips ~9 days on the deviation',
+        finding: flow?.assessFinding ?? 'Unplanned transshipment detected on the voyage. Committed deliveries checked against the new ETA; options priced and ready if a commitment is at risk.',
         manual_minutes: 18,
       }))
-      emitLocal(mk('node_added', actKey, 'Lex', { label: 'Notify the client by email', planned: false }))
+      emitLocal(mk('node_added', actKey, 'Lex', { label: flow?.actLabel ?? 'Notify the client by email', planned: false }))
       emitLocal(mk('edge_added', null, 'Lex', {
         edge_key: `${assessKey}-to-${actKey}`,
         source_node_key: assessKey,
@@ -1684,13 +1727,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           'To: the client\n' +
           'From: lex@ops.nauta.ai\n' +
           `Date: ${new Date().toUTCString()}\n` +
-          'Subject: Voyage update — unplanned transshipment, new ETA under review\n\n' +
-          'Hi,\n\n' +
-          `Our watch just caught this on your voyage: ${instruction}\n\n` +
-          'The vessel made an unplanned stop and the ETA slips about 9 days. We are ' +
-          'already pricing alternatives and will bring you a decision only if a ' +
-          'committed delivery is at risk.\n\n' +
-          'Lex — Expedite Communication, Nauta',
+          `Subject: ${flow?.emailSubject ?? 'Voyage update — unplanned transshipment, new ETA under review'}\n\n` +
+          (flow?.emailBody ??
+            'Hi,\n\n' +
+            `Our watch just caught this on your voyage: ${instruction}\n\n` +
+            'The vessel made an unplanned stop and the ETA slips about 9 days. We are ' +
+            'already pricing alternatives and will bring you a decision only if a ' +
+            'committed delivery is at risk.\n\n' +
+            'Lex — Expedite Communication, Nauta'),
       }))
       emitLocal(mk('node_status_changed', actKey, 'Lex', {
         status: 'succeeded',
@@ -1707,24 +1751,55 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     if (!steerTargetKey) return
     const node = state.nodes[steerTargetKey]
     if (!node) return
-    // Open the card the instruction lands on, so the person sees it queue,
-    // and give the moment a beat of "Recalculating…" — the visible buffer
-    // between asking and the agent taking it in.
-    setExpandedKey(node.node_key)
+    // The visible buffer between asking and the agents taking it in.
     if (decisionRecalculationTimerRef.current) window.clearTimeout(decisionRecalculationTimerRef.current)
     setDecisionRecalculationKey(`steer:${node.node_key}:${Date.now()}`)
     decisionRecalculationTimerRef.current = window.setTimeout(() => {
       setDecisionRecalculationKey(null)
       decisionRecalculationTimerRef.current = null
     }, 2_200)
+
+    // Ask the live Scenario Director what this prompt MEANS — the summary,
+    // the copy in the agents' voice, and whether it deserves a parallel flow,
+    // a single task, or just showing something. The heuristics below are only
+    // the fallback for when the director is unreachable.
+    let interpreted: InterpretResult | null = null
+    try {
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), 9_000)
+      const response = await fetch('/api/interpret', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ instruction }),
+        signal: controller.signal,
+      })
+      window.clearTimeout(timer)
+      if (response.ok) interpreted = await response.json() as InterpretResult
+    } catch {
+      // Fall through to the keyword heuristics.
+    }
+
+    if (interpreted?.intent === 'show_map' || (!interpreted && /\b(show|see|open|view|where)\b.*\b(map|route|vessel|voyage)\b/i.test(instruction))) {
+      // "Show me the map" is a question, not work: answer it, queue nothing.
+      const prefixes = Object.keys(syntheticRoutesRef.current)
+      const latest = prefixes[prefixes.length - 1]
+      setMapPopup(latest ? syntheticRoutesRef.current[latest] : {
+        title: 'OP-4471 — live route',
+        origin: 'Xiamen, CN',
+        destination: 'San Juan, PR',
+        note: 'Re-booked onto MSC ILONA FE2440, direct — new ETA Oct 3, the committed Oct 10 delivery holds.',
+      })
+      return
+    }
+
     await submitInstruction(node, instruction)
     const recorded = !API_BASE_URL || isRecordedRunKey(requestedRunKey)
     if (recorded) {
-      // A message about a NEW event opens a second flow off the watch; an
-      // instruction about the current work grows a task off the steer target.
-      const newCase = /\b(vessel|barco|ship|voyage|transship|deviat|desvi|divert|delay|just happened|acaba de|new (case|shipment|operation|booking)|apareci)\b/i.test(instruction)
-      if (newCase) synthesizeSteeredCase(instruction)
-      else synthesizeSteeredTask(instruction, node.node_key)
+      const newCase = interpreted
+        ? interpreted.intent === 'new_flow'
+        : /\b(vessel|barco|ship|voyage|transship|deviat|desvi|divert|delay|just happened|acaba de|new (case|shipment|operation|booking)|apareci)\b/i.test(instruction)
+      if (newCase) synthesizeSteeredCase(instruction, interpreted ?? undefined)
+      else synthesizeSteeredTask(instruction, node.node_key, interpreted ?? undefined)
       // Release the camera: the whole point is SEEING the new card arrive,
       // and a focused card pins the viewport away from it.
       setExpandedKey(null)
