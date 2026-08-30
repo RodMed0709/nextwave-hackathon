@@ -101,10 +101,11 @@ func (h *Handler) StartRun(ctx context.Context, req *mcp.CallToolRequest, args S
 		return nil, nil, err
 	}
 
-	return jsonResult(result{
+	return h.ack(ctx, result{
 		OK: true, RunKey: runKey, Sequence: seq, GraphRevision: rev,
-		Note: "run created; declare your planned actions next with declare_actions",
-	})
+		WatchURL: watchURL(runKey),
+		Note:     "run created — SHOW watch_url to the person you are working for, then declare_actions",
+	}, runUUID)
 }
 
 // watchURL is the page a person opens to follow a run.
