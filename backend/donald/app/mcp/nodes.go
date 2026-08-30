@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid"
 	"github.com/guregu/null/v6"
@@ -231,18 +232,37 @@ type Subtask struct {
 	Status string `json:"status,omitempty" jsonschema:"Subtask state: pending, running, done, skipped, or failed. Defaults to pending."`
 }
 
+// report_progress is the highest-frequency tool in the protocol, and every call
+// carries the WHOLE snapshot. Without a ceiling, one agent with a runaway list
+// grows the event log and the card without bound — and the card cannot scroll.
+const (
+	maxSubtasks          = 50
+	maxSubtaskLabelRunes = 120
+)
+
 func normalizeSubtasks(subtasks []Subtask) ([]Subtask, error) {
 	if subtasks == nil {
 		return nil, nil
 	}
+	if len(subtasks) > maxSubtasks {
+		return nil, fmt.Errorf("subtasks has %d items; maximum is %d - a step with more than that is several steps, so declare them with add_action", len(subtasks), maxSubtasks)
+	}
 	normalized := make([]Subtask, len(subtasks))
 	seen := make(map[string]bool, len(subtasks))
 	for i, subtask := range subtasks {
-		if strings.TrimSpace(subtask.Key) == "" {
+		// Trim before every check, and store what was checked. Comparing the raw
+		// key while validating the trimmed one let "a" and "a " through as two
+		// distinct subtasks that render identically.
+		subtask.Key = strings.TrimSpace(subtask.Key)
+		subtask.Label = strings.TrimSpace(subtask.Label)
+		if subtask.Key == "" {
 			return nil, fmt.Errorf("subtasks[%d].key is required", i)
 		}
-		if strings.TrimSpace(subtask.Label) == "" {
+		if subtask.Label == "" {
 			return nil, fmt.Errorf("subtasks[%d].label is required", i)
+		}
+		if n := utf8.RuneCountInString(subtask.Label); n > maxSubtaskLabelRunes {
+			return nil, fmt.Errorf("subtasks[%d].label is %d characters; maximum is %d - it is a line on a card, not a paragraph", i, n, maxSubtaskLabelRunes)
 		}
 		if seen[subtask.Key] {
 			return nil, fmt.Errorf("subtasks[%d].key %q is duplicated; keys must be unique within the node", i, subtask.Key)
@@ -261,18 +281,14 @@ func normalizeSubtasks(subtasks []Subtask) ([]Subtask, error) {
 	return normalized, nil
 }
 
-func detailWithSubtasks(existing map[string]any, subtasks []Subtask) null.String {
-	if existing == nil && subtasks == nil {
+// A nil snapshot writes no detail at all; an explicit empty one writes `[]`,
+// which is how an agent clears a list it no longer has work for. The two are
+// not the same and the client relies on the difference.
+func detailWithSubtasks(subtasks []Subtask) null.String {
+	if subtasks == nil {
 		return null.String{}
 	}
-	detail := make(map[string]any, len(existing)+1)
-	for key, value := range existing {
-		detail[key] = value
-	}
-	if subtasks != nil {
-		detail["subtasks"] = subtasks
-	}
-	return detailJSON(detail)
+	return detailJSON(map[string]any{"subtasks": subtasks})
 }
 
 type StartActionParams struct {
@@ -290,7 +306,7 @@ func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, arg
 	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
 		to:                enums.AGENT_NODE_STATUS_IN_PROGRESS,
 		idempotencySuffix: "start",
-		detail:            detailWithSubtasks(nil, subtasks),
+		detail:            detailWithSubtasks(subtasks),
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
 			n.StartedAt = nullTime(&now)
@@ -346,7 +362,7 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 			Message:         nullString(args.Message),
 			ProgressPercent: nullInt64(args.Percent),
 			NewStatus:       node.Status,
-			Detail:          detailWithSubtasks(nil, subtasks),
+			Detail:          detailWithSubtasks(subtasks),
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.StatusMessage = nullString(args.Message)

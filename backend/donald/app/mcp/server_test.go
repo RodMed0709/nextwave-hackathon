@@ -250,9 +250,12 @@ func TestNormalizeSubtasksDefaultsPendingAndValidatesSnapshots(t *testing.T) {
 		subtasks []Subtask
 		want     string
 	}{
+		{"too many subtasks", make([]Subtask, 51), "subtasks has 51 items; maximum is 50"},
 		{"missing key", []Subtask{{Label: "Write the test"}}, "subtasks[0].key is required"},
 		{"missing label", []Subtask{{Key: "write-test"}}, "subtasks[0].label is required"},
+		{"label too long", []Subtask{{Key: "write-test", Label: strings.Repeat("x", 121)}}, "subtasks[0].label is 121 characters; maximum is 120"},
 		{"duplicate key", []Subtask{{Key: "write-test", Label: "First"}, {Key: "write-test", Label: "Second"}}, "subtasks[1].key \"write-test\" is duplicated"},
+		{"duplicate key after trimming", []Subtask{{Key: "write-test", Label: "First"}, {Key: " write-test ", Label: "Second"}}, "subtasks[1].key \"write-test\" is duplicated"},
 		{"invalid status", []Subtask{{Key: "write-test", Label: "Write the test", Status: "waiting"}}, "subtasks[0].status must be one of pending, running, done, skipped, failed"},
 	}
 	for _, tc := range tests {
@@ -265,31 +268,21 @@ func TestNormalizeSubtasksDefaultsPendingAndValidatesSnapshots(t *testing.T) {
 	}
 }
 
-func TestDetailWithSubtasksPreservesExistingFieldsAndAbsentVsEmpty(t *testing.T) {
-	existing := map[string]any{"source_node_key": "prepare"}
-
-	absent := detailWithSubtasks(existing, nil)
-	var absentDetail map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(absent.String), &absentDetail); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := absentDetail["subtasks"]; ok {
-		t.Fatal("nil subtasks must not write a subtasks key")
-	}
-	if string(absentDetail["source_node_key"]) != `"prepare"` {
-		t.Fatalf("existing detail was not preserved: %s", absent.String)
+func TestDetailWithSubtasksSeparatesAbsentFromEmpty(t *testing.T) {
+	// Absent and empty are different instructions: absent means "I am not talking
+	// about subtasks", empty means "the list is now empty". Collapsing them would
+	// make every progress report without subtasks wipe the card's list.
+	if absent := detailWithSubtasks(nil); absent.Valid {
+		t.Fatalf("a nil snapshot must write no detail at all, got %q", absent.String)
 	}
 
-	empty := detailWithSubtasks(existing, []Subtask{})
+	empty := detailWithSubtasks([]Subtask{})
 	var emptyDetail map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(empty.String), &emptyDetail); err != nil {
 		t.Fatal(err)
 	}
 	if string(emptyDetail["subtasks"]) != "[]" {
 		t.Fatalf("an explicit empty snapshot must stay present, got %s", empty.String)
-	}
-	if string(emptyDetail["source_node_key"]) != `"prepare"` {
-		t.Fatalf("existing detail was not preserved: %s", empty.String)
 	}
 }
 
