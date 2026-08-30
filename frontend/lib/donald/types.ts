@@ -43,6 +43,36 @@ export type DonaldEvent = {
   payload: Record<string, unknown>
 }
 
+export type RobotActivityKind =
+  | 'work.generic'
+  | 'document.read'
+  | 'message.send'
+  | 'message.receive'
+  | 'data.check'
+  | 'calculate'
+  | 'submit'
+
+export type RobotActivityPhase = 'started' | 'progress' | 'completed'
+
+export type RobotActivityObject = {
+  kind: 'document' | 'email' | 'record'
+  label: string
+}
+
+export type RobotActivityCue = {
+  kind: Exclude<RobotActivityKind, 'work.generic'>
+  phase?: RobotActivityPhase
+  object?: RobotActivityObject
+  copy?: string
+}
+
+export type RobotCurrencyMetricCue = {
+  kind: 'currency'
+  value: number
+  currency: string
+  label: string
+}
+
 export type RunArtifact = {
   artifact_type: string
   name: string
