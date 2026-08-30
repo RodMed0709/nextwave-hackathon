@@ -1,16 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Maximize2, Pause, Share2, SlidersHorizontal, Square, type LucideIcon } from 'lucide-react'
+import { Maximize2, Minus, Pause, Plus, Share2, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 
 type RunControlsProps = {
   onAdjust: () => void
   onFit: () => void
-  onReplay: () => void
-  /** True while a replay is running, so the same control stops it. */
-  replaying: boolean
-  /** A single-event run has nothing to replay. */
-  canReplay: boolean
+  onZoomIn: () => void
+  onZoomOut: () => void
+  /** Pause/resume is shown only when the runtime can safely support it. */
+  canPause?: boolean
+  paused?: boolean
+  onPause?: () => void
 }
 
 type ControlItem = {
@@ -72,7 +73,15 @@ async function copyCurrentUrl() {
   document.body.removeChild(textarea)
 }
 
-export function RunControls({ onAdjust, onFit, onReplay, replaying, canReplay }: RunControlsProps) {
+export function RunControls({
+  onAdjust,
+  onFit,
+  onZoomIn,
+  onZoomOut,
+  canPause = false,
+  paused = false,
+  onPause,
+}: RunControlsProps) {
   const [shareState, setShareState] = useState<'idle' | 'copied'>('idle')
 
   useEffect(() => {
@@ -106,17 +115,15 @@ export function RunControls({ onAdjust, onFit, onReplay, replaying, canReplay }:
     },
     {
       id: 'pause',
-      label: replaying ? 'Stop' : 'Pause',
-      icon: replaying ? Square : Pause,
-      disabled: !replaying,
-      title: replaying
-        ? 'Stop the replay and return to live'
-        : canReplay
-          ? 'Runtime pause is not available for this recorded replay'
-          : 'Runtime pause is not available for this live run',
-      onClick: onReplay,
+      label: paused ? 'Resume' : 'Pause',
+      icon: Pause,
+      disabled: !canPause || !onPause,
+      title: canPause ? (paused ? 'Resume the run' : 'Pause the run') : 'Runtime pause is not available for this run',
+      onClick: () => onPause?.(),
     },
     { id: 'share', label: shareState === 'copied' ? 'Copied' : 'Share', icon: Share2, onClick: handleShare },
+    { id: 'zoom-out', label: 'Zoom out', icon: Minus, onClick: onZoomOut },
+    { id: 'zoom-in', label: 'Zoom in', icon: Plus, onClick: onZoomIn },
     { id: 'fit', label: 'Fit', icon: Maximize2, title: 'Fit the whole graph and follow it again', onClick: onFit },
   ]
 

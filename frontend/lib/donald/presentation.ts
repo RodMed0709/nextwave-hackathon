@@ -287,6 +287,15 @@ export function getVisiblyActiveNodeKey(
   nodes: Record<string, RunNode>,
   events: readonly DonaldEvent[],
 ): string | null {
+  return getVisiblyActiveNodeKeys(nodes, events)[0] ?? null
+}
+
+export function getVisiblyActiveNodeKeys(
+  nodes: Record<string, RunNode>,
+  events: readonly DonaldEvent[],
+): string[] {
+  const activeKeys: string[] = []
+  const seen = new Set<string>()
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (
@@ -294,15 +303,26 @@ export function getVisiblyActiveNodeKey(
       event.payload.status === 'in_progress' &&
       event.node_key &&
       nodes[event.node_key]?.status === 'in_progress' &&
-      !nodes[event.node_key].removed
+      !nodes[event.node_key].removed &&
+      !seen.has(event.node_key)
     ) {
-      return event.node_key
+      seen.add(event.node_key)
+      activeKeys.push(event.node_key)
     }
   }
 
-  return Object.values(nodes)
+  const remaining = Object.values(nodes)
     .filter((node) => node.status === 'in_progress' && !node.removed)
-    .sort((left, right) => Date.parse(right.started_at ?? '') - Date.parse(left.started_at ?? ''))[0]?.node_key ?? null
+    .sort((left, right) =>
+      Date.parse(right.started_at ?? '') - Date.parse(left.started_at ?? '') ||
+      (left.plan_order ?? Number.MAX_SAFE_INTEGER) - (right.plan_order ?? Number.MAX_SAFE_INTEGER),
+    )
+  for (const node of remaining) {
+    if (seen.has(node.node_key)) continue
+    seen.add(node.node_key)
+    activeKeys.push(node.node_key)
+  }
+  return activeKeys
 }
 
 function fallbackStatus(node: RunNode, event: DonaldEvent): string {

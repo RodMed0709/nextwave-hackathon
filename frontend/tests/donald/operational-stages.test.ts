@@ -13,7 +13,7 @@ function node(overrides: Partial<RunNode> & { node_key: string; label: string })
     label: overrides.label,
     agent_label: overrides.agent_label ?? null,
     status: overrides.status ?? 'not_started',
-    planned: true,
+    planned: overrides.planned ?? true,
     plan_order: null,
     progress_percent: 0,
     estimated_seconds: null,
@@ -90,4 +90,29 @@ test('client project metadata reads only existing event metadata', () => {
     projectGoal: 'Resolve shipment delay',
     agents: [{ label: 'Nina', role: 'Shipment Watch' }],
   })
+})
+
+test('a discovered node inherits its parent stage instead of an "other work" bucket', () => {
+  const explain = node({ node_key: 'explain_change', label: 'Explain the change' })
+  const email = node({ node_key: 'brief_boss_email', label: 'Brief the boss by email', planned: false })
+  const nodes = { explain_change: explain, brief_boss_email: email }
+  const edges = {
+    'explain_change->brief_boss_email': {
+      edge_key: 'explain_change->brief_boss_email',
+      source_node_key: 'explain_change',
+      target_node_key: 'brief_boss_email',
+      status: 'traversed' as const,
+      planned: false,
+    },
+  }
+
+  assert.equal(operationalStageForNode(email, { nodes, edges }), 'below')
+  // Without the graph the same node has no keyword mapping of its own.
+  assert.equal(operationalStageForNode(email), 'unclassified')
+
+  // The whole flow hangs together: no separate unclassified section appears.
+  const summaries = summarizeOperationalStages(nodes, edges)
+  assert.ok(!summaries.some((stage) => stage.id === 'unclassified'))
+  const below = summaries.find((stage) => stage.id === 'below')
+  assert.deepEqual(below?.nodeKeys.sort(), ['brief_boss_email', 'explain_change'])
 })

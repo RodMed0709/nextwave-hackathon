@@ -4,6 +4,7 @@ import {
   ACTION_PRESENTATIONS,
   DONALD_ACTION_IDS,
   actionPresentationForNode,
+  decisionOptionPresentation,
 } from '../../lib/donald/action-presentation'
 
 test('action presentation registry defines every canonical Donald action', () => {
@@ -25,4 +26,71 @@ test('action presentation resolves canonical node-key prefixes', () => {
 test('action presentation resolves semantic aliases from current recordings', () => {
   assert.equal(actionPresentationForNode({ nodeKey: 'calculate_exposure', label: 'Quantify the exposure' }).id, 'impact')
   assert.equal(actionPresentationForNode({ nodeKey: 'receive-update', label: 'Review carrier update' }).id, 'ingest')
+})
+
+test('decision options reduce operational copy to price and one short consequence', () => {
+  assert.deepEqual(decisionOptionPresentation({
+    id: 'alternative-routing',
+    label: 'Re-book MSC ILONA FE2440 - direct San Juan, ETA Oct 3, $0',
+    rationale: 'Recovers four days and protects the committed delivery.',
+    rank: 1,
+    maximum_cost_usd: 0,
+    client_commitment: null,
+    document: null,
+  }), {
+    price: '$0',
+    consequence: 'direct San Juan, ETA Oct 3',
+    tooltip: 'Recovers four days and protects the committed delivery.',
+  })
+
+  assert.deepEqual(decisionOptionPresentation({
+    id: 'premium-transload',
+    label: 'Transload at Caucedo onto a feeder - ETA Oct 1, +$2,400',
+    rationale: 'Two days faster, but adds handling risk.',
+    rank: 2,
+    maximum_cost_usd: 2400,
+    client_commitment: null,
+    document: null,
+  }), {
+    price: '+$2,400',
+    consequence: 'ETA Oct 1',
+    tooltip: 'Two days faster, but adds handling risk.',
+  })
+})
+
+test('decision options show operational ETA deltas, never absolute dates, when the gate allows comparison', () => {
+  const rebook = {
+    id: 'alternative-routing',
+    label: 'Re-book MSC ILONA FE2440 - direct San Juan, ETA Oct 3, $0',
+    rationale: null,
+    rank: 1,
+    maximum_cost_usd: 0,
+    client_commitment: null,
+    document: null,
+  }
+  const transload = {
+    id: 'premium-transload',
+    label: 'Transload at Caucedo onto a feeder - ETA Oct 1, +$2,400',
+    rationale: null,
+    rank: 2,
+    maximum_cost_usd: 2400,
+    client_commitment: null,
+    document: null,
+  }
+  const fallback = {
+    id: 'accept-fallback',
+    label: "Accept the carrier's fallback - ETA Oct 7, notify only",
+    rationale: null,
+    rank: 3,
+    maximum_cost_usd: 0,
+    client_commitment: null,
+    document: null,
+  }
+  const gate = [rebook, transload, fallback]
+
+  assert.equal(decisionOptionPresentation(transload, gate).consequence, 'ETA same day')
+  assert.equal(decisionOptionPresentation(rebook, gate).consequence, 'direct San Juan, ETA +2 days')
+  assert.equal(decisionOptionPresentation(fallback, gate).consequence, 'ETA +6 days, notify only')
+  // The price stays the big lead of the "PRICE -> consequence" format.
+  assert.equal(decisionOptionPresentation(transload, gate).price, '+$2,400')
 })

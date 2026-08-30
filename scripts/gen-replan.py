@@ -13,7 +13,7 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent.parent / "frontend" / "lib" / "donald" / "events.replan.jsonl"
 RUN_KEY = "nauta-replan-005"
 T0 = datetime(2026, 8, 29, 15, 41, 12, tzinfo=timezone.utc)
-PACE = 1.5  # stretches every advance so the whole run reads at ~100 s
+PACE = 0.9  # stretches every advance so the whole run reads at ~60 s
 
 events = []
 clock = 0.0

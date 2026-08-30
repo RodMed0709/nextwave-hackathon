@@ -1,3 +1,5 @@
+import type { InterventionOption } from './types'
+
 export const DONALD_ACTION_IDS = [
   'ingest',
   'identify',
@@ -21,6 +23,12 @@ export type ActionPresentation = {
   label: string
   petAsset: string
   animationKind: DonaldAnimationKind
+}
+
+export type DecisionOptionPresentation = {
+  price: string
+  consequence: string
+  tooltip: string
 }
 
 export const DEFAULT_DONALD_PET_ASSET = '/donald_favicon.png'
@@ -164,4 +172,67 @@ export function donaldActionIdForNode(input: {
     }
   }
   return null
+}
+
+const MONTH_INDEX: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+}
+
+const ETA_DATE_PATTERN = /\bETA\s+([A-Za-z]{3,9})\.?\s+(\d{1,2})\b/
+
+/** Day-of-year style index for an "ETA <Month> <day>" mention, or null. */
+function etaDayIndex(label: string): number | null {
+  const match = label.match(ETA_DATE_PATTERN)
+  if (!match) return null
+  const month = MONTH_INDEX[match[1].slice(0, 3).toLowerCase()]
+  if (month === undefined) return null
+  const day = Number(match[2])
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null
+  // Any non-leap year works: only differences between indices are used.
+  return Date.UTC(2001, month, day) / 86_400_000
+}
+
+/**
+ * A person deciding under pressure compares options against each other, not
+ * against a calendar: "Oct 1 vs Oct 3 vs Oct 7" makes the reader do the
+ * subtraction, "same day vs +2 days vs +6 days" does it for them. The baseline
+ * is the earliest ETA among the gate's own options, so the deltas are the
+ * operational trade-off the choice is actually about. Labels whose dates cannot
+ * be parsed keep their original text.
+ */
+function etaDelta(label: string, baseline: number | null): string | null {
+  if (baseline === null) return null
+  let day = etaDayIndex(label)
+  if (day === null) return null
+  if (day < baseline) day += 365 // year wrap: a Jan ETA against a Dec baseline
+  const delta = day - baseline
+  if (delta === 0) return 'ETA same day'
+  return `ETA +${delta} ${delta === 1 ? 'day' : 'days'}`
+}
+
+export function decisionOptionPresentation(
+  option: InterventionOption,
+  siblings: readonly InterventionOption[] = [],
+): DecisionOptionPresentation {
+  const price = option.maximum_cost_usd === null
+    ? option.label.match(/\+?\$[\d,]+(?:\.\d{1,2})?/)?.[0] ?? 'Cost TBD'
+    : option.maximum_cost_usd === 0
+      ? '$0'
+      : `+$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(option.maximum_cost_usd)}`
+  const consequenceSource = option.label.split(/\s[-–—]\s/).slice(1).join(' - ') || option.label
+  const dayIndices = [option, ...siblings]
+    .map((candidate) => etaDayIndex(candidate.label))
+    .filter((value): value is number => value !== null)
+  const baseline = dayIndices.length > 1 ? Math.min(...dayIndices) : null
+  const delta = etaDelta(consequenceSource, baseline)
+  const consequence = (delta ? consequenceSource.replace(ETA_DATE_PATTERN, delta) : consequenceSource)
+    .replace(/,?\s*\+?\$[\d,]+(?:\.\d{1,2})?(?:\s*USD)?/gi, '')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+
+  return {
+    price,
+    consequence: consequence || 'Review operational impact',
+    tooltip: option.rationale ?? option.label,
+  }
 }
