@@ -78,6 +78,8 @@ import {
   type PromptSuggestion,
 } from '@/lib/donald/source'
 import { RunControls } from '@/components/donald/run-controls'
+import { ExecutiveStrip } from '@/components/donald/executive-strip'
+import { getExecutivePhases } from '@/lib/donald/executive-phases'
 import { PromptBar } from '@/components/donald/prompt-bar'
 import { pickSteerTargetKey } from '@/lib/donald/steer-target'
 import { ClientArea } from '@/components/donald/client-area'
@@ -89,6 +91,7 @@ import type { ActionAnimationState } from '@/components/donald/animations/action
 import {
   actionPresentationForNode,
   decisionOptionPresentation,
+  isEmailNode,
   type ActionPresentation,
 } from '@/lib/donald/action-presentation'
 import {
@@ -140,6 +143,7 @@ type FlowNodeData = {
   submitting: boolean
   suggestions: PromptSuggestion[]
   onToggle: () => void
+  onReadEmail: () => void
   onResize: (size: NodeSize) => void
   onInstruction: (instruction: string, options?: { optionId?: string | null; kind?: InstructionKind }) => Promise<void>
 }
@@ -306,6 +310,16 @@ function parseMessageMeta(artifact: RunArtifact): { sender: string | null; date:
   }
 }
 
+/** The step's finding as at most three short bullets — the card's answer. */
+function findingBullets(detail: string | null | undefined): string[] {
+  if (!detail) return []
+  return detail
+    .split(/(?<=[.;])\s+/)
+    .map((sentence) => sentence.trim().replace(/[.;]$/, ''))
+    .filter((sentence) => sentence.length > 0)
+    .slice(0, 3)
+}
+
 function StatusMark({ status }: { status: DisplayStatus }) {
   if (status === 'RUNNING') return <span className="spinner" aria-label="Running" />
   if (status === 'DONE') return <Check size={12} aria-hidden="true" />
@@ -333,6 +347,60 @@ function ArtifactBlock({ artifact }: { artifact: RunArtifact }) {
         </a>
       )}
     </article>
+  )
+}
+
+/**
+ * The email, presented as an email.
+ *
+ * The artifact block renders raw text in a blockquote, which reads like a log.
+ * A message someone actually sent deserves an envelope view: subject on top,
+ * From/To/Date as metadata, body as prose. Opens as a popup so it works from
+ * the collapsed card without fighting the graph's layout.
+ */
+function EmailPopup({ node, onClose }: { node: RunNode; onClose: () => void }) {
+  const artifact = getLatestArtifact(node.artifacts)
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  if (!artifact?.text_content) return null
+  const lines = artifact.text_content.split('\n')
+  const headers: Record<string, string> = {}
+  let bodyStart = 0
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(To|From|Date|Subject):\s*(.+)$/i)
+    if (match) {
+      headers[match[1].toLowerCase()] = match[2].trim()
+      bodyStart = index + 1
+      continue
+    }
+    if (Object.keys(headers).length > 0) {
+      bodyStart = lines[index].trim() === '' ? index + 1 : index
+      break
+    }
+    break
+  }
+  const body = lines.slice(bodyStart).join('\n').trim()
+  return (
+    <div className="email-popup-backdrop" onClick={onClose} role="presentation">
+      <article aria-label={artifact.name} className="email-popup" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div className="email-popup-title">
+            <Send aria-hidden="true" size={14} />
+            <strong>{headers.subject ?? artifact.name}</strong>
+          </div>
+          <button aria-label="Close email" onClick={onClose} type="button"><X size={16} /></button>
+        </header>
+        <dl className="email-popup-meta">
+          {headers.from && <div><dt>From</dt><dd>{headers.from}</dd></div>}
+          {headers.to && <div><dt>To</dt><dd>{headers.to}</dd></div>}
+          {headers.date && <div><dt>Date</dt><dd>{headers.date}</dd></div>}
+        </dl>
+        <div className="email-popup-body">{body || artifact.text_content}</div>
+      </article>
+    </div>
   )
 }
 
@@ -686,13 +754,18 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   const pendingIntervention = data.interventions.find((record) =>
     record.origin === 'operator' && record.status !== 'resolved',
   ) ?? null
+  // The title is the humanized TASK NAME; the answer (headline + finding)
+  // renders below once the step is done. Titling the card with the finding
+  // hid the one thing an observer wants: what question is this step even
+  // answering, and what did it find.
   const humanTitle = humanizeStepTitle({
     nodeKey: node.node_key,
     label: node.label,
     nodeType: node.node_type,
     toolName: node.tool_name,
-    headline: node.output_summary?.headline,
   })
+  const isEmail = isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })
+  const emailArtifact = isEmail ? getLatestArtifact(node.artifacts) : null
   const classes = [
     'flow-card',
     `action-${data.actionPresentation.id}`,
@@ -701,6 +774,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
     data.visiblyActive ? 'visibly-active' : '',
     data.intervention ? 'decision-open' : '',
     pendingIntervention ? 'steered' : '',
+    data.appearance.steeredBorn ? 'steered-born' : '',
   ].filter(Boolean).join(' ')
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -730,11 +804,34 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       {data.intervention && <InstructionBox data={data} />}
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
-      {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
+      {/* Subtasks are scaffolding: they matter while the work is happening.
+          Once the step is done they yield the space to the ANSWER — what this
+          step actually found — because "Finding the root cause ✓" without the
+          root cause is a question mark dressed as progress. */}
+      {data.displayStatus !== 'DONE' && node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
+      {data.displayStatus === 'DONE' && node.output_summary?.headline && (
+        <div className="card-answer">
+          <strong>{node.output_summary.headline}</strong>
+          {findingBullets(node.output_summary.detail).length > 0 && (
+            <ul>
+              {findingBullets(node.output_summary.detail).map((bullet) => <li key={bullet}>{bullet}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       {pendingIntervention && (
         <p className="card-instruction"><Hand size={11} /> {pendingIntervention.type === 'stop' ? 'Stop' : 'Steer'} sent — {pendingIntervention.status === 'queued' ? 'waiting for the agent' : 'agent has it'}</p>
       )}
-      {latestArtifact && (
+      {emailArtifact && (
+        <button
+          className="read-email"
+          onClick={(event) => { event.stopPropagation(); data.onReadEmail() }}
+          type="button"
+        >
+          <FileText aria-hidden="true" size={12} /> Read the email
+        </button>
+      )}
+      {latestArtifact && !isEmail && (
         <div className="card-artifact" title={latestArtifact.name}>
           <FileText aria-hidden="true" size={12} />
           <span>{latestArtifact.name}</span>
@@ -864,6 +961,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   // buffering, and resume drains from the cursor. The agent itself never stops
   // — instructions queued while paused reach it exactly as they would live.
   const [paused, setPaused] = useState(false)
+  const [emailPopupKey, setEmailPopupKey] = useState<string | null>(null)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
@@ -1092,7 +1190,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           }),
           selected,
           visiblyActive: visiblyActiveKeySet.has(node.node_key),
-          appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
+          appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, steeredBorn: false, batch: 0 },
           liveStatus: visiblyActiveKeySet.has(node.node_key) ? getLatestNodeStatus(node, state.event_log) : null,
           intervention,
           interventions: getNodeInterventions(state.interventions, node.node_key),
@@ -1112,6 +1210,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               setExpandedKey(node.node_key)
             }
           },
+          onReadEmail: () => setEmailPopupKey(node.node_key),
           onResize: (measured) => updateMeasurement(node.node_key, measured),
           onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
         } satisfies FlowNodeData,
@@ -1379,6 +1478,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         </div>
       </header>
 
+      <ExecutiveStrip phases={getExecutivePhases(state.nodes)} />
+
       <DonaldNarration
         stages={stageSummaries}
       />
@@ -1451,6 +1552,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           ))}
         </div>
       </section>
+
+      {emailPopupKey && state.nodes[emailPopupKey] && (
+        <EmailPopup node={state.nodes[emailPopupKey]} onClose={() => setEmailPopupKey(null)} />
+      )}
 
       <div className="prompt-dock">
         <RunControls

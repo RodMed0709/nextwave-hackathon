@@ -36,12 +36,63 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   min-height: 100dvh;
   min-width: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   overflow: visible;
   background: var(--navy-deep);
   /* Room for the fixed prompt bar so the last stage's receipt stays reachable. */
-  padding-bottom: 96px;
+  padding-bottom: 108px;
 }
+
+/* The run in three steps — the view for the person who will not read the graph. */
+.executive-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #294f73;
+  background: #071729;
+}
+.executive-phase {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #1d3f61;
+  border-radius: 12px;
+  background: #0b2138;
+  opacity: .55;
+  transition: opacity var(--beat) var(--ease), border-color var(--beat) var(--ease);
+}
+.executive-phase.state-running { opacity: 1; border-color: var(--chartreuse); box-shadow: 0 0 0 1px #d7f24c2e, 0 10px 26px #020b1470; }
+.executive-phase.state-done { opacity: .92; border-color: #4a6d43; }
+.executive-phase-index {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #102b49;
+  color: #cfe0ec;
+  font-size: 16px;
+  font-weight: 900;
+}
+.executive-phase.state-running .executive-phase-index { background: var(--chartreuse); color: #1c2a06; }
+.executive-phase-copy { display: grid; gap: 2px; min-width: 0; }
+.executive-phase-copy strong { color: #f2f7f8; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+.executive-phase-copy small { color: #93a9b8; font-size: 10px; line-height: 1.3; }
+.executive-phase-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #93a9b8;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.executive-phase.state-running .executive-phase-state { color: var(--chartreuse); }
+.executive-phase.state-done .executive-phase-state { color: #9fd18a; }
 
 /* Bottom dock: run controls + prompt bar travel together and follow the page,
    like a chat composer. The controls used to hang off the header and scrolled
@@ -1099,6 +1150,110 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   background: #fff4f1;
 }
 .action-scene-failed .motion-signal { opacity: .32; }
+
+/* The card's answer: what the step actually found, in reading-size text. */
+.card-answer { margin-top: 12px; display: grid; gap: 6px; }
+.card-answer strong { color: #182c42; font-size: 15px; font-weight: 800; line-height: 1.25; }
+.card-answer ul { margin: 0; padding: 0 0 0 16px; display: grid; gap: 3px; }
+.card-answer li { color: #45576a; font-size: 12px; line-height: 1.4; }
+.card-answer li::marker { color: #a7ba39; }
+
+/* A card the operator's instruction created: unmistakably yours. */
+.flow-card.steered-born { border-color: #9d7bde; box-shadow: 0 0 0 1px #9d7bde55, 0 12px 28px #020b1470; }
+.flow-card.steered-born .card-header::after {
+  content: "FROM YOUR INSTRUCTION";
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #9d7bde;
+  color: #fff;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.read-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid #a7ba39;
+  border-radius: 9px;
+  background: #f7f9e7;
+  color: #3c4810;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.read-email:hover { transform: translateY(-1px); box-shadow: 0 6px 14px #0a1c3222; }
+
+/* The email as an email: subject, meta, prose. */
+.email-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #05132199;
+  backdrop-filter: blur(3px);
+}
+.email-popup {
+  width: min(640px, 100%);
+  max-height: min(80vh, 720px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid #ded8c8;
+  border-radius: 14px;
+  background: var(--paper);
+  color: #182c42;
+  box-shadow: 0 30px 80px #020b14cc;
+  animation: node-birth var(--beat) var(--ease);
+  overflow: hidden;
+}
+.email-popup header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e6dfd0;
+  background: #f8f5ec;
+}
+.email-popup-title { display: flex; align-items: center; gap: 9px; min-width: 0; color: #5f7410; }
+.email-popup-title strong { color: #182c42; font-size: 15px; font-weight: 800; line-height: 1.3; }
+.email-popup header button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ded8c8;
+  border-radius: 8px;
+  background: #fffdf7;
+  color: #45576a;
+  cursor: pointer;
+}
+.email-popup-meta {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e6dfd0;
+}
+.email-popup-meta > div { display: flex; gap: 8px; font-size: 12px; }
+.email-popup-meta dt { flex: none; width: 44px; color: #8a8577; font-weight: 800; }
+.email-popup-meta dd { margin: 0; color: #45576a; overflow-wrap: anywhere; }
+.email-popup-body {
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+  color: #2b3036;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
 .action-animation-ingest .motion-orbit {
   width: 32px;
   height: 22px;

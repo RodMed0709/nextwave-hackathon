@@ -95,8 +95,8 @@ test('graph presentation staggers planned nodes and draws each edge after its ta
 
   const presentation = getGraphPresentation(events)
 
-  assert.deepEqual(presentation.nodes.alpha, { delayMs: 0, discovered: false, batch: 1 })
-  assert.deepEqual(presentation.nodes.beta, { delayMs: NODE_STAGGER_MS, discovered: false, batch: 1 })
+  assert.deepEqual(presentation.nodes.alpha, { delayMs: 0, discovered: false, steeredBorn: false, batch: 1 })
+  assert.deepEqual(presentation.nodes.beta, { delayMs: NODE_STAGGER_MS, discovered: false, steeredBorn: false, batch: 1 })
   assert.equal(presentation.edges['alpha-beta'].delayMs, NODE_STAGGER_MS + EDGE_LAND_DELAY_MS)
   assert.equal(presentation.edges['beta-gamma'].delayMs, NODE_STAGGER_MS * 2 + EDGE_LAND_DELAY_MS)
 })
@@ -120,8 +120,8 @@ test('nodes added after work begins are marked discovered and stagger within the
 
   const presentation = getGraphPresentation(events)
 
-  assert.deepEqual(presentation.nodes.delta, { delayMs: 0, discovered: true, batch: 2 })
-  assert.deepEqual(presentation.nodes.epsilon, { delayMs: NODE_STAGGER_MS, discovered: true, batch: 2 })
+  assert.deepEqual(presentation.nodes.delta, { delayMs: 0, discovered: true, steeredBorn: false, batch: 2 })
+  assert.deepEqual(presentation.nodes.epsilon, { delayMs: NODE_STAGGER_MS, discovered: true, steeredBorn: false, batch: 2 })
 })
 
 test('the most recently started in-progress node is the only visibly active node', () => {

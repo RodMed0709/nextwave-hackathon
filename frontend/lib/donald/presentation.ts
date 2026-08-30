@@ -7,6 +7,8 @@ const EDGE_DRAW_MS = 340
 export type NodePresentation = {
   delayMs: number
   discovered: boolean
+  /** Born because a person steered: the card the operator's instruction created. */
+  steeredBorn: boolean
   batch: number
 }
 
@@ -239,12 +241,27 @@ export function getGraphPresentation(events: readonly DonaldEvent[]): GraphPrese
   let additionsInBatch = 0
   let insideStructuralBatch = false
   let workHasStarted = false
+  // Tracks the window in which new nodes are the operator's doing: from the
+  // moment a person steers, through the agent resolving it, until the burst of
+  // graph changes that resolution produces has landed. Cards born inside the
+  // window carry a distinct color, so "that one exists because I asked" is
+  // visible at a glance.
+  let steerPhase: 'idle' | 'requested' | 'resolved' = 'idle'
 
   for (const event of events) {
     const structural = STRUCTURAL_EVENT_TYPES.has(event.event_type)
     if (structural && !insideStructuralBatch) {
       batch += 1
       additionsInBatch = 0
+    }
+    if (!structural && insideStructuralBatch && steerPhase === 'resolved') {
+      steerPhase = 'idle'
+    }
+    if (event.event_type === 'intervention_requested' && event.payload.origin === 'operator') {
+      steerPhase = 'requested'
+    }
+    if (event.event_type === 'intervention_resolved' && steerPhase === 'requested') {
+      steerPhase = 'resolved'
     }
 
     if (
@@ -258,6 +275,7 @@ export function getGraphPresentation(events: readonly DonaldEvent[]): GraphPrese
       nodes[event.node_key] = {
         delayMs: additionsInBatch * NODE_STAGGER_MS,
         discovered: workHasStarted,
+        steeredBorn: steerPhase !== 'idle',
         batch,
       }
       additionsInBatch += 1

@@ -144,8 +144,14 @@ function hasActionWord(candidate: string, word: string): boolean {
 const EMAIL_KEYWORDS = ['email', 'mail', 'brief', 'notify', 'inform']
 
 export function isEmailNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
-  const haystack = [input.nodeKey, input.label, input.toolName ?? ''].filter(Boolean).join(' ')
-  return EMAIL_KEYWORDS.some((keyword) => hasActionWord(haystack, keyword))
+  // Token match, not hasActionWord: that helper treats only dashes as word
+  // boundaries, so a key like update_client_email inside a spaced haystack
+  // never matched and email cards silently lost their envelope.
+  const tokens = [input.nodeKey, input.label, input.toolName ?? '']
+    .join(' ')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+  return EMAIL_KEYWORDS.some((keyword) => tokens.includes(keyword))
 }
 
 export function actionPresentationForNode(input: {
