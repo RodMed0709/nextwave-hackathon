@@ -199,46 +199,49 @@ start("detect_schedule_change", advance=2.0,
 progress("detect_schedule_change",
          "Carrier notice does not match the last known schedule", 60, advance=2.8)
 done("detect_schedule_change",
-     "MSC swapped the vessel and re-routed OP-4471",
-     "Schedule change notice from MSC: vessel MSC ALLEGRA replaced by MSC "
-     "VITTORIA, with an added transshipment call at Caucedo. Booking-level "
-     "change, caught against the last known schedule — nobody had to go looking.",
+     "MSC pulled the assigned vessel off OP-4471",
+     "Schedule change notice from MSC: MSC AURORA voyage FE2431 withdrawn "
+     "from the rotation and reassigned. OP-4471 rolls to the carrier's "
+     "fallback sailing. Booking-level change, caught against the last known "
+     "schedule within minutes — nobody had to go looking.",
      manual_minutes=6, advance=3.4)
 
 # ── 2 · RECONCILE · Theo — what actually changed vs. what was agreed ────────
 RC = [
     sub("pull_booking", "Pull the original booking confirmation"),
-    sub("compare_etd", "Compare ETD and assigned vessel"),
+    sub("compare_vessel", "Compare assigned vessel and voyage"),
     sub("compare_eta", "Compare ETA at San Juan"),
-    sub("compare_ts", "Compare transshipment ports"),
+    sub("compare_ts", "Compare routing and transshipment"),
 ]
 def rc(states):
     return [dict(s, status=st) for s, st in zip(RC, states)]
 
 start("reconcile_booking", rc(["running", "pending", "pending", "pending"]),
       advance=1.4, input_summary="booking_confirmation_OP-4471.pdf")
-progress("reconcile_booking", "Original booking on file: MSC ALLEGRA, direct via Freeport", 25,
+progress("reconcile_booking", "Original booking on file: MSC AURORA FE2431, via Caucedo, ETA Sep 27", 25,
          rc(["done", "running", "pending", "pending"]), advance=3.2)
-progress("reconcile_booking", "ETD slips 2 days: Sep 4 to Sep 6, new vessel MSC VITTORIA", 50,
+progress("reconcile_booking", "AURORA withdrawn - fallback vessel MSC VITTORIA FE2435, same rotation", 50,
          rc(["done", "done", "running", "pending"]), advance=3.0)
-progress("reconcile_booking", "ETA San Juan slips Oct 2 to Oct 8", 75,
+progress("reconcile_booking", "Fallback ETA San Juan slips Sep 27 to Oct 7", 75,
          rc(["done", "done", "done", "running"]), advance=3.0)
 done("reconcile_booking",
-     "New routing lands 6 days late",
-     "Agreed: MSC ALLEGRA, ETD Xiamen Sep 4, ETA San Juan Oct 2, one "
-     "transshipment at Freeport. Now: MSC VITTORIA, ETD Sep 6, ETA Oct 8, "
-     "with an added call at Caucedo. Every difference is carrier-side.",
+     "Carrier's fallback lands 10 days late",
+     "Agreed on booking BKG-4471: MSC AURORA FE2431, via Caucedo "
+     "(transshipment), ETA San Juan Sep 27. Carrier's fallback: MSC VITTORIA "
+     "FE2435 on the same Caucedo rotation, ETA Oct 7 — 10 days late. Every "
+     "difference is carrier-side.",
      manual_minutes=18, subtasks=rc(["done"] * 4), advance=3.8)
 
 # ── 3 · EXPLAIN · Rex — optimization or disruption? ─────────────────────────
 start("explain_change", advance=1.4)
 progress("explain_change", "No port disruption or weather advisory on the lane", 40, advance=3.0)
-progress("explain_change", "MSC service bulletin: Caribbean calls consolidated onto VITTORIA", 75, advance=2.8)
+progress("explain_change", "MSC service bulletin: AURORA reassigned to another loop", 75, advance=2.8)
 done("explain_change",
      "Carrier network optimization, not a disruption",
-     "MSC consolidated its Caribbean calls onto MSC VITTORIA via Caucedo — a "
-     "scheduled network change, not a port closure or weather event. Nothing "
-     "on Berrios' side caused it, and nothing suggests further slippage.",
+     "MSC reassigned MSC AURORA to another service loop and rolled its "
+     "Caucedo rotation onto MSC VITTORIA — a scheduled capacity reshuffle, "
+     "not a port closure or weather event. Nothing on Berrios' side caused "
+     "it, and nothing suggests further slippage.",
      manual_minutes=20, advance=3.0)
 
 # ── 4 · IMPACT · Rex — quantify before anyone asks ──────────────────────────
@@ -251,55 +254,59 @@ def im(states):
     return [dict(s, status=st) for s, st in zip(IM, states)]
 
 start("quantify_impact", im(["running", "pending", "pending"]), advance=1.4)
-progress("quantify_impact", "3 POs on this booking: PO-7712, PO-7738, PO-7741", 30,
+progress("quantify_impact", "3 POs on this booking: PO-7731, PO-7745, PO-7752", 30,
          im(["done", "running", "pending"]), advance=3.2)
-progress("quantify_impact", "PO-7741 is tied to a committed store delivery on Oct 6", 65,
+progress("quantify_impact", "PO-7731 is tied to a committed store delivery on Oct 10", 65,
          im(["done", "done", "running"]), advance=3.0)
 done("quantify_impact",
-     "6-day slip, 3 POs hit, 1 committed delivery at risk",
-     "ETA slips 6 days, past the 5-day gate threshold. Three POs are on the "
-     "booking, and PO-7741 feeds a committed store delivery on Oct 6 that the "
-     "new Oct 8 arrival would miss. This crosses the line: a human decides.",
+     "10-day slip on the fallback, 3 POs hit, 1 committed delivery at risk",
+     "The carrier's fallback slips the ETA 10 days (Sep 27 to Oct 7), past "
+     "the 5-day gate threshold. Three POs ride on the booking: PO-7731 feeds "
+     "a committed store delivery on Oct 10 that an Oct 7 arrival would miss "
+     "once discharge and inland transit are counted; PO-7745 and PO-7752 "
+     "carry no committed dates. This crosses the line: a human decides.",
      manual_minutes=22,
-     metrics={"eta_slip_days": 6, "affected_pos": 3, "committed_deliveries_at_risk": 1},
+     metrics={"fallback_slip_days": 10, "affected_pos": 3, "committed_deliveries_at_risk": 1},
      subtasks=im(["done"] * 3), advance=3.8)
 
 # ── 5 · PLAN · Rex — ranked options for the gate ────────────────────────────
 PL = [
-    sub("opt_notify", "Price notifying only"),
-    sub("opt_reroute", "Price the alternative routing"),
-    sub("opt_hold", "Price holding for client confirmation"),
+    sub("opt_accept", "Price accepting the carrier's fallback"),
+    sub("opt_reroute", "Price the direct alternative routing"),
+    sub("opt_transload", "Price a premium transload at Caucedo"),
 ]
 def pl(states):
     return [dict(s, status=st) for s, st in zip(PL, states)]
 
 start("plan_options", pl(["running", "pending", "pending"]), advance=1.4)
-progress("plan_options", "Notify only: honest, but Oct 8 misses the committed delivery", 33,
+progress("plan_options", "Accept fallback: $0, but Oct 7 risks PO-7731's committed Oct 10 delivery", 33,
          pl(["done", "running", "pending"]), advance=3.0)
-progress("plan_options", "MSC direct service skips Caucedo: ETA Oct 3, $0 to amend", 66,
+progress("plan_options", "MSC ILONA FE2440, direct San Juan: ETA Oct 3, $0 to amend", 66,
          pl(["done", "done", "running"]), advance=3.0)
 done("plan_options",
-     "Three options, one recovers the ETA at no cost",
-     "Re-book onto MSC's direct San Juan service at $0 (ETA Oct 3, recovers 5 "
-     "of the 6 days), notify the client and accept Oct 8, or hold everything "
-     "for client confirmation. Ranked and ready for the gate.",
+     "Three options, one recovers 4 days at no cost",
+     "Re-book onto MSC ILONA FE2440, direct San Juan, at $0 (ETA Oct 3 — "
+     "holds the slip to 6 days vs the original booking, 4 better than the "
+     "fallback); transload at Caucedo onto a feeder for ETA Oct 1 at +$2,400; "
+     "or accept the carrier's fallback at Oct 7 and notify. Ranked and ready "
+     "for the gate.",
      manual_minutes=16, subtasks=pl(["done"] * 3), advance=3.6)
 
 # ── 6 · DECIDE · the human gate — impact crossed the threshold ──────────────
 start("decide_response", advance=1.4)
 emit("intervention_requested", {
     "type": "steer",
-    "prompt": "The 6-day slip crosses the 5-day threshold and PO-7741 has a committed Oct 6 store delivery. How should Nauta respond to MSC's change?",
+    "prompt": "The carrier's fallback slips OP-4471 ten days, past the 5-day threshold, and PO-7731 has a committed Oct 10 store delivery. How should Nauta respond to MSC's change?",
     "options": [
-        {"id": "alternative-routing", "label": "Re-book the alternative routing - direct service, ETA Oct 3, $0",
-         "rationale": "Recovers 5 of the 6 days, protects the committed delivery, and costs nothing to amend.",
+        {"id": "alternative-routing", "label": "Re-book MSC ILONA FE2440 - direct San Juan, ETA Oct 3, $0",
+         "rationale": "Recovers 4 days vs the fallback, protects PO-7731's committed Oct 10 delivery, and costs nothing to amend.",
          "rank": 1, "branch": "alternative-routing", "maximum_cost_usd": 0},
-        {"id": "notify-only", "label": "Notify the client of the new Oct 8 ETA - no re-booking",
-         "rationale": "Zero operational risk, but the committed Oct 6 delivery on PO-7741 is missed.",
-         "rank": 2, "branch": "notify-only", "maximum_cost_usd": 0},
-        {"id": "hold-for-client", "label": "Hold and ask the client before acting",
-         "rationale": "Maximum deference, but the direct-service space may be gone by the time they answer.",
-         "rank": 3, "branch": "hold-for-client", "maximum_cost_usd": 0},
+        {"id": "premium-transload", "label": "Transload at Caucedo onto a feeder - ETA Oct 1, +$2,400",
+         "rationale": "Two days better than the direct option, but adds cost and a handling risk the schedule does not require.",
+         "rank": 2, "branch": "premium-transload", "maximum_cost_usd": 2400},
+        {"id": "accept-fallback", "label": "Accept the carrier's fallback - ETA Oct 7, notify only",
+         "rationale": "Zero effort, but Oct 7 arrival leaves PO-7731's committed Oct 10 delivery exposed to any further slip.",
+         "rank": 3, "branch": "accept-fallback", "maximum_cost_usd": 0},
     ],
     "default_option_id": "alternative-routing",
 }, node_key="decide_response", agent="Rex", advance=2.2)
@@ -316,8 +323,9 @@ emit("intervention_resolved", {
 
 done("decide_response",
      "Operator approved the alternative routing",
-     "Re-book onto the direct service at $0, new ETA Oct 3 - the committed "
-     "Oct 6 delivery on PO-7741 holds.",
+     "Re-book onto MSC ILONA FE2440, direct San Juan, at $0 - new ETA Oct 3, "
+     "6 days vs the original booking and 4 better than the carrier's "
+     "fallback. The committed Oct 10 delivery on PO-7731 holds.",
      manual_minutes=8, advance=2.0)
 
 # ── 7 · ACT · Lex — the client hears about it once, already solved ──────────
@@ -330,7 +338,7 @@ def ac(states):
     return [dict(s, status=st) for s, st in zip(AC, states)]
 
 start("act_notify_client", ac(["running", "pending", "pending"]), advance=1.4)
-progress("act_notify_client", "Update drafted - change, fix, and new ETA in one email", 30,
+progress("act_notify_client", "Update drafted - what changed, your orders, what we did", 30,
          ac(["done", "running", "pending"]), advance=3.0)
 
 emit("artifact_added", {
@@ -341,26 +349,49 @@ emit("artifact_added", {
         "To: imports@muebleriasberrios.pr\n"
         "From: ops-automation@berrios-nauta.pr\n"
         "Date: 29 Aug 2026 05:21 UTC\n"
-        "Subject: OP-4471 - MSC vessel change resolved: re-routed, ETA Oct 3\n\n"
-        "Hola equipo,\n\n"
-        "MSC replaced the vessel on OP-4471 (MSC ALLEGRA -> MSC VITTORIA) and "
-        "added a transshipment call at Caucedo, which would have moved arrival "
-        "at San Juan from Oct 2 to Oct 8 - past the committed Oct 6 store "
-        "delivery on PO-7741.\n\n"
-        "We have already re-booked the operation onto MSC's direct San Juan "
-        "service at no cost:\n\n"
-        "  New routing: Xiamen -> San Juan, direct (no Caucedo call)\n"
-        "  New ETD: Sep 6\n"
-        "  New ETA San Juan: Oct 3\n"
-        "  POs covered: PO-7712, PO-7738, PO-7741\n"
-        "  Amendment cost: $0\n\n"
-        "The Oct 6 delivery commitment on PO-7741 is protected. No action is "
-        "needed on your side; we will confirm the new schedule as it holds.\n\n"
-        "Nauta Operations"
+        "Subject: OP-4471 — vessel change resolved: new routing confirmed, "
+        "ETA Oct 3 (no action needed)\n\n"
+        "MSC reassigned the vessel on OP-4471; we secured direct alternative "
+        "routing at no cost. New ETA San Juan: Oct 3.\n\n"
+        "WHAT CHANGED\n"
+        "  Original: MSC AURORA FE2431 · via Caucedo (transshipment) · ETA Sep 27\n"
+        "  New:      MSC ILONA FE2440  · direct San Juan             · ETA Oct 3\n"
+        "            (+6 days vs original booking, -4 vs carrier's fallback)\n\n"
+        "YOUR ORDERS\n"
+        "  PO-7731  committed delivery Oct 10 — holds\n"
+        "  PO-7745  no committed date — unaffected\n"
+        "  PO-7752  no committed date — unaffected\n\n"
+        "WHAT WE DID\n"
+        "  - Caught the change within minutes via continuous watch\n"
+        "  - Evaluated 3 routing options; kept the one at $0 additional cost\n"
+        "  - New BL and booking confirmation attached\n\n"
+        "No action needed on your side. Reply to this thread if you want the "
+        "alternative options we rejected.\n\n"
+        "Lex — Expedite Communication, Nauta (for Mueblerías Berríos)\n"
+        "Ref: booking BKG-4471-R2 · case CS-0830"
     ),
 }, node_key="act_notify_client", agent="Lex", advance=3.2)
 
-progress("act_notify_client", "Sent - awaiting acknowledgement", 65,
+emit("artifact_added", {
+    "artifact_type": "text",
+    "message_id": "MSG-OP4471-2202",
+    "name": "Booking confirmation — BKG-4471-R2",
+    "text_content": (
+        "MSC MEDITERRANEAN SHIPPING COMPANY\n"
+        "BOOKING AMENDMENT CONFIRMATION\n\n"
+        "Booking:        BKG-4471-R2 (amends BKG-4471)\n"
+        "Vessel/Voyage:  MSC ILONA / FE2440\n"
+        "POL:            Xiamen, CN — ETD 06 Sep 2026\n"
+        "POD:            San Juan, PR — ETA 03 Oct 2026\n"
+        "Routing:        Direct — no transshipment\n"
+        "Equipment:      As per original booking BKG-4471\n"
+        "Amendment fee:  USD 0.00\n"
+        "B/L:            MSCUXM4471R2 — draft issued with this confirmation\n\n"
+        "Space and equipment confirmed. Ref case CS-0830."
+    ),
+}, node_key="act_notify_client", agent="Lex", advance=2.4)
+
+progress("act_notify_client", "Sent with BL and booking confirmation - awaiting acknowledgement", 65,
          ac(["done", "done", "running"]), advance=2.8)
 
 emit("agent_message", {
@@ -369,21 +400,24 @@ emit("agent_message", {
 
 done("act_notify_client",
      "Client notified - new ETA Oct 3 acknowledged",
-     "Berrios imports acknowledged the re-route. Booking amendment confirmed "
-     "by MSC at $0; OP-4471 drops back to the ambient watch under the new "
-     "schedule, with Nina's monitor confirming the Oct 3 ETA holds.",
+     "Berrios imports acknowledged the re-route. Booking BKG-4471-R2 "
+     "confirmed by MSC at $0 with the new BL attached; OP-4471 drops back to "
+     "the ambient watch under the new schedule, with Nina's monitor "
+     "confirming the Oct 3 ETA holds.",
      manual_minutes=20, subtasks=ac(["done"] * 3), advance=5.2)
 
 emit("run_finished", {
     "summary": {
         "headline": "OP-4471 re-routed before the client felt it",
         "detail": (
-            "MSC's vessel swap would have landed OP-4471 six days late, with a "
-            "committed store delivery at risk. The ambient watch caught it, the "
-            "slip was quantified and gated to a human, and a $0 re-route "
-            "recovered five of the six days - new ETA Oct 3. Berríos runs this "
-            "ambient watch across its whole book — the published Nauta case "
-            "study reports $3M/yr less demurrage and 65% less manual work."
+            "MSC pulled the assigned vessel off OP-4471; the carrier's "
+            "fallback would have landed it ten days late, with PO-7731's "
+            "committed Oct 10 store delivery at risk. The ambient watch caught "
+            "it, the impact was gated to a human, and a $0 re-book onto a "
+            "direct service held the slip to six days - new ETA Oct 3, the "
+            "commitment intact. Berríos runs this ambient watch across its "
+            "whole book — the published Nauta case study reports $3M/yr less "
+            "demurrage and 65% less manual work."
         ),
     },
 }, advance=2.0)
@@ -402,11 +436,17 @@ started = [e for e in lines if e["event_type"] == "run_started"]
 assert len(started) == 1 and started[0]["payload"]["client_name"] == "Mueblerías Berríos — Puerto Rico"
 assert sum(e["event_type"] == "intervention_requested" for e in lines) == 1, "expected 1 intervention"
 assert sum(e["event_type"] == "intervention_resolved" for e in lines) == 1, "expected 1 resolution"
-assert sum(e["event_type"] == "artifact_added" for e in lines) == 1, "expected 1 artifact"
+artifacts = [e for e in lines if e["event_type"] == "artifact_added"]
+assert len(artifacts) == 2, "expected 2 artifacts"
+email = artifacts[0]["payload"]["text_content"]
+for token in ("ETA Oct 3", "PO-7731", "PO-7745", "PO-7752", "BKG-4471-R2",
+              "CS-0830", "MSC AURORA FE2431", "MSC ILONA FE2440", "+6 days"):
+    assert token in email, f"email missing {token}"
+assert "BKG-4471-R2" in artifacts[1]["payload"]["text_content"], "confirmation missing booking ref"
 finished = [e for e in lines if e["event_type"] == "run_finished"]
 assert len(finished) == 1 and "3M" in finished[0]["payload"]["summary"]["detail"]
 dones = [e for e in lines if e["event_type"] == "node_status_changed"
          and e["payload"].get("status") == "succeeded"]
 assert all("manual_minutes" in e["payload"] for e in dones), "a done is missing manual_minutes"
 print(f"check ok: {len(lines)} valid JSON lines, sequences 1..{len(lines)}, "
-      f"1 intervention, 1 artifact, {len(dones)} dones with manual_minutes, run_finished cites $3M")
+      f"1 intervention, 2 artifacts, {len(dones)} dones with manual_minutes, run_finished cites $3M")
