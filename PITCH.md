@@ -4,9 +4,9 @@
 
 Demo en local, desde grabaciones. Tres pestañas abiertas ANTES de empezar, en este orden:
 
-1. `localhost:3000/runs/missing-invoice`
-2. `localhost:3000/runs/replan`
-3. `localhost:3000/runs/land-pickup`
+1. `https://usedonald.com/runs/missing-invoice`
+2. `https://usedonald.com/runs/replan`
+3. `https://usedonald.com/runs/land-pickup`
 
 Nunca dependas de red. MECÁNICA CRÍTICA: recargar reproduce a velocidad REAL (~2 min por demo
 — no cabe en 4:00). ANTES del pitch, deja las TRES pestañas reproducirse enteras hasta DONE.
