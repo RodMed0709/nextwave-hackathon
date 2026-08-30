@@ -19,7 +19,6 @@ import {
   CircleDot,
   Clock3,
   FileText,
-  RotateCcw,
   Send,
   UserRound,
 } from 'lucide-react'
@@ -60,6 +59,7 @@ import {
   recordedSource,
   type DonaldEventSource,
 } from '@/lib/donald/source'
+import { RunControls } from '@/components/donald/run-controls'
 import type {
   DonaldEvent,
   InterventionOption,
@@ -151,6 +151,63 @@ function formatDuration(node: RunNode): string {
       ? Math.max(0, (Date.parse(node.finished_at) - Date.parse(node.started_at)) / 1_000)
       : null)
   return typeof seconds === 'number' ? `${seconds.toFixed(1)}s` : '—'
+}
+
+function payloadText(payload: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+function declaredAgent(events: readonly DonaldEvent[], preferredLabel?: string): string | null {
+  for (const event of events) {
+    if (event.event_type !== 'run_started') continue
+    const agents = event.payload.agents
+    if (!Array.isArray(agents)) continue
+    const labels = agents.flatMap((agent) => {
+      if (typeof agent !== 'object' || agent === null || Array.isArray(agent)) return []
+      const label = (agent as Record<string, unknown>).label
+      return typeof label === 'string' && label.trim() ? [label.trim()] : []
+    })
+    if (preferredLabel && labels.includes(preferredLabel)) return preferredLabel
+    return labels[0] ?? null
+  }
+  return null
+}
+
+function latestRunAgent(events: readonly DonaldEvent[]): string | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const agentLabel = events[index].agent_label
+    if (agentLabel) return agentLabel
+  }
+  return null
+}
+
+function runAgentName(events: readonly DonaldEvent[]): string | null {
+  const started = events.find((event) => event.event_type === 'run_started')
+  const explicit = started ? payloadText(started.payload, ['nauta_agent', 'agent_name', 'agent_label', 'owner_agent']) : null
+  if (explicit) return explicit
+  if (started?.payload.run_key === 'OP-4471') {
+    return declaredAgent(events, 'Marcus') ?? latestRunAgent(events)
+  }
+  return latestRunAgent(events) ?? declaredAgent(events)
+}
+
+function runClientName(events: readonly DonaldEvent[]): string | null {
+  const started = events.find((event) => event.event_type === 'run_started')
+  if (!started) return null
+  return payloadText(started.payload, ['client_name', 'client', 'customer_name', 'customer', 'account_name', 'account'])
+}
+
+function OperationalField({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={`context-field${className ? ` ${className}` : ''}`}>
+      <span>{label}:</span>
+      <strong>{value}</strong>
+    </div>
+  )
 }
 
 function eventDescription(event: DonaldEvent): string {
@@ -644,21 +701,26 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const latestReplan = getLatestReplan(state.event_log)
   const latestRecalculation = getLatestRecalculation(state.event_log)
   const request = getRunRequest(state.run)
+  const nautaAgent = runAgentName(state.event_log)
+  const clientName = runClientName(state.event_log)
 
   return (
     <main className="donald">
       <header className="header">
-        <div className="brand"><img src="/donald-logo-official.png" alt="Donald" /></div>
-        <div className="request-heading">
-          <span>Operator request</span>
-          <h1>{request}</h1>
+        <div className="operations-heading" aria-label="Operational context">
+          <OperationalField className="client-context" label="Client" value={clientName ?? 'Unavailable'} />
+          <OperationalField className="task-context" label="Task" value={request} />
+          <OperationalField className="agent-context" label="Nauta agent" value={nautaAgent ?? 'Unavailable'} />
         </div>
-        <div className="run-summary">
-          <span><i className="live-dot" />{runStatusLabel(state)}</span>
+        <div className="run-status-pill" aria-label={`Run status: ${runStatusLabel(state)}`}>
+          <i className="live-dot" />
+          {runStatusLabel(state)}
+        </div>
+        <div className="run-metadata" aria-label="Run metadata">
           <code>{state.run.key}</code>
           <small>{state.event_log.length} events · revision {state.run.graph_revision}</small>
         </div>
-        <button className="reset-button" onClick={() => void reset()} type="button"><RotateCcw size={14} /> Reset</button>
+        <RunControls onFit={zoomToFit} onRefresh={reset} />
       </header>
 
       <section className="canvas-panel">
@@ -707,6 +769,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             ))}
           </div>
         )}
+        <div className="event-stream-brand" aria-label="Donald">
+          <img src="/donald-logo-official.png" alt="" aria-hidden="true" width={52} height={18} />
+        </div>
       </footer>
     </main>
   )
