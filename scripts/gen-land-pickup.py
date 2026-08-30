@@ -75,6 +75,7 @@ EDGES = [
 emit("run_started", {
     "run_key": RUN_KEY,
     "name": "Resolve the land pickup conflict on BERU-40022",
+    "client_name": "Berríos — San Juan",
     "scenario": "nauta-land-pickup",
     "provider": "Nauta",
     "agents": [{"label": "Ari", "role": "Land operations"}],
@@ -373,6 +374,24 @@ emit("artifact_added", {
 
 progress("act_book_alternate", "Sent - awaiting confirmation", 65,
          ac(["done", "done", "running"]), advance=2.6)
+
+emit("agent_message", {
+    "message": "Waiting on the alternate carrier's dispatch desk.",
+}, node_key="act_book_alternate", advance=4.0)
+
+emit("artifact_added", {
+    "artifact_type": "text",
+    "message_id": "MSG-ALT-9932",
+    "name": "Carrier confirmation — BERU-40022",
+    "text_content": (
+        "From: dispatch@altcarrier.pr\n"
+        "To: ops-automation@berrios-nauta.pr\n"
+        "Date: 29 Aug 2026 14:07 UTC\n"
+        "Subject: RE: Pickup request - BERU-40022, Wed AM window\n\n"
+        "Pickup confirmed for container BERU-40022 (PO-88213), Wednesday 08:00.\n"
+        "Confirmation #ALT-9931. Driver details to follow."
+    ),
+}, node_key="act_book_alternate", advance=4.0)
 
 done("act_book_alternate",
      "Pickup confirmed for Wed 08:00",
