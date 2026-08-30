@@ -134,43 +134,21 @@ for (key, _), minutes, finding in zip(AMBIENT, (3, 2, 4), (
         "manual_minutes": minutes,
     }, node_key=key, agent="Nina", advance=0.5)
 
-emit("plan_declared", {
-    "graph_revision": 1,
-    "proposed": True,
-    "revisable": True,
-    "basis": "Land Pickup Handoff — Berríos published automation",
-    "plan": {
-        "graph_revision": 1,
-        "basis": "Land Pickup Handoff — Berríos published automation",
-        "summary": "Replace the canceled pickup before the demurrage clock does real damage.",
-        "steps": [
-            {"node_key": k, "agent_label": AGENT[k], "label": lbl, "estimated_seconds": s}
-            for k, lbl, s in STEPS
-        ],
-        "edges": [
-            {"edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b}
-            for a, b in EDGES
-        ],
-    },
-    "total_estimated_seconds": sum(s for _, _, s in STEPS),
-}, advance=8.5)
+# The interface builds in REAL TIME: no upfront plan dump. Each card is
+# revealed the moment the agents reach it, via reveal() below.
+NEXT_ORDER = [1]
 
-for i, (key, label, secs) in enumerate(STEPS, start=1):
-    emit("node_added", {
-        "label": label, "estimated_seconds": secs, "planned": True, "plan_order": i,
-    }, node_key=key, agent=AGENT[key], advance=0.08)
 
-emit("edge_added", {
-    "edge_key": "ambient_monitor-to-detect_pickup_email",
-    "source_node_key": "ambient_monitor",
-    "target_node_key": "detect_pickup_email",
-    "planned": False,
-}, advance=0.05)
+def reveal(key, label, prev=None, planned_edge=True, advance=1.0):
+    emit("node_added", {"label": label, "planned": True, "plan_order": NEXT_ORDER[0]},
+         node_key=key, agent=AGENT[key], advance=advance)
+    NEXT_ORDER[0] += 1
+    if prev:
+        emit("edge_added", {
+            "edge_key": f"{prev}-to-{key}", "source_node_key": prev,
+            "target_node_key": key, "planned": planned_edge,
+        }, advance=0.3)
 
-for a, b in EDGES:
-    emit("edge_added", {
-        "edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b, "planned": True,
-    }, advance=0.05)
 
 
 def start(key, advance=1.4, input_summary=None):
@@ -197,7 +175,8 @@ def done(key, headline, finding=None, manual_minutes=None, metrics=None, advance
 
 
 # ── 1 · DETECT · the email lands ────────────────────────────────────────────
-start("detect_pickup_email", advance=2.0,
+reveal("detect_pickup_email", "Pickup canceled", prev="ambient_monitor", planned_edge=False, advance=2.0)
+start("detect_pickup_email", advance=1.4,
       input_summary="Email from trucking partner — BERU-40022")
 progress("detect_pickup_email", "Urgent email matched to BERU-40022", 60, advance=2.6)
 emit("artifact_added", {
@@ -225,7 +204,8 @@ done("detect_pickup_email",
      manual_minutes=8, advance=2.2)
 
 # ── 2 · DECIDE (gate 1, no money) · pick a new date ─────────────────────────
-start("decide_new_date", advance=1.4)
+reveal("decide_new_date", "Pick a new date", prev="detect_pickup_email", advance=1.2)
+start("decide_new_date", advance=1.0)
 emit("intervention_requested", {
     # type 'choice': a scheduling pick, not a branching decision — choosing
     # any option must keep playing THIS recording (all three dates fail).
@@ -258,7 +238,8 @@ done("decide_new_date",
      manual_minutes=5, advance=1.6)
 
 # ── 3 · RECONCILE · every date fails ────────────────────────────────────────
-start("reconcile_confirmations", advance=1.2)
+reveal("reconcile_confirmations", "Confirm the date", prev="decide_new_date", advance=1.2)
+start("reconcile_confirmations", advance=1.0)
 progress("reconcile_confirmations", "Confirming the picked window with the partner…", 25, advance=3.0)
 progress("reconcile_confirmations", "Sep 2: unavailable. Trying Sep 3…", 50, advance=3.0)
 progress("reconcile_confirmations", "Sep 3: unavailable. Trying Sep 4…", 75, advance=3.0)
@@ -272,7 +253,8 @@ emit("node_status_changed", {
 }, node_key="reconcile_confirmations", agent="Theo", advance=2.8)
 
 # ── 4 · EXPLAIN · notify the accountable party ──────────────────────────────
-start("explain_notify_email", advance=1.2)
+reveal("explain_notify_email", "Notify accountable party", prev="reconcile_confirmations", advance=1.2)
+start("explain_notify_email", advance=1.0)
 progress("explain_notify_email", "Drafting the failure notice…", 50, advance=2.4)
 emit("artifact_added", {
     "artifact_type": "text",
@@ -302,52 +284,18 @@ emit("agent_message", {
     "message": "Asking Nina for a new solution…",
 }, node_key="explain_notify_email", agent="Nina", advance=3.0)
 
-emit("plan_declared", {
-    "graph_revision": 2,
-    "proposed": True,
-    "revisable": True,
-    "basis": "restart after confirmation failure — alternate carrier plan",
-    "plan": {
-        "graph_revision": 2,
-        "basis": "restart after confirmation failure — alternate carrier plan",
-        "summary": "The partner is out. New plan: price the clock, rank carriers, book one.",
-        "steps": [
-            {"node_key": k, "agent_label": AGENT[k], "label": lbl, "estimated_seconds": sec}
-            for k, lbl, sec in STEPS2
-        ],
-        "edges": [
-            {"edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b}
-            for a, b in EDGES2
-        ],
-    },
-    "total_estimated_seconds": sum(sec for _, _, sec in STEPS2),
-}, advance=2.2)
-
-for i, (key, label, sec) in enumerate(STEPS2, start=1):
-    emit("node_added", {
-        "label": label, "estimated_seconds": sec, "planned": True, "plan_order": len(STEPS) + i,
-    }, node_key=key, agent=AGENT[key], advance=0.08)
-
-emit("edge_added", {
-    "edge_key": "explain_notify_email-to-trigger_new_plan",
-    "source_node_key": "explain_notify_email",
-    "target_node_key": "trigger_new_plan",
-    "planned": False,
-}, advance=0.05)
-for a, b in EDGES2:
-    emit("edge_added", {
-        "edge_key": f"{a}-to-{b}", "source_node_key": a, "target_node_key": b, "planned": True,
-    }, advance=0.05)
 
 # ── 1 (again) · the restart trigger — this is where it starts over ─────────
-start("trigger_new_plan", advance=1.4)
+reveal("trigger_new_plan", "Restart: new plan", prev="explain_notify_email", planned_edge=False, advance=1.4)
+start("trigger_new_plan", advance=1.0)
 done("trigger_new_plan",
      "Attempt 2 starts here",
      "Nina reset the flow: same container, fresh plan, the old one on file.",
      manual_minutes=4, advance=2.0)
 
 # ── 5 · IMPACT · the demurrage clock ────────────────────────────────────────
-start("quantify_demurrage", advance=1.2)
+reveal("quantify_demurrage", "Cost clock running", prev="trigger_new_plan", advance=1.2)
+start("quantify_demurrage", advance=1.0)
 progress("quantify_demurrage", "Pricing every idle day at the port…", 50, advance=2.6)
 done("quantify_demurrage",
      "Demurrage accruing — $150/day",
@@ -358,35 +306,37 @@ done("quantify_demurrage",
      advance=2.6)
 
 # ── 6 · PLAN · alternate carriers, ranked ───────────────────────────────────
-start("plan_carriers", advance=1.2)
-progress("plan_carriers", "Carrier A: $480, pickup Sep 3", 33, advance=2.6)
-progress("plan_carriers", "Carrier B: $610, pickup Sep 2", 66, advance=2.6)
+reveal("plan_carriers", "Find alternate carriers", prev="quantify_demurrage", advance=1.2)
+start("plan_carriers", advance=1.0)
+progress("plan_carriers", "Bestway Transport: $480, pickup Sep 3", 33, advance=2.6)
+progress("plan_carriers", "Anytime Transport: $610, pickup Sep 2", 66, advance=2.6)
 done("plan_carriers",
-     "Carrier A beats the clock",
-     "Carrier A: $480, Sep 3. Carrier B: $610, Sep 2. Carrier C: $395, Sep 8 "
+     "Bestway beats the clock",
+     "Bestway: $480, Sep 3. Anytime: $610, Sep 2. Aqua Gulf: $395, Sep 8 "
      "— cheapest on paper, but 5 extra days of demurrage erase the saving.",
      manual_minutes=18, advance=2.6)
 
 # ── 7 · DECIDE (gate 2, money) · pick a carrier ─────────────────────────────
-start("decide_carrier", advance=1.4)
+reveal("decide_carrier", "Pick a carrier", prev="plan_carriers", advance=1.2)
+start("decide_carrier", advance=1.0)
 emit("intervention_requested", {
     "type": "steer",
-    "prompt": "The partner is out. Three carriers can take BERU-40022 — your call:",
+    "prompt": "The partner is out. Three PR carriers can take BERU-40022 — your call:",
     "options": [
-        {"id": "carrier-a", "label": "Carrier A — pickup Sep 3, $480",
-         "rationale": "Cheapest option that still beats the demurrage clock.",
+        {"id": "carrier-a", "label": "Bestway Transport — pickup Sep 3, $480",
+         "rationale": "Largest bonded trucker in PR, dedicated port drayage; cheapest option that beats the clock.",
          "rank": 1, "branch": "carrier-a", "maximum_cost_usd": 480},
-        {"id": "carrier-b", "label": "Carrier B — pickup Sep 2, $610",
-         "rationale": "A day earlier, at a premium the schedule does not require.",
+        {"id": "carrier-b", "label": "Anytime Transport — pickup Sep 2, $610",
+         "rationale": "Intermodal container service; a day earlier at a premium the schedule does not require.",
          "rank": 2, "branch": "carrier-b", "maximum_cost_usd": 610},
-        {"id": "carrier-c", "label": "Carrier C — pickup Sep 8, $395",
-         "rationale": "Cheapest sticker price; 5 idle days of demurrage make it the dearest.",
+        {"id": "carrier-c", "label": "Aqua Gulf Xpress — pickup Sep 8, $395",
+         "rationale": "Solid ~100-truck fleet; cheapest sticker, but 5 idle days of demurrage make it the dearest.",
          "rank": 3, "branch": "carrier-c", "maximum_cost_usd": 395},
     ],
     "default_option_id": "carrier-a",
 }, node_key="decide_carrier", agent="Rex", advance=2.2)
 emit("agent_message", {
-    "message": "Rex is holding the booking — Carrier A's Sep 3 slot is first come, first served.",
+    "message": "Rex is holding the booking — Bestway's Sep 3 slot is first come, first served.",
 }, node_key="decide_carrier", agent="Rex", advance=7.0)
 emit("intervention_resolved", {
     "option_id": "carrier-a",
@@ -394,23 +344,24 @@ emit("intervention_resolved", {
     "used_default": False,
 }, node_key="decide_carrier", agent="Rex", advance=5.0)
 done("decide_carrier",
-     "Carrier A approved — $480",
+     "Bestway approved — $480",
      "Sep 3 pickup at $480: beats the clock, saves the schedule.",
      manual_minutes=8, advance=1.8)
 
 # ── 8 · ACT · confirm with the carrier ──────────────────────────────────────
-start("act_confirm_email", advance=1.2)
-progress("act_confirm_email", "Confirming the new terms with Carrier A…", 50, advance=2.4)
+reveal("act_confirm_email", "Confirm with carrier", prev="decide_carrier", advance=1.2)
+start("act_confirm_email", advance=1.0)
+progress("act_confirm_email", "Confirming the new terms with Bestway…", 50, advance=2.4)
 emit("artifact_added", {
     "artifact_type": "text",
     "message_id": "MSG-BERU-3303",
-    "name": "Email — pickup confirmed with Carrier A",
+    "name": "Email — pickup confirmed with Bestway",
     "text_content": (
-        "To: bookings@carrier-a.example\n"
+        "To: dispatch@bestwaypr.example\n"
         "From: lex@ops.nauta.ai\n"
         "Date: 29 Aug 2026 14:24 UTC\n"
         "Subject: BERU-40022 — pickup confirmed, Sep 3, $480\n\n"
-        "Dear Carrier A Bookings,\n\n"
+        "Dear Bestway Transport Dispatch,\n\n"
         "We hereby confirm the pickup of container BERU-40022 at San Juan "
         "port on Sep 3, at the agreed rate of $480 all-in.\n\n"
         "Terminal reference and release documents follow in a separate "
@@ -421,7 +372,7 @@ emit("artifact_added", {
 }, node_key="act_confirm_email", agent="Lex", advance=2.6)
 done("act_confirm_email",
      "Pickup booked — Sep 3, $480",
-     "Carrier A confirmed. The container moves before demurrage does damage.",
+     "Bestway confirmed. The container moves before demurrage does damage.",
      manual_minutes=12, advance=2.0)
 
 # ── 8.1 · FORK · the flow splits, the original stays ────────────────────────
@@ -448,15 +399,16 @@ done("fork_flow",
      manual_minutes=6, advance=2.4)
 
 # ── 9 · ACT (financial) · pay and record ────────────────────────────────────
-start("act_pay_record", advance=1.2)
-progress("act_pay_record", "Paying Carrier A and writing the audit trail…", 50, advance=2.6)
+reveal("act_pay_record", "Pay and record", advance=1.0)
+start("act_pay_record", advance=1.0)
+progress("act_pay_record", "Paying Bestway and writing the audit trail…", 50, advance=2.6)
 emit("artifact_added", {
     "artifact_type": "text",
     "message_id": "MSG-BERU-3304",
     "name": "Receipt — Carrier A payment",
     "text_content": (
         "PAYMENT RECORD\n\n"
-        "Payee:        Carrier A (San Juan drayage)\n"
+        "Payee:        Bestway Transport, Inc. (San Juan drayage)\n"
         "Amount:       USD 480.00\n"
         "Container:    BERU-40022\n"
         "Service:      Port pickup — Sep 3\n"
@@ -477,7 +429,7 @@ emit("run_finished", {
         "headline": "BERU-40022 rescued — picked up Sep 3",
         "detail": (
             "The trucking partner dropped the pickup and every proposed window "
-            "failed. Nauta sourced three carriers, the operator approved the one "
+            "failed. Nauta sourced three Puerto Rico carriers, the operator approved the one "
             "that beats the demurrage clock, and the flow forked: the dead plan "
             "stays on file, the live one is back under the ambient watch. "
             "Berríos runs this watch across its whole book — the published case "
@@ -512,7 +464,7 @@ assert all("manual_minutes" in e["payload"] for e in dones), "a done is missing 
 failed = next(e for e in lines if e["payload"].get("status") == "failed")
 assert failed["node_key"] == "reconcile_confirmations", "the failure lives on reconcile"
 plans = [e for e in lines if e["event_type"] == "plan_declared"]
-assert len(plans) == 2, "expected the restart to declare a second plan"
+assert len(plans) == 0, "cards reveal in real time; no upfront plan dumps"
 restart = next(e for e in lines if e["node_key"] == "trigger_new_plan" and e["event_type"] == "node_added")
 assert restart["sequence"] > failed["sequence"], "attempt 2 must not exist before the failure"
 finished = [e for e in lines if e["event_type"] == "run_finished"]

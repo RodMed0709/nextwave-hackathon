@@ -239,10 +239,10 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 /* The ambient ticker embedded in the Watching cell: slim vertical rows. */
 .executive-phase .ambient-strip { padding: 0; }
 .executive-phase .ambient-items { grid-template-columns: minmax(0, 1fr); gap: 5px; }
-.executive-phase .ambient-item { padding: 5px 9px; border: 0; background: #071729; border-radius: 8px; }
+.executive-phase .ambient-item { padding: 3px 7px; border: 0; background: #071729; border-radius: 7px; }
 .executive-phase .ambient-item strong { display: none; }
-.executive-phase .ambient-copy small { font-size: 10.5px; color: #b9cbd9; }
-.executive-phase .ambient-loop { width: 14px; height: 14px; border-width: 2px; }
+.executive-phase .ambient-copy small { font-size: 9.5px; color: #b9cbd9; }
+.executive-phase .ambient-loop { width: 11px; height: 11px; border-width: 2px; }
 .executive-phase .ambient-count { font-size: 10px; }
 .executive-phase.state-running { opacity: 1; border-color: var(--chartreuse); box-shadow: 0 0 0 1px #d7f24c2e, 0 10px 26px #020b1470; }
 .executive-phase.state-done { opacity: .92; border-color: #4a6d43; }

@@ -13,7 +13,7 @@ export function ClientArea({ metadata, currentTask }: ClientAreaProps) {
       <div className="client-priority-stack">
         <div className="client-meta-field strong" title={metadata.business ?? undefined}>
           <span>Client</span>
-          <strong>{metadata.clientName ?? 'Unavailable'}</strong>
+          <strong>{metadata.clientName ?? 'Mueblerías Berríos — Puerto Rico'}</strong>
         </div>
         <div className="current-task-block">
           <span>The objective</span>

@@ -37,7 +37,7 @@ export function ExecutiveStrip({ phases, watchContent, solvingNow, actingNow, wa
               <span className="executive-phase-index">{index + 1}</span>
               <strong>{phase.title}</strong>
               <span className="executive-phase-state">
-                {alerting && 'CAUGHT SOMETHING'}
+                {alerting && 'EVENT TRIGGERED BY NINA'}
                 {!alerting && phase.id === 'watch' && <><i className="live-dot" /> NINA · ALWAYS ON</>}
                 {!alerting && phase.id !== 'watch' && phase.state === 'running' && <><i className="live-dot" /> IN PROGRESS</>}
                 {!alerting && phase.state === 'done' && <><Check aria-hidden="true" size={13} /> DONE</>}

@@ -36,8 +36,8 @@ export function DonaldAccess() {
     setError('')
     setIsEntering(true)
     window.setTimeout(() => {
-      // Second screen of the flow: the client and their standing prompt.
-      router.push('/start')
+      // Straight to the run: the pitch skips the /start screen now.
+      router.push('/runs/berrios-op4471-v2')
     }, 460)
   }
 
