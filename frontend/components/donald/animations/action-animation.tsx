@@ -59,6 +59,14 @@ export function ActionAnimation({ presentation, state }: ActionAnimationProps) {
         <span className="motion-signal motion-signal-one" />
         <span className="motion-signal motion-signal-two" />
         <span className="motion-signal motion-signal-three" />
+        {spec.kind === 'email' && (
+          <span className="motion-envelope">
+            <svg viewBox="0 0 24 18" width="24" height="18">
+              <rect x="1" y="1" width="22" height="16" rx="2" fill="var(--paper)" stroke="var(--navy)" strokeWidth="1.4" />
+              <path d="M 1.5 2.5 L 12 10 L 22.5 2.5" fill="none" stroke="var(--navy)" strokeWidth="1.4" />
+            </svg>
+          </span>
+        )}
       </div>
     </div>
   )

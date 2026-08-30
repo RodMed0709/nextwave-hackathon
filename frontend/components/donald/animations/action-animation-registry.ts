@@ -21,6 +21,7 @@ export const ACTION_ANIMATION_REGISTRY: Record<DonaldAnimationKind, ActionAnimat
   plan: { kind: 'plan', className: 'action-animation-default' },
   decide: { kind: 'decide', className: 'action-animation-default' },
   act: { kind: 'act', className: 'action-animation-act' },
+  email: { kind: 'email', className: 'action-animation-email' },
 }
 
 export function getActionAnimationSpec(kind: DonaldAnimationKind): ActionAnimationSpec {

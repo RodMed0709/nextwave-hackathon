@@ -16,7 +16,7 @@ export const DONALD_ACTION_IDS = [
 ] as const
 
 export type DonaldActionId = typeof DONALD_ACTION_IDS[number]
-export type DonaldAnimationKind = DonaldActionId | 'default'
+export type DonaldAnimationKind = DonaldActionId | 'default' | 'email'
 
 export type ActionPresentation = {
   id: DonaldActionId
@@ -136,6 +136,18 @@ function hasActionWord(candidate: string, word: string): boolean {
     normalized.endsWith(`-${normalizedWord}`)
 }
 
+/**
+ * Email steps keep the `act` action id — stages, receipts and labels treat
+ * sending a brief as acting — but get their own scene so the card can show a
+ * letter leaving instead of the generic execute pulse.
+ */
+const EMAIL_KEYWORDS = ['email', 'mail', 'brief', 'notify', 'inform']
+
+function isEmailNode(input: { nodeKey: string; label: string; toolName?: string | null }): boolean {
+  const haystack = [input.nodeKey, input.label, input.toolName ?? ''].filter(Boolean).join(' ')
+  return EMAIL_KEYWORDS.some((keyword) => hasActionWord(haystack, keyword))
+}
+
 export function actionPresentationForNode(input: {
   nodeKey: string
   label: string
@@ -144,6 +156,9 @@ export function actionPresentationForNode(input: {
   headline?: string | null
   detail?: string | null
 }): ActionPresentation {
+  if (isEmailNode(input)) {
+    return { ...ACTION_PRESENTATIONS.act, label: 'Email', animationKind: 'email' }
+  }
   return ACTION_PRESENTATIONS[donaldActionIdForNode(input) ?? 'ingest']
 }
 

@@ -28,6 +28,19 @@ test('action presentation resolves semantic aliases from current recordings', ()
   assert.equal(actionPresentationForNode({ nodeKey: 'receive-update', label: 'Review carrier update' }).id, 'ingest')
 })
 
+test('email steps keep the act id but get the email scene', () => {
+  const presentation = actionPresentationForNode({
+    nodeKey: 'brief_boss_email',
+    label: 'Communicating the news to the boss',
+  })
+  assert.equal(presentation.id, 'act')
+  assert.equal(presentation.animationKind, 'email')
+  assert.equal(presentation.label, 'Email')
+
+  // Non-email act steps keep the execute scene.
+  assert.equal(actionPresentationForNode({ nodeKey: 'act_book_alternate', label: 'Book alternate carrier' }).animationKind, 'act')
+})
+
 test('decision options reduce operational copy to price and one short consequence', () => {
   assert.deepEqual(decisionOptionPresentation({
     id: 'alternative-routing',

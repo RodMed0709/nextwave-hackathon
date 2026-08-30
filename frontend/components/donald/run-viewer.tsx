@@ -79,6 +79,8 @@ import {
   type PromptSuggestion,
 } from '@/lib/donald/source'
 import { RunControls } from '@/components/donald/run-controls'
+import { PromptBar } from '@/components/donald/prompt-bar'
+import { pickSteerTargetKey } from '@/lib/donald/steer-target'
 import { ClientArea } from '@/components/donald/client-area'
 import { DonaldNarration } from '@/components/donald/donald-narration'
 import { ImpactReceipt } from '@/components/donald/impact-receipt'
@@ -866,6 +868,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [measuredSizes, setMeasuredSizes] = useState<Record<string, NodeSize>>({})
   const [suggestions, setSuggestions] = useState<Record<string, PromptSuggestion[]>>({})
   const [decisionRecalculationKey, setDecisionRecalculationKey] = useState<string | null>(null)
+  // A view-side pause: the reader loop stops pulling, the source keeps
+  // buffering, and resume drains from the cursor. The agent itself never stops
+  // — instructions queued while paused reach it exactly as they would live.
+  const [paused, setPaused] = useState(false)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
@@ -915,6 +921,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [])
 
   useEffect(() => {
+    if (paused) return
     if (state.open_intervention) return
     let cancelled = false
     void (async () => {
@@ -930,9 +937,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }
     })()
     return () => { cancelled = true }
-  }, [readNext, state.open_intervention])
+  }, [paused, readNext, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  const togglePause = useCallback(() => {
+    // Abort the in-flight read so a recorded run's timestamp wait does not
+    // land one more event after the person asked the screen to hold still.
+    if (!paused) abortRef.current?.abort()
+    setPaused(!paused)
+  }, [paused])
 
   // Measured sizes let the one in-place decision reserve room without allowing
   // ordinary detail selection to rearrange the graph.
@@ -1286,17 +1300,22 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const activeAgents = currentAgentNames(state.nodes, visiblyActiveKeys, state.event_log)
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
   const nextTask = getNextTaskSummary(state)
+  const steerTargetKey = pickSteerTargetKey(state, nextTask.nodeKeys, visiblyActiveKeys)
   const adjust = useCallback(() => {
-    const candidateKey = state.open_intervention?.node_key ??
-      nextTask.nodeKeys.find((nodeKey) => canIntervene(state.nodes[nodeKey])) ??
-      visiblyActiveKeys.find((nodeKey) => canIntervene(state.nodes[nodeKey])) ??
-      Object.values(state.nodes).find((node) => canIntervene(node))?.node_key ??
-      null
-    if (!candidateKey) return
-    setExpandedKey(candidateKey)
-    document.getElementById(stageDomId(operationalStageForNode(state.nodes[candidateKey])))
+    if (!steerTargetKey) return
+    setExpandedKey(steerTargetKey)
+    document.getElementById(stageDomId(operationalStageForNode(state.nodes[steerTargetKey])))
       ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [nextTask.nodeKeys, state.nodes, state.open_intervention?.node_key, visiblyActiveKeys])
+  }, [state.nodes, steerTargetKey])
+
+  const submitFromBar = useCallback(async (instruction: string) => {
+    if (!steerTargetKey) return
+    const node = state.nodes[steerTargetKey]
+    if (!node) return
+    // Open the card the instruction lands on, so the person sees it queue.
+    setExpandedKey(node.node_key)
+    await submitInstruction(node, instruction)
+  }, [state.nodes, steerTargetKey, submitInstruction])
 
   return (
     <main className="donald">
@@ -1352,10 +1371,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           {runStatusLabel(state)}
         </div>
         <RunControls
+          canPause
           onAdjust={adjust}
           onFit={() => { setViewportPinned(false); zoomToFit() }}
+          onPause={togglePause}
           onZoomIn={() => changeZoom('in')}
           onZoomOut={() => changeZoom('out')}
+          paused={paused}
         />
       </header>
 
@@ -1425,6 +1447,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           ))}
         </div>
       </section>
+
+      <PromptBar
+        error={instructionError}
+        onSubmit={submitFromBar}
+        paused={paused}
+        submitting={submittingNodeKey !== null}
+        targetLabel={steerTargetKey ? state.nodes[steerTargetKey]?.label ?? null : null}
+      />
     </main>
   )
 }

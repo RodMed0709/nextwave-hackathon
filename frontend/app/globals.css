@@ -39,7 +39,83 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: visible;
   background: var(--navy-deep);
+  /* Room for the fixed prompt bar so the last stage's receipt stays reachable. */
+  padding-bottom: 96px;
 }
+
+/* Run-level prompt bar, pinned under everything like a chat composer. */
+.prompt-bar {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(680px, calc(100vw - 28px));
+  display: grid;
+  gap: 6px;
+}
+.prompt-bar-status { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.prompt-bar-chip {
+  padding: 3px 10px;
+  border: 1px solid #24486e;
+  border-radius: 999px;
+  background: #0b2138e6;
+  color: #b9cbd9;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.prompt-bar-chip.paused { border-color: var(--amber); color: var(--amber); }
+.prompt-bar-chip.error { border-color: var(--red); color: #f2b4ad; }
+.prompt-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #24486e;
+  border-radius: 14px;
+  background: #0b2138f2;
+  box-shadow: 0 18px 44px #020b1490;
+  backdrop-filter: blur(6px);
+}
+.prompt-bar-row textarea {
+  min-height: 34px;
+  max-height: 120px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 9px;
+  background: #071729;
+  color: #eef4f5;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: none;
+}
+.prompt-bar-row textarea:focus { outline: 1px solid var(--chartreuse); }
+.prompt-bar-row textarea::placeholder { color: #5f7893; }
+.prompt-bar-mic,
+.prompt-bar-send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #24486e;
+  border-radius: 9px;
+  background: #102b49;
+  color: #cfe0ec;
+  cursor: pointer;
+  transition: border-color var(--beat) var(--ease), color var(--beat) var(--ease);
+}
+.prompt-bar-mic:hover,
+.prompt-bar-send:hover { border-color: var(--chartreuse); color: var(--chartreuse); }
+.prompt-bar-mic:disabled,
+.prompt-bar-send:disabled { opacity: .45; cursor: default; }
+.prompt-bar-mic.recording {
+  border-color: var(--red);
+  color: var(--red);
+  animation: action-pulse 1.3s ease-in-out infinite;
+}
+.prompt-bar-spin { animation: spin 1s linear infinite; }
 
 .header {
   position: relative;
@@ -1056,6 +1132,20 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .action-animation-act.action-scene-running .motion-pulse { animation: act-execute 1.05s var(--ease) infinite; }
 .action-animation-act.action-scene-running .motion-signal { animation: act-signal 1.05s var(--ease) infinite; }
+/* Email: the letter itself crosses the scene instead of the abstract execute
+   pulse, because "an email is leaving right now" is the one action a room can
+   read from the back. Done parks the envelope at the far edge: delivered. */
+.action-animation-email .motion-orbit { display: none; }
+.action-animation-email .motion-pulse { top: 24px; left: 10px; opacity: .55; }
+.action-animation-email .motion-signal { top: 27px; }
+.motion-envelope { position: absolute; top: 16px; left: 8px; width: 24px; height: 18px; filter: drop-shadow(0 1px 2px #0a1c3226); }
+.motion-envelope svg { display: block; }
+.action-animation-email.action-scene-running .motion-envelope { animation: email-fly 1.7s var(--ease) infinite; }
+.action-animation-email.action-scene-running .motion-signal { animation: email-trail 1.7s var(--ease) infinite; }
+.action-animation-email.action-scene-running .motion-signal-two { animation-delay: .12s; }
+.action-animation-email.action-scene-running .motion-signal-three { animation-delay: .24s; }
+.action-animation-email.action-scene-done .motion-envelope { left: auto; right: 10px; }
+.action-animation-email.action-scene-done .motion-signal { opacity: .22; }
 .subtask-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--paper-line); list-style: none; max-height: 148px; overflow: hidden; }
 .flow-card .subtask-list { gap: 9px; margin-top: 15px; padding-top: 13px; max-height: 180px; }
 .subtask-list-complete { max-height: none; overflow: visible; }
@@ -1263,6 +1353,17 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 @keyframes ingest-sheet-in { 0% { transform: translateX(-10px) rotate(-4deg); opacity: .08; } 35%, 70% { opacity: .42; } 100% { transform: translateX(30px) rotate(2deg); opacity: .08; } }
 @keyframes act-execute { 0%, 35% { transform: translateX(-34px) scale(.78); opacity: .5; } 68%, 100% { transform: translateX(0) scale(1); opacity: 1; } }
 @keyframes act-signal { 0% { transform: translateX(-16px) scaleX(.72); opacity: .24; } 60%, 100% { transform: translateX(0) scaleX(1); opacity: .86; } }
+@keyframes email-fly {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  14% { opacity: 1; }
+  58% { transform: translate(66px, -5px) rotate(4deg); opacity: 1; }
+  82%, 100% { transform: translate(132px, -12px) rotate(9deg); opacity: 0; }
+}
+@keyframes email-trail {
+  0%, 18% { transform: translateX(-10px) scaleX(.4); opacity: 0; }
+  52% { transform: translateX(8px) scaleX(1); opacity: .72; }
+  100% { transform: translateX(26px) scaleX(.5); opacity: 0; }
+}
 
 @media (max-width: 980px) {
   .header { min-height: 0; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 44px 14px 10px; }
