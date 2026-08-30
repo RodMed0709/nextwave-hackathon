@@ -15,6 +15,7 @@ import {
   getVisiblyActiveNodeKey,
   metricRows,
   keepStillRemovedKeys,
+  shouldShowInstructionForm,
 } from '../../lib/donald/presentation'
 import type { DonaldEvent, RunNode } from '../../lib/donald/types'
 
@@ -60,6 +61,12 @@ function node(nodeKey: string, status: RunNode['status'], planOrder: number): Ru
     removed: false,
   }
 }
+
+test('custom instruction form is gated only while direct options are available', () => {
+  assert.equal(shouldShowInstructionForm(2, false), false)
+  assert.equal(shouldShowInstructionForm(2, true), true)
+  assert.equal(shouldShowInstructionForm(0, false), true)
+})
 
 test('graph presentation staggers planned nodes and draws each edge after its target lands', () => {
   const events = [

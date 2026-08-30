@@ -31,6 +31,10 @@ export type SubtaskPresentation = {
   struck: boolean
 }
 
+export function shouldShowInstructionForm(optionCount: number, customInstructionRequested: boolean): boolean {
+  return optionCount === 0 || customInstructionRequested
+}
+
 export function getSubtaskPresentation(status: RunSubtaskStatus): SubtaskPresentation {
   switch (status) {
     case 'pending': return { icon: 'ring', tone: 'muted', struck: false }
