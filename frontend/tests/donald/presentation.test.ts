@@ -11,6 +11,7 @@ import {
   getPrimaryMetric,
   getPlanRevealDurationMs,
   getRunRequest,
+  getSubtaskPresentation,
   getVisiblyActiveNodeKey,
   metricRows,
   keepStillRemovedKeys,
@@ -142,6 +143,22 @@ test('live status surfaces the latest node-scoped agent message', () => {
     key: 'event-2',
     text: 'Theo is taking longer than expected.',
   })
+})
+
+test('subtask presentation maps every status to its icon and label treatment', () => {
+  assert.deepEqual([
+    getSubtaskPresentation('pending'),
+    getSubtaskPresentation('running'),
+    getSubtaskPresentation('done'),
+    getSubtaskPresentation('skipped'),
+    getSubtaskPresentation('failed'),
+  ], [
+    { icon: 'ring', tone: 'muted', struck: false },
+    { icon: 'spinner', tone: 'emphasis', struck: false },
+    { icon: 'check', tone: 'muted', struck: true },
+    { icon: 'minus', tone: 'muted', struck: true },
+    { icon: 'x', tone: 'failed', struck: false },
+  ])
 })
 
 test('hidden presentation keys are released when an element is re-added', () => {

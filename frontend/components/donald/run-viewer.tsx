@@ -19,9 +19,11 @@ import {
   CircleDot,
   Clock3,
   FileText,
+  Minus,
   RotateCcw,
   Send,
   UserRound,
+  X,
 } from 'lucide-react'
 import {
   Handle,
@@ -47,6 +49,7 @@ import {
   getLatestReplan,
   getPrimaryMetric,
   getRunRequest,
+  getSubtaskPresentation,
   getVisiblyActiveNodeKey,
   metricRows,
   type InstructionLifecycle,
@@ -69,6 +72,7 @@ import type {
   RunEdge,
   RunNode,
   RunState,
+  RunSubtask,
 } from '@/lib/donald/types'
 import '@xyflow/react/dist/style.css'
 
@@ -417,10 +421,34 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       <h2>{title}</h2>
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
+      {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
       {data.expanded && <ExpandedDetails data={data} />}
       <span className="expand-hint">{data.expanded ? 'Click to collapse' : 'Click to inspect'}</span>
       <Handle type="source" position={Position.Right} />
     </div>
+  )
+}
+
+function SubtaskList({ subtasks }: { subtasks: RunSubtask[] }) {
+  return (
+    <ul className="subtask-list">
+      {subtasks.map((subtask) => {
+        const appearance = getSubtaskPresentation(subtask.status)
+        return (
+          <li
+            className={`subtask-item subtask-${appearance.tone} ${appearance.struck ? 'subtask-struck' : ''}`}
+            key={subtask.key}
+          >
+            <span className={`subtask-icon subtask-icon-${appearance.icon}`} role="img" aria-label={`${subtask.status} subtask`}>
+              {appearance.icon === 'check' && <Check size={12} aria-hidden="true" />}
+              {appearance.icon === 'minus' && <Minus size={12} aria-hidden="true" />}
+              {appearance.icon === 'x' && <X size={12} aria-hidden="true" />}
+            </span>
+            <span className="subtask-label">{subtask.label}</span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

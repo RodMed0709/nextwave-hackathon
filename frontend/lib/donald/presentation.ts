@@ -1,4 +1,4 @@
-import type { DonaldEvent, NodeSummary, RunNode, RunState } from './types'
+import type { DonaldEvent, NodeSummary, RunNode, RunState, RunSubtaskStatus } from './types'
 
 export const NODE_STAGGER_MS = 120
 export const EDGE_LAND_DELAY_MS = 340
@@ -23,6 +23,22 @@ export type GraphPresentation = {
 export type LiveNodeStatus = {
   key: string
   text: string
+}
+
+export type SubtaskPresentation = {
+  icon: 'ring' | 'spinner' | 'check' | 'minus' | 'x'
+  tone: 'muted' | 'emphasis' | 'failed'
+  struck: boolean
+}
+
+export function getSubtaskPresentation(status: RunSubtaskStatus): SubtaskPresentation {
+  switch (status) {
+    case 'pending': return { icon: 'ring', tone: 'muted', struck: false }
+    case 'running': return { icon: 'spinner', tone: 'emphasis', struck: false }
+    case 'done': return { icon: 'check', tone: 'muted', struck: true }
+    case 'skipped': return { icon: 'minus', tone: 'muted', struck: true }
+    case 'failed': return { icon: 'x', tone: 'failed', struck: false }
+  }
 }
 
 export type DisplayMetric = {
