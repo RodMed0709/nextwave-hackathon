@@ -1,10 +1,11 @@
 """Genera events.missing-invoice.jsonl — use case 02, la factura que nunca llegó.
 
 El ritmo sale de occurred_at: recordedSource espera la diferencia entre eventos
-consecutivos. Todo el run dura ~115 s: seis pasos de aduana en línea, el paso 3
-descubre trabajo nuevo (la tarjeta que crece hacia abajo), el run se queda ámbar
-esperando al proveedor, y un gate decide si esperar o presentar con valor
-provisional.
+consecutivos. Todo el run dura ~115 s: siete pasos de aduana, el paso 3 descubre
+trabajo nuevo (la tarjeta que crece hacia abajo) que se queda ámbar esperando al
+proveedor — pero el run NO se detiene: un gate decide presentar con valor
+provisional y tres pasos completan en paralelo mientras el nodo ámbar sigue
+esperando. La factura llega al final y confirma las cifras.
 """
 import hashlib
 import json
@@ -28,6 +29,7 @@ AGENT_FOR = {
     "find_commercial_invoice": "Nina",
     "obtain_missing_invoice": "Nina",
     "establish_customs_value": "Nina",
+    "check_product_classifications": "Alec",
     "calculate_duties": "Alec",
     "file_customs_entry": "Alec",
 }
@@ -60,6 +62,7 @@ STEPS = [
     ("identify_po", "Find the purchase order", "Nina", 10),
     ("find_commercial_invoice", "Find the commercial invoice", "Nina", 22),
     ("establish_customs_value", "Establish the customs value", "Nina", 16),
+    ("check_product_classifications", "Check product classifications", "Alec", 14),
     ("calculate_duties", "Calculate duties and fees", "Alec", 18),
     ("file_customs_entry", "File the customs entry", "Alec", 20),
 ]
@@ -68,7 +71,9 @@ EDGES = [
     ("ingest_asn", "identify_po"),
     ("identify_po", "find_commercial_invoice"),
     ("find_commercial_invoice", "establish_customs_value"),
+    ("identify_po", "check_product_classifications"),
     ("establish_customs_value", "calculate_duties"),
+    ("check_product_classifications", "calculate_duties"),
     ("calculate_duties", "file_customs_entry"),
 ]
 
@@ -94,7 +99,8 @@ emit("plan_declared", {
         "graph_revision": 1,
         "basis": "provider's established workflow for customs entry filing",
         "summary": ("Trace the missing commercial invoice for PO-44190, establish "
-                    "the customs value, and file the entry before the deadline."),
+                    "the customs value, verify the product classifications, and "
+                    "file the entry before the deadline."),
         "steps": [
             {"node_key": k, "agent_label": ag, "label": lbl, "estimated_seconds": s}
             for k, lbl, ag, s in STEPS
@@ -237,8 +243,7 @@ emit("artifact_added", {
         "shared mailbox.\n\n"
         "Please reply with the commercial invoice for PO-44190 attached. The\n"
         "filing deadline is approaching, and without the invoice we cannot\n"
-        "establish the customs value or calculate duties. Nothing has been\n"
-        "submitted yet.\n\n"
+        "confirm the customs value. Nothing has been submitted yet.\n\n"
         "Thank you,\n"
         "Nina — Shipment Watch, Nauta (for Muebles del Sur)"
     ),
@@ -248,7 +253,7 @@ progress("obtain_missing_invoice",
          "Request sent to the supplier's documentation desk.",
          60, ob(["done", "done", "running"]), advance=2.6)
 
-# ── the run goes amber ──────────────────────────────────────────────────────
+# ── the node goes amber — but only the node ─────────────────────────────────
 emit("node_status_changed", {
     "status": "blocked_on_missing_data",
     "message": "Email sent. Awaiting the supplier's reply.",
@@ -256,38 +261,94 @@ emit("node_status_changed", {
 }, node_key="obtain_missing_invoice", advance=2.2)
 
 emit("agent_message", {
-    "message": ("Still waiting on Ningbo Casa Furniture. The filing window is "
-                "open, but every hour without the invoice narrows it."),
-}, node_key="obtain_missing_invoice", advance=9.5)
+    "message": ("Still waiting on Ningbo Casa Furniture. Holding the entire entry "
+                "for one document would cost hours — most of the remaining work "
+                "does not need the invoice."),
+}, node_key="obtain_missing_invoice", advance=5.0)
 
-# ── the gate, while waiting ─────────────────────────────────────────────────
+# ── the gate: hold everything, or keep moving on a provisional value ────────
 emit("intervention_requested", {
     "type": "steer",
-    "prompt": "The supplier has not replied. How should Nina proceed?",
+    "prompt": ("The supplier has not replied. Should the entry hold for the "
+               "invoice, or keep moving on a provisional value?"),
     "options": [
-        {"id": "keep-waiting",
-         "label": "Keep waiting — free, filing slips ~1 day",
-         "rationale": ("The supplier's desk is within business hours and the "
-                       "deadline still holds if the invoice lands today. No fees, "
-                       "no provisional values."),
-         "rank": 1, "branch": "keep-waiting", "maximum_cost_usd": 0},
+        {"id": "hold-everything",
+         "label": ("Hold everything until the reply — filing slips ~1 day, "
+                   "~$120 in detention risk"),
+         "rationale": ("Waits for the supplier's invoice before any further "
+                       "work. The filing slips roughly a day and the container "
+                       "risks about $120 in detention charges at arrival."),
+         "rank": 2, "branch": "hold-everything", "maximum_cost_usd": 120},
         {"id": "file-provisional",
-         "label": "File with a provisional value — $180 amendment fee later",
-         "rationale": ("Files immediately using the PO value as provisional, but "
-                       "requires a post-summary amendment at $180 once the real "
-                       "invoice arrives."),
-         "rank": 2, "branch": "file-provisional", "maximum_cost_usd": 180},
+         "label": ("File with a provisional value — $180 amendment fee if "
+                   "figures differ"),
+         "rationale": ("Keeps the entry moving using the PO value as "
+                       "provisional. If the invoice later differs, a "
+                       "post-summary amendment costs $180; if it matches, "
+                       "nothing is owed."),
+         "rank": 1, "branch": "file-provisional", "maximum_cost_usd": 180},
     ],
-    "default_option_id": "keep-waiting",
-}, node_key="obtain_missing_invoice", advance=9.5)
+    "default_option_id": "file-provisional",
+}, node_key="obtain_missing_invoice", advance=5.0)
 
 emit("intervention_resolved", {
-    "option_id": "keep-waiting",
-    "branch_id": "keep-waiting",
+    "option_id": "file-provisional",
+    "branch_id": "file-provisional",
     "used_default": False,
-}, node_key="obtain_missing_invoice", advance=8.5)
+}, node_key="obtain_missing_invoice", advance=7.0)
 
-# ── the reply arrives ───────────────────────────────────────────────────────
+# ── the run keeps moving while the amber node waits ─────────────────────────
+# obtain_missing_invoice stays blocked_on_missing_data through all of this.
+
+# 4 · VALUE — provisional, from the PO
+start("establish_customs_value", advance=1.6,
+      input_summary="PO-44190 line totals (no invoice yet)")
+progress("establish_customs_value",
+         "No invoice yet — deriving the provisional value from PO-44190 line totals.",
+         50, advance=3.0)
+done("establish_customs_value",
+     "Provisional value USD 96,400 from the PO — pending the invoice",
+     "Per the gate decision, the customs value is set provisionally from the "
+     "PO-44190 line totals — USD 96,400, FOB Ningbo — to be confirmed when the "
+     "supplier's invoice arrives.",
+     manual_minutes=14,
+     metrics={"provisional_value_usd": 96400},
+     advance=2.8)
+
+# 5 · CLASSIFY — needs the catalog, not the invoice
+start("check_product_classifications", advance=1.4,
+      input_summary="PO-44190 SKU list")
+progress("check_product_classifications",
+         "Checking the HS codes of the 9 SKUs against the classification catalog.",
+         50, advance=3.0)
+done("check_product_classifications",
+     "9 SKUs classified — HS codes confirmed",
+     "All nine furniture SKUs on PO-44190 match their catalog HS codes under "
+     "chapter 9403; the 16% duty rate applies across the board. This check "
+     "never needed the invoice.",
+     manual_minutes=11, advance=2.8)
+
+emit("agent_message", {
+    "message": ("No reply yet from Ningbo Casa Furniture — the request stays "
+                "open while the entry is built on the provisional value."),
+}, node_key="obtain_missing_invoice", advance=2.2)
+
+# 6 · IMPACT — provisional figures
+start("calculate_duties", advance=1.4)
+progress("calculate_duties",
+         "Applying the 16% duty rate to the provisional customs value.",
+         50, advance=3.2)
+done("calculate_duties",
+     "Duties USD 15,424 at 16% on the provisional value",
+     "Duty of USD 15,424 on the provisional customs value of USD 96,400 at 16%, "
+     "plus a merchandise processing fee of USD 341. Total payable USD 15,765 — "
+     "provisional until the invoice confirms the figures.",
+     manual_minutes=18,
+     metrics={"customs_value_usd": 96400, "duties_usd": 15424,
+              "duty_rate_percent": 16, "mpf_usd": 341},
+     advance=3.0)
+
+# ── the reply finally arrives — and reconciles ──────────────────────────────
 emit("artifact_added", {
     "artifact_type": "text",
     "message_id": "MSG-INV-RPL-4402",
@@ -306,7 +367,7 @@ emit("artifact_added", {
         "Best regards,\n"
         "Documentation Desk, Ningbo Casa Furniture Co."
     ),
-}, node_key="obtain_missing_invoice", advance=10.5)
+}, node_key="obtain_missing_invoice", advance=11.5)
 
 emit("node_status_changed", {
     "status": "in_progress",
@@ -316,9 +377,10 @@ emit("node_status_changed", {
 }, node_key="obtain_missing_invoice", advance=1.6)
 
 done("obtain_missing_invoice",
-     "Invoice CI-88907 obtained — USD 96,400",
+     "Invoice CI-88907 received — matches the provisional value, no amendment needed",
      "The supplier issued the invoice with the shipment but never uploaded it. "
-     "CI-88907 covers all 9 SKUs of PO-44190, FOB Ningbo.",
+     "CI-88907 covers all 9 SKUs of PO-44190 at USD 96,400 FOB Ningbo — exactly "
+     "the provisional figure the entry was built on.",
      manual_minutes=25, subtasks=ob(["done"] * 3), advance=3.0)
 
 # ── 3 · the original step can now finish ────────────────────────────────────
@@ -328,33 +390,8 @@ done("find_commercial_invoice",
      "set for the entry is complete.",
      manual_minutes=12, subtasks=fi(["done", "done", "done"]), advance=2.6)
 
-# ── 4 · RECONCILE ───────────────────────────────────────────────────────────
-start("establish_customs_value", advance=1.4)
-progress("establish_customs_value",
-         "Verifying the invoice value against the purchase order line totals.",
-         50, advance=3.0)
-done("establish_customs_value",
-     "Customs value established — USD 96,400",
-     "Invoice CI-88907 matches PO-44190 across all 9 SKUs. FOB Ningbo terms "
-     "confirmed; no additions or deductions to the transaction value.",
-     manual_minutes=14, advance=2.8)
-
-# ── 5 · IMPACT ──────────────────────────────────────────────────────────────
-start("calculate_duties", advance=1.2)
-progress("calculate_duties",
-         "Applying the 16% duty rate across the 9 classified SKUs.",
-         50, advance=3.2)
-done("calculate_duties",
-     "Duties USD 15,424 at 16%, MPF USD 341",
-     "Duty of USD 15,424 on a customs value of USD 96,400 at 16%, plus a "
-     "merchandise processing fee of USD 341. Total payable USD 15,765.",
-     manual_minutes=18,
-     metrics={"customs_value_usd": 96400, "duties_usd": 15424,
-              "duty_rate_percent": 16, "mpf_usd": 341},
-     advance=3.0)
-
-# ── 6 · ACT ─────────────────────────────────────────────────────────────────
-start("file_customs_entry", advance=1.2)
+# ── 7 · ACT ─────────────────────────────────────────────────────────────────
+start("file_customs_entry", advance=1.4)
 progress("file_customs_entry",
          "Assembling the entry package: CI-88907, packing list, PO-44190.",
          40, advance=3.0)
@@ -362,20 +399,23 @@ progress("file_customs_entry",
          "Submitting the entry to the broker gateway.",
          75, advance=2.8)
 done("file_customs_entry",
-     "Entry 315-9982177-4 filed",
-     "Customs entry submitted before the deadline with the real invoice value. "
-     "Release expected within 24 hours of arrival.",
-     manual_minutes=20, advance=3.0)
+     "Entry 315-9982177-4 filed — provisional figures confirmed, $180 amendment avoided",
+     "Customs entry submitted before the deadline. Invoice CI-88907 confirmed "
+     "the provisional value of USD 96,400, so the entry stands as filed — no "
+     "amendment, no fee.",
+     manual_minutes=20, advance=3.2)
 
 emit("run_finished", {
     "summary": {
-        "headline": "Entry filed on time",
+        "headline": "Entry filed on time — the run never stopped",
         "detail": (
-            "The missing invoice CI-88907 (USD 96,400, FOB Ningbo) was recovered "
-            "from the supplier after one chase email. Customs value confirmed, "
-            "duties of USD 15,424 at 16% plus a USD 341 processing fee "
-            "calculated, and entry 315-9982177-4 filed before the deadline — "
-            "no provisional values, no $180 amendment fee."
+            "When the supplier went quiet, the gate decision was to keep moving "
+            "on a provisional value rather than hold everything (~1 day slip, "
+            "~$120 detention risk). The classifications, customs value and "
+            "duties were built from PO-44190 while the request stayed open; "
+            "invoice CI-88907 then arrived at USD 96,400 — exactly the "
+            "provisional figure — and entry 315-9982177-4 was filed before the "
+            "deadline with no $180 amendment needed."
         ),
     },
 }, advance=2.2)
