@@ -58,8 +58,9 @@ export function getVisibleNodeViewport(
   container: NodeSize,
   insets: ViewportInsets,
 ): ViewportTransform {
-  const availableWidth = Math.max(1, container.width - insets.left - insets.right)
-  const availableHeight = Math.max(1, container.height - insets.top - insets.bottom)
+  const availableWidth = container.width - insets.left - insets.right
+  const availableHeight = container.height - insets.top - insets.bottom
+  if (availableWidth <= 0 || availableHeight <= 0) return viewport
   const zoom = Math.min(
     viewport.zoom,
     availableWidth / Math.max(1, size.width),

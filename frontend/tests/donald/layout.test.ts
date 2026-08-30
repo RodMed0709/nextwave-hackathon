@@ -182,3 +182,16 @@ test('getVisibleNodeViewport reduces zoom when the drawer leaves too little room
   assert.ok(Math.abs(left - 24) < 1e-9)
   assert.ok(Math.abs(right - 506) < 1e-9)
 })
+
+test('getVisibleNodeViewport preserves the camera when the drawer covers the viewport', () => {
+  const current = { x: -111, y: 20, zoom: 1.35 }
+  const viewport = getVisibleNodeViewport(
+    { x: 100, y: 100 },
+    { width: 380, height: 230 },
+    current,
+    { width: 390, height: 600 },
+    { top: 24, right: 414, bottom: 24, left: 24 },
+  )
+
+  assert.deepEqual(viewport, current)
+})

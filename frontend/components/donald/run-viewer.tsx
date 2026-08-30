@@ -135,8 +135,8 @@ const REPLAY_MAX_GAP_MS = 1_600
 // How coarsely the graph's extent is measured before the camera reacts to it.
 // One card width: smaller than a new column, larger than any text reflow.
 const VIEWPORT_QUANTUM = 380
-// Kept in step with .node-drawer in globals.css: the camera treats the drawer as
-// part of the right margin so a selected card never hides behind it.
+// Fallback matching .node-drawer while it mounts. The rendered width is measured
+// before moving the camera because the drawer becomes full-width on small screens.
 const DRAWER_WIDTH = 430
 // Framing: a little breathing room, and a zoom ceiling so a one-node run does
 // not open magnified to fill the screen and then crawl back out as work arrives.
@@ -1197,10 +1197,12 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
     const viewport = flowInstance.getViewport()
     const { width, height } = container.getBoundingClientRect()
+    const drawerWidth = container.querySelector<HTMLElement>('.node-drawer')
+      ?.getBoundingClientRect().width ?? DRAWER_WIDTH
     const margin = 24
     const next = getVisibleNodeViewport(position, size, viewport, { width, height }, {
       top: margin,
-      right: margin + DRAWER_WIDTH,
+      right: margin + drawerWidth,
       bottom: margin,
       left: margin,
     })
