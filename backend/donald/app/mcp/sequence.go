@@ -37,6 +37,15 @@ type mutation struct {
 	occurredAt     time.Time
 	payload        payload_entity.AgentEventPayload
 
+	// nodeUUIDRef lets apply() report the node it created.
+	//
+	// A node's uuid does not exist until apply() inserts it inside the
+	// transaction, which is after the mutation struct is built — so node_added
+	// was written with a null node_uuid, and every client that keys on node_key
+	// silently dropped the label and lane that arrived with it. Pointing this at
+	// a local variable lets commit pick the id up after apply has run.
+	nodeUUIDRef *uuid.UUID
+
 	// structural is true when the change alters the shape of the graph (a node
 	// or edge added or removed) rather than just a status. Only structural
 	// changes bump graph_revision, so a client can cheaply tell "re-layout" from
@@ -161,6 +170,10 @@ func (h *Handler) commit(ctx context.Context, m mutation) (int64, int64, error) 
 			return 0, 0, err
 		}
 	}
+	// apply may have created the node this event is about; see nodeUUIDRef.
+	if m.nodeUUID == nil && m.nodeUUIDRef != nil && !m.nodeUUIDRef.IsNil() {
+		m.nodeUUID = m.nodeUUIDRef
+	}
 
 	seq := lastSeq + 1
 	if m.structural {
@@ -256,6 +269,12 @@ func nullInt64(v *int64) null.Int64 {
 
 func detailJSON(v any) null.String {
 	if v == nil {
+		return null.String{}
+	}
+	// A typed nil map still satisfies `any != nil`, and json.Marshal turns it
+	// into the string "null" — which then reaches the client as a detail field
+	// containing the literal null. Catch that here rather than at every caller.
+	if m, ok := v.(map[string]string); ok && m == nil {
 		return null.String{}
 	}
 	b, err := json.Marshal(v)

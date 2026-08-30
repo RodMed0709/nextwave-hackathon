@@ -165,13 +165,29 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("node_key and name are both required")
 	}
 
+	// Filled in by apply() below, then read by commit so the event carries the
+	// node it just created.
+	var createdID uuid.UUID
+
 	seq, rev, err := h.commit(ctx, mutation{
 		runUUID:        run.UUID,
+		nodeUUIDRef:    &createdID,
 		eventType:      enums.AGENT_EVENT_TYPE_NODE_ADDED,
 		agentLabel:     args.AgentLabel,
 		idempotencyKey: "node_added:" + run.RunKey + ":" + key,
 		structural:     true,
-		payload:        payload_entity.AgentEventPayload{Message: nullString(args.Name)},
+		// The `after` edge travels WITH the node_added event.
+		//
+		// add_action creates the node and its incoming edge in one atomic
+		// mutation, so there is no separate edge_added event to carry the edge.
+		// Leaving it out meant a discovered node reached the client with no
+		// predecessor: the graph treated it as a root and drew it at the very
+		// start of the flow, beside step one, rather than hanging off the step
+		// that discovered it.
+		payload: payload_entity.AgentEventPayload{
+			Message: nullString(args.Name),
+			Detail:  detailJSON(afterEdgeDetail(args.After, key)),
+		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			id, err := h.upsertNode(ctx, tx, run.UUID, key, nodeFields{
 				Name:        args.Name,
@@ -187,7 +203,7 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 			if err != nil {
 				return err
 			}
-			_ = id
+			createdID = id
 			if strings.TrimSpace(args.After) != "" {
 				prev, err := h.resolveNode(ctx, run.UUID, args.After)
 				if err != nil {
@@ -387,6 +403,23 @@ func (h *Handler) CancelAction(ctx context.Context, req *mcp.CallToolRequest, ar
 			n.StatusMessage = nullString(args.Reason)
 		},
 	})
+}
+
+// afterEdgeDetail describes the edge that add_action's `after` creates, in the
+// same shape edge_added uses, so one handler on the client covers both.
+//
+// Returns nil when there is no predecessor — a genuinely root step — and a nil
+// detail marshals to no field rather than an empty object.
+func afterEdgeDetail(after, nodeKey string) map[string]string {
+	after = strings.TrimSpace(after)
+	if after == "" {
+		return nil
+	}
+	return map[string]string{
+		"edge_key":        after + "->" + nodeKey,
+		"source_node_key": after,
+		"target_node_key": nodeKey,
+	}
 }
 
 // transitionKey builds the idempotency key for a node status change.

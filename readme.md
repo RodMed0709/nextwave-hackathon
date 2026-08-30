@@ -68,7 +68,8 @@ the change looks like a mistake; with it, the system looks like it learned.
   https://api.donald.todes.mx/    ← REST + live event stream
             │
             ▼
-  frontend/                   ← Next + React Flow. The graph comes from run data.
+  frontend/                   ← Next + React Flow. Snapshot + SSE deltas; the graph
+                                 shape is computed from the edges, never hand-authored.
 ```
 
 | Folder | What it is | Owner |
@@ -152,13 +153,47 @@ the work. The timing belongs to the task, not to a prerecorded sequence.
 
 ## Status
 
+**End to end and live.** An agent reports through MCP, the events land in MySQL, and the
+frontend draws the graph from them as they arrive.
+
 ```
-✅  backend + REST API + 15-tool MCP server deployed
+✅  backend + REST API + 18-tool MCP server deployed
 ✅  donald-flow + nauta-operations skills
-✅  interactive Next.js + React Flow frontend prototype
-🔨  frontend still runs on in-memory demo data; live API/event-stream wiring is pending
-⚠️  demo has no authentication; artifact byte uploads still need R2 credentials
+✅  Next.js + React Flow frontend deployed
+✅  frontend consumes the live event stream (SSE) — the recorded fixture is now only a fallback
+✅  every run has its own shareable URL, handed to the agent at start_run
+⚠️  no authentication: anyone who can reach the MCP endpoint can write runs
+⚠️  artifact byte uploads need R2 credentials; links and inline text work today
+⚠️  single box, single MySQL pod on a hostPath volume, no backups
 ```
 
-Agent reporting reaches Donald through MCP. The remaining integration step is for the frontend
-to consume the run event stream instead of its local prototype data.
+### Live surfaces
+
+| | |
+|---|---|
+| `https://donald.todes.mx/runs/<run_key>` | one run, watched live |
+| `https://api.donald.todes.mx/v1/runs` | run list, newest first |
+| `https://api.donald.todes.mx/v1/runs/<run_key>` | snapshot + `last_sequence` |
+| `https://api.donald.todes.mx/v1/runs/<run_key>/stream?after=N` | SSE deltas after a cursor |
+| `https://mcp.donald.todes.mx/v1/mcp` | the agent-facing MCP server |
+
+### Share the link before the work starts
+
+`start_run` returns a **`watch_url`**, and the skill tells the agent to show it immediately:
+
+> Follow along: `https://donald.todes.mx/runs/sess_8f21`
+
+The URL is built from the agent's own `run_key`, so it is known before a single step has run.
+A link produced at the end is a link nobody opened.
+
+### Known limits worth stating plainly
+
+- **Runs recorded before a fix keep the gaps that fix closed.** Graph structure is reconstructed
+  from the event log, so a run whose events predate an improvement renders the way it was
+  recorded. Re-run it rather than expecting a repair.
+- **Interventions are advisory.** The agents are not ours to control, so a stop reaches the agent
+  on its next `check_instructions` and it complies if it can. That is honest supervision, not a
+  kill switch.
+- **Demo pacing is on** (`DONALD_DEMO_PACING`), which exposes a `wait` tool so runs unfold at a
+  readable speed. It must be turned off before production — an agent should never be able to park
+  a request on the server.
