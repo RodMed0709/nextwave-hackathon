@@ -1,4 +1,4 @@
-import { isDonaldEvent, type DonaldEvent } from './types'
+import { isDonaldEvent, isRunSubtaskStatus, type DonaldEvent, type RunSubtask } from './types'
 
 type Wait = (milliseconds: number, signal?: AbortSignal) => Promise<void>
 type Fetch = typeof fetch
@@ -44,7 +44,7 @@ export function parseEventStream(text: string): DonaldEvent[] {
   return text.trim().split(/\r?\n/).filter(Boolean).map((line, index) => {
     const value: unknown = JSON.parse(line)
     if (!isDonaldEvent(value)) throw new Error(`Invalid Donald event at line ${index + 1}`)
-    return value
+    return { ...value, payload: adaptPayload(value.payload) }
   })
 }
 
@@ -104,6 +104,29 @@ type DonaldDelta = {
   payload?: Record<string, unknown>
 }
 
+function adaptSubtasks(value: unknown): RunSubtask[] | null {
+  if (!Array.isArray(value)) return null
+  return value.flatMap((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
+    const candidate = item as Record<string, unknown>
+    if (typeof candidate.key !== 'string' || !candidate.key.trim()) return []
+    if (typeof candidate.label !== 'string' || !candidate.label.trim()) return []
+    return [{
+      key: candidate.key,
+      label: candidate.label,
+      status: isRunSubtaskStatus(candidate.status) ? candidate.status : 'pending',
+    }]
+  })
+}
+
+function adaptPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  if (!Object.hasOwn(payload, 'subtasks')) return payload
+  const subtasks = adaptSubtasks(payload.subtasks)
+  if (subtasks !== null) return { ...payload, subtasks }
+  const { subtasks: _malformed, ...rest } = payload
+  return rest
+}
+
 function deltaToEvent(delta: DonaldDelta): DonaldEvent {
   return {
     sequence: delta.sequence,
@@ -116,7 +139,7 @@ function deltaToEvent(delta: DonaldDelta): DonaldEvent {
     // The server derives a stable key per mutation; falling back to the sequence
     // keeps the reducer's dedupe working even if one is ever missing.
     idempotency_key: delta.idempotency_key ?? `seq-${delta.sequence}`,
-    payload: delta.payload ?? {},
+    payload: adaptPayload(delta.payload ?? {}),
   }
 }
 

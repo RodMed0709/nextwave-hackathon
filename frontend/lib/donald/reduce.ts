@@ -6,6 +6,7 @@ import {
   type RunArtifact,
   type RunNode,
   type RunState,
+  type RunSubtask,
 } from './types'
 
 const stringValue = (value: unknown): string | null => typeof value === 'string' ? value : null
@@ -56,7 +57,18 @@ function placeholderNode(event: DonaldEvent): RunNode | null {
 
 function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSummary | null): NodeSummary | null {
   const headline = stringValue(payload.headline) ?? previous?.headline ?? null
-  const detail = stringValue(payload.finding) ?? stringValue(payload.detail) ?? previous?.detail ?? null
+  const rawDetail = stringValue(payload.detail)
+  let findingDetail = rawDetail
+  if (rawDetail) {
+    try {
+      const parsed: unknown = JSON.parse(rawDetail)
+      const detailObject = objectValue(parsed)
+      if (detailObject && Object.hasOwn(detailObject, 'subtasks')) findingDetail = null
+    } catch {
+      // Plain-text detail remains a valid finding.
+    }
+  }
+  const detail = stringValue(payload.finding) ?? findingDetail ?? previous?.detail ?? null
   const metricsObject = objectValue(payload.metrics)
   const metrics = { ...(previous?.metrics ?? {}) }
   if (metricsObject) {
@@ -70,6 +82,10 @@ function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSumm
   return headline || detail || Object.keys(metrics).length || evidenceIds.length
     ? { headline, detail, metrics, evidence_ids: evidenceIds }
     : previous
+}
+
+function subtaskSnapshot(payload: Record<string, unknown>): RunSubtask[] | undefined {
+  return Array.isArray(payload.subtasks) ? payload.subtasks as RunSubtask[] : undefined
 }
 
 function artifactFromPayload(payload: Record<string, unknown>): RunArtifact {
@@ -281,6 +297,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
     case 'node_status_changed': {
       const status = event.payload.status
       if (!isNodeStatus(status)) break
+      const subtasks = subtaskSnapshot(event.payload)
       next = withNode(next, event, (node) => ({
         ...node,
         status,
@@ -291,6 +308,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
           ? stringValue(event.payload.finished_at) ?? event.occurred_at
           : node.finished_at,
         progress_percent: status === 'succeeded' ? 100 : node.progress_percent,
+        ...(subtasks !== undefined ? { subtasks } : {}),
       }))
       if (event.node_key && status === 'succeeded') {
         next = {
@@ -303,15 +321,18 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
       }
       break
     }
-    case 'node_updated':
+    case 'node_updated': {
+      const subtasks = subtaskSnapshot(event.payload)
       next = withNode(next, event, (node) => ({
         ...node,
         progress_percent: numberValue(event.payload.progress_percent) ?? node.progress_percent,
         elapsed_seconds: numberValue(event.payload.elapsed_seconds) ?? node.elapsed_seconds,
         input_summary: stringValue(event.payload.input_summary) ?? node.input_summary,
         output_summary: summaryFromPayload(event.payload, node.output_summary),
+        ...(subtasks !== undefined ? { subtasks } : {}),
       }))
       break
+    }
     case 'artifact_added':
       next = withNode(next, event, (node) => ({ ...node, artifacts: [...node.artifacts, artifactFromPayload(event.payload)] }))
       break

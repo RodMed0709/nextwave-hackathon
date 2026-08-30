@@ -11,6 +11,13 @@ export type NodeStatus =
 
 export type EdgeStatus = 'pending' | 'traversed' | 'skipped' | 'removed'
 export type RunStatus = 'not_started' | 'running' | 'finished' | 'failed' | 'cancelled'
+export type RunSubtaskStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed'
+
+export type RunSubtask = {
+  key: string
+  label: string
+  status: RunSubtaskStatus
+}
 
 export type DonaldEvent = {
   sequence: number
@@ -52,6 +59,7 @@ export type RunNode = {
   finished_at: string | null
   input_summary: string | null
   output_summary: NodeSummary | null
+  subtasks?: RunSubtask[]
   artifacts: RunArtifact[]
   removed: boolean
   removed_at?: string | null
@@ -133,4 +141,8 @@ export function isNodeStatus(value: unknown): value is NodeStatus {
     value === 'cancelled' ||
     value === 'skipped'
   )
+}
+
+export function isRunSubtaskStatus(value: unknown): value is RunSubtaskStatus {
+  return value === 'pending' || value === 'running' || value === 'done' || value === 'skipped' || value === 'failed'
 }
