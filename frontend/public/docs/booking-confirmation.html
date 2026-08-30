@@ -4,35 +4,211 @@
 <meta charset="utf-8">
 <title>Booking Amendment Confirmation — BKG-4471-R2</title>
 <style>
-  body { margin: 0; padding: 28px; background: #e8e4d8; font-family: 'Courier New', ui-monospace, monospace; color: #1c2430; }
-  .sheet { max-width: 720px; margin: 0 auto; background: #fffdf7; border: 1px solid #cfc9b8; box-shadow: 0 10px 30px rgba(10,28,50,.18); padding: 40px 46px; }
-  .carrier { font-family: Arial, sans-serif; font-weight: 900; font-size: 22px; letter-spacing: .04em; }
-  .carrier small { display: block; font-size: 11px; font-weight: 400; color: #6b7280; letter-spacing: .12em; }
-  h1 { font-family: Arial, sans-serif; font-size: 14px; letter-spacing: .2em; margin: 22px 0 16px; border-top: 2px solid #1c2430; border-bottom: 2px solid #1c2430; padding: 8px 0; text-align: center; }
-  .grid { font-size: 13px; line-height: 1.9; }
-  .grid b { display: inline-block; width: 190px; color: #6b7280; font-weight: 400; }
-  .ok { margin-top: 24px; font-family: Arial, sans-serif; font-size: 12px; border: 2px solid #3c6e2f; color: #3c6e2f; display: inline-block; padding: 5px 14px; letter-spacing: .16em; text-transform: uppercase; transform: rotate(-2deg); }
-  .foot { margin-top: 26px; font-size: 11px; color: #6b7280; border-top: 1px solid #ddd6c4; padding-top: 10px; font-family: Arial, sans-serif; }
+  body { margin: 0; padding: 28px 14px; background: #e8e4d8; font-family: 'Courier New', ui-monospace, Consolas, monospace; color: #16202c; font-size: 12px; }
+  .sheet { max-width: 720px; margin: 0 auto 30px; background: #fffdf6; border: 1px solid #cfc9b8; box-shadow: 0 10px 30px rgba(10,28,50,.18); padding: 32px 38px 24px; box-sizing: border-box; }
+  .masthead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 4px solid #16202c; padding-bottom: 10px; }
+  .wordmark { font-family: Arial, Helvetica, sans-serif; }
+  .wordmark .big { font-size: 30px; font-weight: 900; letter-spacing: .1em; line-height: 1; }
+  .wordmark .sub { font-size: 9.5px; letter-spacing: .3em; color: #444d59; margin-top: 3px; }
+  .agency { text-align: right; font-size: 10px; line-height: 1.6; color: #444d59; }
+  .docbar { font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: bold; letter-spacing: .22em; text-align: center; border-bottom: 2px solid #16202c; margin: 14px 0 12px; padding: 7px 0; background: #f0ecdd; border-top: 2px solid #16202c; }
+  .msg { font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
+  h2.sec { font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: .12em; margin: 16px 0 4px; padding: 3px 6px; background: #16202c; color: #fffdf6; display: inline-block; }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.kv td { padding: 2px 6px; vertical-align: top; line-height: 1.5; }
+  table.kv td.k { width: 210px; color: #57606c; white-space: nowrap; }
+  table.kv td.k::after { content: " :"; }
+  table.box { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 2px; }
+  table.box td, table.box th { border: 1px solid #a9a28c; padding: 4px 7px; vertical-align: top; line-height: 1.5; text-align: left; }
+  table.box th { background: #f0ecdd; font-size: 10px; letter-spacing: .06em; }
+  .amend { border: 2px solid #8f2d29; background: #fbf3ee; padding: 8px 12px; margin-top: 6px; font-size: 11.5px; line-height: 1.7; }
+  .amend b { color: #8f2d29; }
+  .strike { text-decoration: line-through; color: #8a8a8a; }
+  .ok { margin-top: 18px; font-family: Arial, sans-serif; font-size: 12px; border: 2px solid #3c6e2f; color: #3c6e2f; display: inline-block; padding: 5px 14px; letter-spacing: .16em; text-transform: uppercase; transform: rotate(-2deg); }
+  .pgfoot { margin-top: 20px; border-top: 1px solid #b9b29d; padding-top: 6px; font-size: 9px; color: #6b7280; display: flex; justify-content: space-between; font-family: Arial, sans-serif; }
+  .fine { font-size: 9px; line-height: 1.55; color: #3a4450; text-align: justify; }
+  .fine p { margin: 0 0 7px; }
+  .fine b { letter-spacing: .04em; }
+  .trailer { margin-top: 16px; font-size: 10px; color: #57606c; white-space: pre-wrap; border-top: 1px dashed #a9a28c; padding-top: 8px; }
 </style>
 </head>
 <body>
+
+<!-- ============================ PAGE 1 / 2 ============================ -->
 <div class="sheet">
-  <div class="carrier">MSC<small>MEDITERRANEAN SHIPPING COMPANY</small></div>
-  <h1>BOOKING AMENDMENT CONFIRMATION</h1>
-  <div class="grid">
-    <div><b>Booking</b>BKG-4471-R2 (amends BKG-4471)</div>
-    <div><b>Shipper</b>Fujian Coastal Furniture Co., Ltd.</div>
-    <div><b>Consignee</b>Mueblerías Berríos — Puerto Rico</div>
-    <div><b>Vessel / Voyage</b>MSC ILONA / FE2440</div>
-    <div><b>Port of Loading</b>Xiamen, CN — ETD 06 Sep 2026</div>
-    <div><b>Port of Discharge</b>San Juan, PR — ETA 03 Oct 2026</div>
-    <div><b>Routing</b>Direct — no transshipment</div>
-    <div><b>Equipment</b>1 × 40'HC as per original booking</div>
-    <div><b>Amendment fee</b>USD 0.00</div>
-    <div><b>Bill of Lading</b>MSCUXM4471R2 — draft issued herewith</div>
+  <div class="masthead">
+    <div class="wordmark">
+      <div class="big">MSC</div>
+      <div class="sub">MEDITERRANEAN SHIPPING COMPANY</div>
+    </div>
+    <div class="agency">
+      Issued by: MSC — XIAMEN BOOKING OFFICE (as agents only)<br>
+      Unit 2101, Intl Shipping Centre, 97 Xiangyu Road, Xiamen, CN<br>
+      Tel +86 592 5606 4400 · css.xia.export@medshipping.example<br>
+      Print date/time: 28-AUG-2026 09:14 (UTC+8)
+    </div>
   </div>
+
+  <div class="docbar">BOOKING AMENDMENT CONFIRMATION — RIDER 2</div>
+
+  <table class="kv">
+    <tr><td class="k">CARRIER BOOKING REF</td><td><b>BKG-4471-R2</b> (amends and supersedes BKG-4471 / R1)</td></tr>
+    <tr><td class="k">BILL OF LADING NO</td><td><b>MSCUXM4471R2</b> — draft issued herewith (3/3 originals on release)</td></tr>
+    <tr><td class="k">CUSTOMER REFERENCE</td><td>OP-4471 · POs 7731 / 7745 / 7752 · Case CS-0830</td></tr>
+    <tr><td class="k">CONTRACT / SVC AGREEMENT</td><td>NAM-CARIB-26-118 (spot rate confirmed)</td></tr>
+    <tr><td class="k">FREIGHT TERMS</td><td>FREIGHT COLLECT — payable at destination by consignee</td></tr>
+    <tr><td class="k">MOVE TYPE</td><td>FCL/FCL · CY/CY · MERCHANT HAULAGE both ends</td></tr>
+  </table>
+
+  <h2 class="sec">PARTIES</h2>
+  <table class="box">
+    <tr>
+      <td style="width:50%"><b>SHIPPER</b><br>
+        FUJIAN COASTAL FURNITURE CO., LTD.<br>
+        NO. 88 HAICANG AVENUE, HAICANG DISTRICT<br>
+        XIAMEN 361026, FUJIAN, P.R. CHINA<br>
+        ATTN: LIN WENJIE / EXPORT DEPT
+      </td>
+      <td><b>CONSIGNEE</b><br>
+        MUEBLERÍAS BERRÍOS, INC.<br>
+        CARR. #2 KM 47.3, BARRIO COTO NORTE<br>
+        MANATÍ, PUERTO RICO 00674, U.S.A.<br>
+        ATTN: IMPORT OPERATIONS — OP-4471
+      </td>
+    </tr>
+    <tr>
+      <td><b>FORWARDER / OPS AGENT</b><br>
+        NAUTA — OPERATIONS DESK<br>
+        SAN JUAN, PUERTO RICO<br>
+        REF: CASE CS-0830
+      </td>
+      <td><b>NOTIFY PARTY</b><br>
+        SAME AS CONSIGNEE<br>
+        AND: NAUTA OPS DESK, SAN JUAN, PR
+      </td>
+    </tr>
+  </table>
+
+  <h2 class="sec">ROUTING &amp; SCHEDULE</h2>
+  <table class="box">
+    <tr><th style="width:210px">SERVICE / STRING</th><td>FAR EAST — CARIBBEAN EXPRESS (FCX)</td></tr>
+    <tr><th>VESSEL / VOYAGE</th><td><b>MSC ILONA / FE2440</b> · IMO 9857169 · FLAG: PANAMA</td></tr>
+    <tr><th>PORT OF LOADING</th><td>XIAMEN, CHINA (CNXMN) — XIAMEN SONGYU CONTAINER TERMINAL, BERTH 5-7</td></tr>
+    <tr><th>PORT OF DISCHARGE</th><td>SAN JUAN, PUERTO RICO (USSJU) — PUERTO NUEVO TERMINAL</td></tr>
+    <tr><th>ETD POL</th><td>06-SEP-2026</td></tr>
+    <tr><th>ETA POD</th><td><b>03-OCT-2026</b> (revised)</td></tr>
+    <tr><th>TRANSIT TIME</th><td>27 DAYS — DIRECT, NO TRANSSHIPMENT</td></tr>
+  </table>
+
+  <div class="amend">
+    <b>AMENDMENT SUMMARY (R2 vs R1):</b><br>
+    1. VESSEL/VOY: <span class="strike">MSC AURORA / FE2431</span> → <b>MSC ILONA / FE2440</b><br>
+    2. ROUTING: <span class="strike">T/S VIA CAUCEDO, DO (DOCAU)</span> → <b>DIRECT SERVICE</b><br>
+    3. ETA SAN JUAN: REVISED TO <b>03-OCT-2026</b><br>
+    4. AMENDMENT FEE: <b>USD 0.00</b> — carrier-initiated schedule change, waived per tariff rule 24(c).<br>
+    All other terms of booking BKG-4471 remain unchanged. B/L MSCUXM4471R2 re-issued to match.
+  </div>
+
+  <h2 class="sec">EQUIPMENT &amp; CARGO</h2>
+  <table class="box">
+    <tr><th style="width:210px">EQUIPMENT</th><td>1 × 40'HC DRY (ISO 45G1) — UNIT: MEDU7734519 / SEAL: CN882417</td></tr>
+    <tr><th>COMMODITY</th><td>NEW WOODEN &amp; UPHOLSTERED FURNITURE (HS 9401.61 / 9403.50 / 9403.60) — NON-HAZ, NO REEFER, NO OOG</td></tr>
+    <tr><th>CARGO WEIGHT / VGM</th><td>GROSS 9,042.50 KGS · VGM 12,792.50 KGS (METHOD 1) · 66.97 CBM · 465 CTNS</td></tr>
+    <tr><th>EMPTY PICK-UP</th><td>SONGYU EMPTY DEPOT, HAICANG — RELEASE REF EPR-XM-26-88417, VALID FROM 01-SEP-2026</td></tr>
+    <tr><th>FULL GATE-IN</th><td>XIAMEN SONGYU CT — GATE OPEN 02-SEP-2026 00:01</td></tr>
+  </table>
+
+  <h2 class="sec">CUT-OFFS (LOCAL TIME, POL)</h2>
+  <table class="box">
+    <tr><th style="width:210px">SI / B-L INSTRUCTIONS</th><td>02-SEP-2026 12:00</td></tr>
+    <tr><th>VGM DECLARATION</th><td>03-SEP-2026 18:00</td></tr>
+    <tr><th>CY / PORT CUT-OFF</th><td>04-SEP-2026 22:00</td></tr>
+    <tr><th>EXPORT CUSTOMS RELEASE</th><td>05-SEP-2026 12:00</td></tr>
+    <tr><th>AMS / ISF (US-BOUND)</th><td>24 HRS PRIOR VESSEL LOADING — FILED AGAINST B/L MSCUXM4471R2</td></tr>
+  </table>
+
+  <h2 class="sec">FREE TIME AT DESTINATION</h2>
+  <table class="kv">
+    <tr><td class="k">DEMURRAGE (PORT)</td><td>7 CALENDAR DAYS FROM VESSEL DISCHARGE, THEN PER LOCAL TARIFF</td></tr>
+    <tr><td class="k">DETENTION (EQUIPMENT)</td><td>5 CALENDAR DAYS FROM GATE-OUT FULL, THEN PER LOCAL TARIFF</td></tr>
+    <tr><td class="k">EMPTY RETURN</td><td>PUERTO NUEVO TERMINAL — SAN JUAN, PR, PER RETURN INSTRUCTIONS AT RELEASE</td></tr>
+  </table>
+
   <div class="ok">Space &amp; Equipment Confirmed</div>
-  <div class="foot">Ref case CS-0830 · Operation OP-4471 · This confirmation supersedes the sailing of MSC AURORA FE2431 via Caucedo.</div>
+
+  <div class="pgfoot">
+    <span>BKG-4471-R2 · MSC ILONA FE2440 · CNXMN → USSJU</span>
+    <span>Page 1 of 2</span>
+  </div>
 </div>
+
+<!-- ============================ PAGE 2 / 2 ============================ -->
+<div class="sheet">
+  <div class="docbar" style="margin-top:0">STANDARD TERMS, NOTICES &amp; CONDITIONS</div>
+
+  <div class="fine">
+    <p><b>1. CONTRACT OF CARRIAGE.</b> This booking confirmation is not a document of title. Receipt,
+    carriage and delivery of the goods are subject in all respects to the terms and conditions of the
+    carrier's standard bill of lading (terms available from any office or agent of the carrier upon
+    request), which are incorporated herein by reference, including the law and jurisdiction clause
+    therein. In accepting this confirmation the merchant accepts said terms for itself and on behalf of
+    the shipper, consignee and owner of the goods.</p>
+
+    <p><b>2. AGENCY.</b> This document is issued by the local booking office acting solely as agent of the
+    carrier. No independent liability attaches to the agent.</p>
+
+    <p><b>3. SCHEDULE.</b> Vessel names, voyage numbers, ETAs, ETDs, routings and transshipments are given
+    as estimates only, without guarantee, and are subject to change with or without notice. The carrier
+    reserves the right to substitute vessels, alter advertised routings, and discharge at alternative
+    ports where circumstances so require, in accordance with the bill of lading terms. Arrival dates are
+    not guaranteed and the carrier accepts no liability for loss or damage arising from delay.</p>
+
+    <p><b>4. VGM (SOLAS VI/2).</b> No container shall be loaded unless a verified gross mass has been
+    received by the carrier prior to the published VGM cut-off. Containers presented without compliant
+    VGM will be short-shipped at merchant's risk and expense. The VGM stated overleaf was declared by the
+    shipper under Method 1.</p>
+
+    <p><b>5. CUT-OFFS.</b> Shipping instructions, VGM declarations and gate-in of laden units after the
+    published cut-offs may result in the unit being rolled to the next available sailing. Amendment and
+    late-SI fees apply per local tariff except where waived in writing.</p>
+
+    <p><b>6. US CUSTOMS ADVANCE FILING.</b> For cargo destined to the United States (incl. Puerto Rico),
+    cargo declaration data is transmitted under the 24-hour advance manifest rule (AMS). The importer is
+    responsible for timely Importer Security Filing (ISF "10+2"). Penalties arising from late or
+    inaccurate filings are for the account of the party at fault.</p>
+
+    <p><b>7. DESCRIPTION &amp; MISDECLARATION.</b> Particulars of goods, weights and measurements are
+    furnished by the merchant. The carrier is entitled to verify contents and weight; misdeclared cargo
+    (including undeclared dangerous goods per IMDG Code) will incur re-handling costs, fines and
+    liquidated damages per tariff, without prejudice to any other remedy.</p>
+
+    <p><b>8. DEMURRAGE, DETENTION &amp; STORAGE.</b> Free time is granted as stated overleaf and runs
+    irrespective of weekends and holidays unless local tariff provides otherwise. Charges accruing beyond
+    free time are payable by the merchant per the applicable local tariff in force at the time of carriage,
+    published and available on request.</p>
+
+    <p><b>9. INSURANCE.</b> Ocean carriage does not include cargo insurance. Merchants are advised to
+    procure marine cargo insurance for the full value of the goods.</p>
+
+    <p><b>10. DATA NOTICE.</b> Booking data is processed for operational, security and statutory reporting
+    purposes and may be transmitted to port, customs and security authorities on the routing.</p>
+  </div>
+
+  <div class="trailer">--- EDI ACK ---------------------------------------------------
+MSGTYPE : IFTMBC (BOOKING CONFIRMATION) · EDIFACT D.00B
+MSGFUNC : 5 (REPLACE)              RIDER : R2
+SENDER  : CARRIER-XIA-EXP          RCVR  : NAUTA-OPS-SJU
+BKG     : BKG-4471-R2              BL    : MSCUXM4471R2
+VSL/VOY : MSC ILONA / FE2440       ROUTE : CNXMN > USSJU (DIRECT)
+EQD     : 1 X 45G1 MEDU7734519     ETA   : 2026-10-03
+CTRL REF: OP-4471 / CS-0830        ACK   : ACCEPTED 28-AUG-2026 09:14
+--- END OF MESSAGE --------------------------------------------</div>
+
+  <div class="pgfoot">
+    <span>Ref case CS-0830 · Operation OP-4471 · Supersedes sailing MSC AURORA FE2431 via Caucedo</span>
+    <span>Page 2 of 2</span>
+  </div>
+</div>
+
 </body>
 </html>
