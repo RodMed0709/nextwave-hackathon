@@ -298,25 +298,27 @@ emit("artifact_added", {
     "message_id": "MSG-OP4471-2190",
     "name": "Email to the boss — OP-4471 root cause",
     "text_content": (
-        "To: director@berriosdist.pr\n"
+        "To: operations.director@muebleriasberrios.pr\n"
         "From: rex@ops.nauta.ai\n"
         "Date: 29 Aug 2026 05:21 UTC\n"
         "Subject: OP-4471 — why MSC changed the vessel\n\n"
-        "MSC pulled our assigned vessel (MSC AURORA) off OP-4471 and moved it to "
-        "another service loop — a routine network reshuffle on their side, not a "
-        "disruption and nothing caused by us.\n"
-        "Their fallback sailing would land the goods 10 days late, putting one "
-        "committed store delivery at risk.\n"
-        "We are pricing alternatives now; the leading option is a direct sailing "
-        "arriving Oct 3 at no extra cost.\n"
-        "The decision goes to the on-call operator shortly; the client will be "
-        "notified once the routing is locked.\n\n"
-        "Rex — Root Cause, Nauta (for Mueblerías Berríos)"
+        "Dear Operations Director,\n\n"
+        "Please be advised that MSC has withdrawn our assigned vessel (MSC "
+        "AURORA) from OP-4471 as part of a network reshuffle on the carrier's "
+        "side; the change was not caused by any action on our part.\n\n"
+        "The carrier's fallback sailing would deliver the goods ten days late "
+        "and would place one committed store delivery at risk. We are pricing "
+        "alternatives as we write; the leading option is a direct sailing "
+        "arriving Oct 3 at no additional cost.\n\n"
+        "The decision will be presented to the on-call operator shortly, and "
+        "the client will be notified once the routing is confirmed.\n\n"
+        "Respectfully,\n"
+        "Rex — Root Cause Analysis, Nauta (for Mueblerías Berríos)"
     ),
 }, node_key="brief_boss_email", agent="Rex", advance=2.2)
 
 done("quantify_impact",
-     "10-day slip on the fallback, 3 POs hit, 1 committed delivery at risk",
+     "10-day slip — Oct 10 delivery at risk",
      "The carrier's fallback slips the ETA 10 days (Sep 27 to Oct 7), past "
      "the 5-day gate threshold. Three POs ride on the booking: PO-7731 feeds "
      "a committed store delivery on Oct 10 that an Oct 7 arrival would miss "
@@ -428,15 +430,17 @@ emit("artifact_added", {
         "From: lex@ops.nauta.ai\n"
         "Date: 29 Aug 2026 05:21 UTC\n"
         "Subject: OP-4471 re-routed — new ETA San Juan Oct 3, no action needed\n\n"
-        "Hi team,\n\n"
-        "MSC pulled the vessel assigned to OP-4471. We already re-booked the "
-        "container onto MSC ILONA FE2440, sailing direct to San Juan, at no "
-        "extra cost. The new ETA is Oct 3.\n\n"
-        "Your committed Oct 10 delivery on PO-7731 still holds, and PO-7745 "
-        "and PO-7752 are unaffected. The confirmed booking BKG-4471-R2 and "
-        "the draft BL are attached.\n\n"
-        "Nothing is needed from your side — just reply if you would like to "
-        "see the alternatives we considered.\n\n"
+        "Dear Berríos Imports Team,\n\n"
+        "Please be advised that MSC withdrew the vessel assigned to OP-4471. "
+        "We have already re-booked the container onto MSC ILONA FE2440, "
+        "sailing direct to San Juan at no additional cost; the new ETA is "
+        "Oct 3.\n\n"
+        "Your committed delivery of Oct 10 on PO-7731 remains protected, and "
+        "PO-7745 and PO-7752 are unaffected. The confirmed booking BKG-4471-R2 "
+        "and the draft Bill of Lading are attached for your records.\n\n"
+        "No action is required on your side. Should you wish to review the "
+        "alternatives we considered, we remain at your disposal.\n\n"
+        "Kind regards,\n"
         "Lex — Expedite Communication, Nauta\n"
         "Ref: BKG-4471-R2 · case CS-0830"
     ),
@@ -517,7 +521,7 @@ assert sum(e["event_type"] == "intervention_resolved" for e in lines) == 1, "exp
 artifacts = [e for e in lines if e["event_type"] == "artifact_added"]
 assert len(artifacts) == 3, "expected 3 artifacts"
 boss = artifacts[0]["payload"]["text_content"]
-for token in ("director@berriosdist.pr", "rex@ops.nauta.ai",
+for token in ("operations.director@muebleriasberrios.pr", "rex@ops.nauta.ai",
               "why MSC changed the vessel", "MSC AURORA", "Oct 3"):
     assert token in boss, f"boss email missing {token}"
 email = artifacts[1]["payload"]["text_content"]

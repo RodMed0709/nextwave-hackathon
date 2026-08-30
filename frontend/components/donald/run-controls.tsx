@@ -1,13 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Maximize2, Minus, Pause, Plus, Share2, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+import { Pause, Share2, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 
 type RunControlsProps = {
   onAdjust: () => void
-  onFit: () => void
-  onZoomIn: () => void
-  onZoomOut: () => void
   /** Pause/resume is shown only when the runtime can safely support it. */
   canPause?: boolean
   paused?: boolean
@@ -75,9 +72,6 @@ async function copyCurrentUrl() {
 
 export function RunControls({
   onAdjust,
-  onFit,
-  onZoomIn,
-  onZoomOut,
   canPause = false,
   paused = false,
   onPause,
@@ -121,10 +115,9 @@ export function RunControls({
       title: canPause ? (paused ? 'Resume the run' : 'Pause the run') : 'Runtime pause is not available for this run',
       onClick: () => onPause?.(),
     },
+    // Zoom and fit earned their keep when the graph was hand-navigated; with
+    // the camera following the run they were three buttons of noise.
     { id: 'share', label: shareState === 'copied' ? 'Copied' : 'Share', icon: Share2, onClick: handleShare },
-    { id: 'zoom-out', label: 'Zoom out', icon: Minus, onClick: onZoomOut },
-    { id: 'zoom-in', label: 'Zoom in', icon: Plus, onClick: onZoomIn },
-    { id: 'fit', label: 'Fit', icon: Maximize2, title: 'Fit the whole graph and follow it again', onClick: onFit },
   ]
 
   return (

@@ -870,6 +870,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   line-height: 1.4;
 }
 .read-email.view-map { border-color: #6f8fb5; background: #eef2f6; color: #2c5e8a; margin-left: 8px; }
+.read-email.view-doc { border-color: #6f8fb5; background: #eef2f6; color: #2c5e8a; }
+.doc-popup-frame { width: 100%; height: min(72vh, 640px); border: 0; background: #e8e4d8; }
 .start-case-shell textarea {
   padding: 14px 16px;
   border: 1px solid #24486e;

@@ -1026,9 +1026,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [paused, setPaused] = useState(false)
   const [emailPopupKey, setEmailPopupKey] = useState<string | null>(null)
   const [mapPopup, setMapPopup] = useState<MapPopupData | null>(null)
-  // A document generated on the fly ("open the invoice we received") — shown
-  // in the same viewer without needing a card to hang off.
-  const [docPopup, setDocPopup] = useState<{ name: string; body: string } | null>(null)
+  // A document opened on demand ("open the invoice we received"): a paper
+  // template when we have one for the type, otherwise the director's text.
+  const [docPopup, setDocPopup] = useState<{ name: string; body?: string; url?: string } | null>(null)
   // Route data for synthesised cases, keyed by their node-key prefix, so the
   // map button on those cards shows THEIR voyage rather than the main one.
   const syntheticRoutesRef = useRef<Record<string, MapPopupData>>({})
@@ -1439,14 +1439,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     }
   }, [activeStageId, stageSummaries, zoomStageToFit])
 
-  const changeZoom = useCallback((direction: 'in' | 'out') => {
-    setViewportPinned(true)
-    for (const instance of Object.values(flowInstances)) {
-      if (!instance) continue
-      if (direction === 'in') void instance.zoomIn({ duration: 0 })
-      else void instance.zoomOut({ duration: 0 })
-    }
-  }, [flowInstances])
 
   /**
    * The camera follows the EXTENT of the graph, quantised.
@@ -1813,13 +1805,20 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       // Fall through to the keyword heuristics.
     }
 
-    if (interpreted?.intent === 'show_document' && interpreted.document?.body) {
+    if (interpreted?.intent === 'show_document' || (!interpreted && /\b(open|show|read|see)\b.*\b(invoice|booking|document|pdf|confirmation)\b/i.test(instruction))) {
       // "Open the invoice we received" is a question too: show the document,
-      // freshly written by the director, queue nothing.
-      setDocPopup({
-        name: interpreted.document.name ?? 'Document',
-        body: interpreted.document.body,
-      })
+      // queue nothing. Known types open their paper template; anything else
+      // shows the director's freshly written text.
+      const wanted = `${interpreted?.document?.name ?? ''} ${instruction}`.toLowerCase()
+      const template = /invoice/.test(wanted)
+        ? { name: 'Commercial Invoice — INV-2026-0841', url: '/docs/commercial-invoice.html' }
+        : /booking|confirmation/.test(wanted)
+          ? { name: 'Booking Amendment Confirmation — BKG-4471-R2', url: '/docs/booking-confirmation.html' }
+          : null
+      if (template) setDocPopup(template)
+      else if (interpreted?.document?.body) {
+        setDocPopup({ name: interpreted.document.name ?? 'Document', body: interpreted.document.body })
+      }
       return
     }
 
@@ -1997,7 +1996,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               </div>
               <button aria-label="Close document" onClick={() => setDocPopup(null)} type="button"><X size={16} /></button>
             </header>
-            <div className="email-popup-body">{docPopup.body}</div>
+            {docPopup.url
+              ? <iframe className="doc-popup-frame" src={docPopup.url} title={docPopup.name} />
+              : <div className="email-popup-body">{docPopup.body}</div>}
           </article>
         </div>
       )}
@@ -2008,10 +2009,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         <RunControls
           canPause
           onAdjust={adjust}
-          onFit={() => { setViewportPinned(false); zoomToFit() }}
           onPause={togglePause}
-          onZoomIn={() => changeZoom('in')}
-          onZoomOut={() => changeZoom('out')}
           paused={paused}
         />
         <PromptBar

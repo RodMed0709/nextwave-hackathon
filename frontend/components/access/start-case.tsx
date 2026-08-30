@@ -9,9 +9,15 @@ const RUN_KEY = 'berrios-op4471'
 const CLIENT_NAME = 'Mueblerías Berríos — Puerto Rico'
 
 const STANDING_PROMPT =
-  'Watch every operation on our book, around the clock. If a carrier changes a vessel, ' +
-  'routing or ETA, find out why, measure what it costs us, and bring me the decision only ' +
-  'when a committed delivery is at risk. Then handle the communication yourself.'
+  'We are Mueblerías Berríos, a furniture retailer in Puerto Rico. We import from Asia ' +
+  'through MSC and other carriers, and at any moment we have dozens of operations on the ' +
+  'water, several of them feeding committed store deliveries.\n\n' +
+  'Watch every one of them, around the clock. When a carrier changes a vessel, a routing ' +
+  'or an ETA, find out why it happened, check it against our original booking, and measure ' +
+  'what it costs us in days and dollars. Solve what can be solved without us — and bring ' +
+  'us the decision only when money or a committed delivery is at risk.\n\n' +
+  'Handle the communication yourself: keep our operations director briefed and update the ' +
+  'client the moment a routing is confirmed.'
 
 /**
  * The second screen of the demo flow: who the client is and what they asked
@@ -39,7 +45,7 @@ export function StartCase() {
         <textarea
           aria-label="Standing request to Nauta"
           onChange={(event) => setPrompt(event.target.value)}
-          rows={4}
+          rows={11}
           value={prompt}
         />
         <p className="start-case-bridge">

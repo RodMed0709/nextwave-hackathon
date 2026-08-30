@@ -12,30 +12,31 @@ import type { RunNode } from '@/lib/donald/types'
  * event log), which also means it keeps breathing on a finished recording —
  * which is the true story: the watch outlives the case.
  */
+/**
+ * Three believable lines of watch-work, not a slot machine. Each row is one
+ * concrete thing the watch does for THIS case, ticking at the pace real feed
+ * traffic actually moves — a message every several seconds, a counter that
+ * only grows when something genuinely arrived.
+ */
 const ACTIVITY: readonly (readonly string[])[] = [
   [
-    'Carrier feed update received',
-    'Booking confirmation parsed',
-    'BL draft stored',
-    'Schedule notice read',
-    'Terminal update ingested',
+    'MSC feed: schedule bulletin read',
+    'Booking BKG-4471-R2 on file',
+    'MSC feed: no new notices',
   ],
   [
     'Update matched to OP-4471',
-    'Duplicate notice discarded',
-    'New document linked to its operation',
-    'Sender identified — MSC',
+    'Nothing waiting in the queue',
   ],
   [
-    'Schedule picture refreshed',
-    'ETA watch: no drift',
-    'Milestones on track',
-    'Container status confirmed',
+    'ETA Oct 3 — holding',
+    'PO-7731 committed date watched',
+    'No drift on the lane',
   ],
 ]
 
 const BASE_COUNTS = [38, 24, 51]
-const TICK_MS = 2_400
+const TICK_MS = 4_600
 
 export function AmbientStrip({ nodes }: { nodes: RunNode[] }) {
   const [tick, setTick] = useState(0)
@@ -48,10 +49,11 @@ export function AmbientStrip({ nodes }: { nodes: RunNode[] }) {
   return (
     <div className="ambient-strip">
       <div className="ambient-items">
-        {nodes.map((node, index) => {
+        {nodes.slice(0, 3).map((node, index) => {
           const feed = ACTIVITY[index % ACTIVITY.length]
           const message = feed[tick % feed.length]
-          const count = BASE_COUNTS[index % BASE_COUNTS.length] + tick
+          // A counter that only moves when a "new item" plausibly landed.
+          const count = BASE_COUNTS[index % BASE_COUNTS.length] + Math.floor(tick / feed.length)
           return (
             <div className="ambient-item" key={node.node_key} title={node.output_summary?.detail ?? undefined}>
               <span className="ambient-loop" aria-hidden="true" />
