@@ -41,8 +41,13 @@ import {
 } from '@xyflow/react'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
 import {
+  FIT_PADDING,
+  getFitViewport,
   getLayoutBounds,
+  getVisibleNodeViewport,
   layoutGraph,
+  MAX_FIT_ZOOM,
+  MIN_FIT_ZOOM,
   type LayoutPosition,
   type NodeSize,
 } from '@/lib/donald/layout'
@@ -117,7 +122,7 @@ type FlowNodeData = {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_DONALD_API ?? null
-const COLLAPSED_SIZE: NodeSize = { width: 300, height: 190 }
+const COLLAPSED_SIZE: NodeSize = { width: 380, height: 230 }
 // A replay is compressed to about this long, whatever the run really took, with
 // every gap kept proportional inside it.
 const REPLAY_TARGET_MS = 45_000
@@ -129,15 +134,12 @@ const REPLAY_MIN_GAP_MS = 250
 const REPLAY_MAX_GAP_MS = 1_600
 // How coarsely the graph's extent is measured before the camera reacts to it.
 // One card width: smaller than a new column, larger than any text reflow.
-const VIEWPORT_QUANTUM = 300
-// Kept in step with .node-drawer in globals.css: the camera treats the drawer as
-// part of the right margin so a selected card never hides behind it.
+const VIEWPORT_QUANTUM = 380
+// Fallback matching .node-drawer while it mounts. The rendered width is measured
+// before moving the camera because the drawer becomes full-width on small screens.
 const DRAWER_WIDTH = 430
 // Framing: a little breathing room, and a zoom ceiling so a one-node run does
 // not open magnified to fill the screen and then crawl back out as work arrives.
-const FIT_PADDING = 0.14
-const MAX_FIT_ZOOM = 1.15
-const MIN_FIT_ZOOM = 0.18
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
@@ -1111,21 +1113,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     const { width, height } = container.getBoundingClientRect()
     if (width === 0 || height === 0) return
 
-    const zoom = Math.min(
-      Math.max(
-        Math.min(
-          (width * (1 - FIT_PADDING)) / Math.max(1, bounds.width),
-          (height * (1 - FIT_PADDING)) / Math.max(1, bounds.height),
-        ),
-        MIN_FIT_ZOOM,
-      ),
-      MAX_FIT_ZOOM,
-    )
-    moveCamera(flowInstance, container, {
-      x: width / 2 - (bounds.x + bounds.width / 2) * zoom,
-      y: height / 2 - (bounds.y + bounds.height / 2) * zoom,
-      zoom,
-    })
+    moveCamera(flowInstance, container, getFitViewport(bounds, { width, height }))
   }, [flowInstance, layout, nodeSizes])
 
   /**
@@ -1191,14 +1179,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [flowInstance])
 
   /**
-   * Keep the selected card clear of the drawer, WITHOUT changing the zoom.
+   * Keep the selected card clear of the drawer.
    *
    * The drawer covers the right-hand strip of the canvas, so selecting a card
    * that sits under it would hide the very thing being described. This pans by
-   * the minimum needed, treating the drawer as part of the right margin, and
-   * leaves the zoom exactly where the person set it. A card already fully
-   * visible causes no movement at all — the obvious alternative, fitting the
-   * card, is what made this feel broken in the first place.
+   * the minimum needed, treating the drawer as part of the right margin. It
+   * preserves the person's zoom unless the card is physically wider or taller
+   * than the available area; only then does it zoom out enough to fit. A card
+   * already fully visible causes no movement at all.
    */
   useEffect(() => {
     if (!flowInstance || !expandedKey) return
@@ -1207,25 +1195,24 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     const container = canvasRef.current
     if (!position || !size || !container) return
 
-    const { x, y, zoom } = flowInstance.getViewport()
+    const viewport = flowInstance.getViewport()
     const { width, height } = container.getBoundingClientRect()
+    const drawerWidth = container.querySelector<HTMLElement>('.node-drawer')
+      ?.getBoundingClientRect().width ?? DRAWER_WIDTH
     const margin = 24
-    const rightMargin = margin + DRAWER_WIDTH
+    const next = getVisibleNodeViewport(position, size, viewport, { width, height }, {
+      top: margin,
+      right: margin + drawerWidth,
+      bottom: margin,
+      left: margin,
+    })
 
-    const left = position.x * zoom + x
-    const top = position.y * zoom + y
-    const right = left + size.width * zoom
-    const bottom = top + size.height * zoom
-
-    let nextX = x
-    let nextY = y
-    if (right > width - rightMargin) nextX -= right - (width - rightMargin)
-    if (left + (nextX - x) < margin) nextX += margin - (left + (nextX - x))
-    if (bottom > height - margin) nextY -= bottom - (height - margin)
-    if (top + (nextY - y) < margin) nextY += margin - (top + (nextY - y))
-
-    if (Math.abs(nextX - x) < 1 && Math.abs(nextY - y) < 1) return
-    moveCamera(flowInstance, container, { x: nextX, y: nextY, zoom })
+    if (
+      Math.abs(next.x - viewport.x) < 1 &&
+      Math.abs(next.y - viewport.y) < 1 &&
+      Math.abs(next.zoom - viewport.zoom) < 0.001
+    ) return
+    moveCamera(flowInstance, container, next)
   }, [expandedKey, flowInstance, layout, nodeSizes])
 
   /**
@@ -1360,8 +1347,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           edges={visualEdges}
           edgeTypes={edgeTypes}
           fitView
-          fitViewOptions={{ padding: 0.16, maxZoom: 1.25 }}
-          minZoom={0.18}
+          fitViewOptions={{ padding: FIT_PADDING, maxZoom: MAX_FIT_ZOOM }}
+          minZoom={MIN_FIT_ZOOM}
           nodeTypes={nodeTypes}
           nodes={visualNodes}
           nodesConnectable={false}

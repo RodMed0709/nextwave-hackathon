@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CARD_GAP, getLayoutBounds, layoutGraph } from '../../lib/donald/layout'
+import { CARD_GAP, getFitViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -46,6 +46,8 @@ test('layoutGraph derives columns from longest-path depth', () => {
 
   assert.ok(positions.root.x < positions.child.x)
   assert.ok(positions.child.x < positions.leaf.x)
+  assert.equal(positions.child.x - positions.root.x, 464)
+  assert.equal(positions.leaf.x - positions.child.x, 464)
   assert.equal(positions.root.depth, 0)
   assert.equal(positions.leaf.depth, 2)
 })
@@ -63,6 +65,8 @@ test('siblings recenter when nodes appear and close the gap after removal', () =
   assert.notEqual(after.alpha.y, before.alpha.y)
   assert.notEqual(after.beta.y, before.beta.y)
   assert.ok(after.gamma)
+  assert.equal(after.beta.y - after.alpha.y, 290)
+  assert.equal(after.gamma.y - after.beta.y, 290)
   assert.equal((after.alpha.y + after.beta.y + after.gamma.y) / 3, 280)
 
   const closed = layoutGraph(
@@ -77,10 +81,10 @@ test('siblings recenter when nodes appear and close the gap after removal', () =
 test('getLayoutBounds covers every authored-by-layout node card', () => {
   const bounds = getLayoutBounds({
     alpha: { x: 48, y: 100, depth: 0 },
-    beta: { x: 388, y: 330, depth: 1 },
+    beta: { x: 512, y: 330, depth: 1 },
   })
 
-  assert.deepEqual(bounds, { x: 48, y: 100, width: 612, height: 430 })
+  assert.deepEqual(bounds, { x: 48, y: 100, width: 844, height: 460 })
 })
 
 test('layoutGraph leaves a minimum gap around an expanded card', () => {
@@ -99,16 +103,16 @@ test('layoutGraph leaves a minimum gap around an expanded card', () => {
     },
     {},
     {
-      root: { width: 300, height: 176 },
-      alpha: { width: 430, height: 510 },
-      beta: { width: 300, height: 176 },
-      leaf: { width: 300, height: 176 },
+      root: { width: 380, height: 230 },
+      alpha: { width: 540, height: 640 },
+      beta: { width: 380, height: 230 },
+      leaf: { width: 380, height: 230 },
     },
   )
 
-  assert.ok(positions.alpha.y + 510 + CARD_GAP <= positions.beta.y)
-  assert.ok(positions.root.x + 300 + CARD_GAP <= positions.alpha.x)
-  assert.ok(positions.alpha.x + 430 + CARD_GAP <= positions.leaf.x)
+  assert.ok(positions.alpha.y + 640 + CARD_GAP <= positions.beta.y)
+  assert.ok(positions.root.x + 380 + CARD_GAP <= positions.alpha.x)
+  assert.ok(positions.alpha.x + 540 + CARD_GAP <= positions.leaf.x)
 })
 
 test('removed nodes retain their graph depth and participate in packing', () => {
@@ -119,15 +123,15 @@ test('removed nodes retain their graph depth and participate in packing', () => 
     { replacement: edge('replacement', 'root', 'replacement') },
     { removed: { x: 388, y: 280, depth: 1 } },
     {
-      root: { width: 300, height: 176 },
-      removed: { width: 300, height: 260 },
-      replacement: { width: 300, height: 176 },
+      root: { width: 380, height: 230 },
+      removed: { width: 380, height: 330 },
+      replacement: { width: 380, height: 230 },
     },
   )
 
   assert.equal(positions.removed.depth, 1)
   assert.equal(positions.replacement.depth, 1)
-  assert.ok(positions.removed.y + 260 + CARD_GAP <= positions.replacement.y)
+  assert.ok(positions.removed.y + 330 + CARD_GAP <= positions.replacement.y)
 })
 
 test('getLayoutBounds uses the rendered size of each card', () => {
@@ -143,4 +147,51 @@ test('getLayoutBounds uses the rendered size of each card', () => {
   )
 
   assert.deepEqual(bounds, { x: 48, y: 100, width: 802, height: 630 })
+})
+
+test('getFitViewport uses eight percent total breathing room', () => {
+  const viewport = getFitViewport(
+    { x: 0, y: 0, width: 1_000, height: 500 },
+    { width: 1_000, height: 600 },
+  )
+
+  assert.deepEqual(viewport, { x: 40, y: 70, zoom: 0.92 })
+})
+
+test('getFitViewport caps a small graph at 1.35x', () => {
+  const viewport = getFitViewport(
+    { x: 0, y: 0, width: 380, height: 230 },
+    { width: 1_200, height: 800 },
+  )
+
+  assert.deepEqual(viewport, { x: 343.5, y: 244.75, zoom: 1.35 })
+})
+
+test('getVisibleNodeViewport reduces zoom when the drawer leaves too little room', () => {
+  const viewport = getVisibleNodeViewport(
+    { x: 100, y: 100 },
+    { width: 380, height: 230 },
+    { x: -111, y: 20, zoom: 1.35 },
+    { width: 960, height: 600 },
+    { top: 24, right: 454, bottom: 24, left: 24 },
+  )
+  const left = 100 * viewport.zoom + viewport.x
+  const right = left + 380 * viewport.zoom
+
+  assert.ok(Math.abs(viewport.zoom - 482 / 380) < 1e-12)
+  assert.ok(Math.abs(left - 24) < 1e-9)
+  assert.ok(Math.abs(right - 506) < 1e-9)
+})
+
+test('getVisibleNodeViewport preserves the camera when the drawer covers the viewport', () => {
+  const current = { x: -111, y: 20, zoom: 1.35 }
+  const viewport = getVisibleNodeViewport(
+    { x: 100, y: 100 },
+    { width: 380, height: 230 },
+    current,
+    { width: 390, height: 600 },
+    { top: 24, right: 414, bottom: 24, left: 24 },
+  )
+
+  assert.deepEqual(viewport, current)
 })
