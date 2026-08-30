@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CARD_GAP, getFitViewport, getLayoutBounds, layoutGraph } from '../../lib/donald/layout'
+import { CARD_GAP, getFitViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -165,4 +165,20 @@ test('getFitViewport caps a small graph at 1.35x', () => {
   )
 
   assert.deepEqual(viewport, { x: 343.5, y: 244.75, zoom: 1.35 })
+})
+
+test('getVisibleNodeViewport reduces zoom when the drawer leaves too little room', () => {
+  const viewport = getVisibleNodeViewport(
+    { x: 100, y: 100 },
+    { width: 380, height: 230 },
+    { x: -111, y: 20, zoom: 1.35 },
+    { width: 960, height: 600 },
+    { top: 24, right: 454, bottom: 24, left: 24 },
+  )
+  const left = 100 * viewport.zoom + viewport.x
+  const right = left + 380 * viewport.zoom
+
+  assert.ok(Math.abs(viewport.zoom - 482 / 380) < 1e-12)
+  assert.ok(Math.abs(left - 24) < 1e-9)
+  assert.ok(Math.abs(right - 506) < 1e-9)
 })

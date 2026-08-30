@@ -3,6 +3,8 @@ import type { RunEdge, RunNode } from './types'
 export type LayoutPosition = { x: number; y: number; depth: number }
 export type LayoutBounds = { x: number; y: number; width: number; height: number }
 export type NodeSize = { width: number; height: number }
+export type ViewportTransform = { x: number; y: number; zoom: number }
+export type ViewportInsets = { top: number; right: number; bottom: number; left: number }
 
 const COLUMN_GAP = 84
 const ORIGIN_X = 48
@@ -10,8 +12,8 @@ const ORIGIN_Y = 280
 export const NODE_WIDTH = 380
 export const NODE_HEIGHT = 230
 export const CARD_GAP = 60
-const FIT_PADDING = 0.08
-const MAX_FIT_ZOOM = 1.35
+export const FIT_PADDING = 0.08
+export const MAX_FIT_ZOOM = 1.35
 export const MIN_FIT_ZOOM = 0.18
 
 function sizeFor(key: string, sizes: Record<string, NodeSize>): NodeSize {
@@ -47,6 +49,45 @@ export function getFitViewport(bounds: LayoutBounds, viewport: NodeSize) {
     y: viewport.height / 2 - (bounds.y + bounds.height / 2) * zoom,
     zoom,
   }
+}
+
+export function getVisibleNodeViewport(
+  position: Pick<LayoutPosition, 'x' | 'y'>,
+  size: NodeSize,
+  viewport: ViewportTransform,
+  container: NodeSize,
+  insets: ViewportInsets,
+): ViewportTransform {
+  const availableWidth = Math.max(1, container.width - insets.left - insets.right)
+  const availableHeight = Math.max(1, container.height - insets.top - insets.bottom)
+  const zoom = Math.min(
+    viewport.zoom,
+    availableWidth / Math.max(1, size.width),
+    availableHeight / Math.max(1, size.height),
+  )
+  const centerX = position.x + size.width / 2
+  const centerY = position.y + size.height / 2
+  let x = centerX * viewport.zoom + viewport.x - centerX * zoom
+  let y = centerY * viewport.zoom + viewport.y - centerY * zoom
+  let left = position.x * zoom + x
+  let top = position.y * zoom + y
+  const right = left + size.width * zoom
+  const bottom = top + size.height * zoom
+
+  if (right > container.width - insets.right) {
+    const shift = right - (container.width - insets.right)
+    x -= shift
+    left -= shift
+  }
+  if (left < insets.left) x += insets.left - left
+  if (bottom > container.height - insets.bottom) {
+    const shift = bottom - (container.height - insets.bottom)
+    y -= shift
+    top -= shift
+  }
+  if (top < insets.top) y += insets.top - top
+
+  return { x, y, zoom }
 }
 
 export function layoutGraph(

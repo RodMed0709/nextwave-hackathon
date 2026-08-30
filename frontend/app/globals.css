@@ -331,8 +331,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .subtask-more { padding-left: 21px; color: #6b7680; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
 .flow-card .subtask-more { padding-left: 26px; font-size: 11px; }
 .card-artifact { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 10px; border: 1px solid #d4cec0; border-radius: 8px; background: #e9e5db; color: #3a5268; font-size: 11px; font-weight: 700; }
-.card-artifact svg { width: 15px; height: 15px; }
-.card-artifact svg { flex: none; }
+.card-artifact svg { width: 15px; height: 15px; flex: none; }
 .card-artifact span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expand-hint { display: block; margin-top: 16px; color: #7b858c; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 

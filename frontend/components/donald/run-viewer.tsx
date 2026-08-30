@@ -41,9 +41,12 @@ import {
 } from '@xyflow/react'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
 import {
+  FIT_PADDING,
   getFitViewport,
   getLayoutBounds,
+  getVisibleNodeViewport,
   layoutGraph,
+  MAX_FIT_ZOOM,
   MIN_FIT_ZOOM,
   type LayoutPosition,
   type NodeSize,
@@ -1176,14 +1179,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [flowInstance])
 
   /**
-   * Keep the selected card clear of the drawer, WITHOUT changing the zoom.
+   * Keep the selected card clear of the drawer.
    *
    * The drawer covers the right-hand strip of the canvas, so selecting a card
    * that sits under it would hide the very thing being described. This pans by
-   * the minimum needed, treating the drawer as part of the right margin, and
-   * leaves the zoom exactly where the person set it. A card already fully
-   * visible causes no movement at all — the obvious alternative, fitting the
-   * card, is what made this feel broken in the first place.
+   * the minimum needed, treating the drawer as part of the right margin. It
+   * preserves the person's zoom unless the card is physically wider or taller
+   * than the available area; only then does it zoom out enough to fit. A card
+   * already fully visible causes no movement at all.
    */
   useEffect(() => {
     if (!flowInstance || !expandedKey) return
@@ -1192,25 +1195,22 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     const container = canvasRef.current
     if (!position || !size || !container) return
 
-    const { x, y, zoom } = flowInstance.getViewport()
+    const viewport = flowInstance.getViewport()
     const { width, height } = container.getBoundingClientRect()
     const margin = 24
-    const rightMargin = margin + DRAWER_WIDTH
+    const next = getVisibleNodeViewport(position, size, viewport, { width, height }, {
+      top: margin,
+      right: margin + DRAWER_WIDTH,
+      bottom: margin,
+      left: margin,
+    })
 
-    const left = position.x * zoom + x
-    const top = position.y * zoom + y
-    const right = left + size.width * zoom
-    const bottom = top + size.height * zoom
-
-    let nextX = x
-    let nextY = y
-    if (right > width - rightMargin) nextX -= right - (width - rightMargin)
-    if (left + (nextX - x) < margin) nextX += margin - (left + (nextX - x))
-    if (bottom > height - margin) nextY -= bottom - (height - margin)
-    if (top + (nextY - y) < margin) nextY += margin - (top + (nextY - y))
-
-    if (Math.abs(nextX - x) < 1 && Math.abs(nextY - y) < 1) return
-    moveCamera(flowInstance, container, { x: nextX, y: nextY, zoom })
+    if (
+      Math.abs(next.x - viewport.x) < 1 &&
+      Math.abs(next.y - viewport.y) < 1 &&
+      Math.abs(next.zoom - viewport.zoom) < 0.001
+    ) return
+    moveCamera(flowInstance, container, next)
   }, [expandedKey, flowInstance, layout, nodeSizes])
 
   /**
@@ -1345,7 +1345,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           edges={visualEdges}
           edgeTypes={edgeTypes}
           fitView
-          fitViewOptions={{ padding: 0.1, maxZoom: 1.4 }}
+          fitViewOptions={{ padding: FIT_PADDING, maxZoom: MAX_FIT_ZOOM }}
           minZoom={MIN_FIT_ZOOM}
           nodeTypes={nodeTypes}
           nodes={visualNodes}
