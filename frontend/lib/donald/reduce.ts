@@ -2,6 +2,8 @@ import {
   isNodeStatus,
   type DonaldEvent,
   type InterventionOption,
+  type InterventionOrigin,
+  type InterventionRecord,
   type NodeSummary,
   type RunArtifact,
   type RunNode,
@@ -28,6 +30,7 @@ export function createInitialRunState(runKey = 'latest'): RunState {
     nodes: {},
     edges: {},
     event_log: [],
+    interventions: {},
     open_intervention: null,
     last_sequence: 0,
     applied_idempotency_keys: {},
@@ -51,6 +54,31 @@ function placeholderNode(event: DonaldEvent): RunNode | null {
     output_summary: null,
     artifacts: [],
     removed: false,
+    description: null,
+    node_type: null,
+    tool_name: null,
+    status_message: null,
+    error_message: null,
+    manual_minutes: null,
+  }
+}
+
+/**
+ * The node facts the server attaches to every event about a node.
+ *
+ * They are read from the node row at the time the delta is built, so the newest
+ * event always carries the truest values — which is why this merges rather than
+ * overwrites: an event that omits a field must not erase what an earlier one
+ * established.
+ */
+function nodeFactsFromPayload(payload: Record<string, unknown>, node: RunNode): Partial<RunNode> {
+  return {
+    description: stringValue(payload.description) ?? node.description,
+    node_type: stringValue(payload.node_type) ?? node.node_type,
+    tool_name: stringValue(payload.tool_name) ?? node.tool_name,
+    status_message: stringValue(payload.status_message) ?? stringValue(payload.message) ?? node.status_message,
+    error_message: stringValue(payload.error_message) ?? node.error_message,
+    manual_minutes: numberValue(payload.manual_minutes) ?? node.manual_minutes,
   }
 }
 
@@ -73,12 +101,16 @@ function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSumm
 }
 
 function artifactFromPayload(payload: Record<string, unknown>): RunArtifact {
+  // Two spellings on purpose. The recorded fixture names these fields plainly;
+  // the live delta prefixes them (artifact_name, artifact_text) because the
+  // payload is flat and `name` already means the node's name there.
   return {
     artifact_type: stringValue(payload.artifact_type) ?? 'unknown',
-    name: stringValue(payload.name) ?? 'Untitled artifact',
+    name: stringValue(payload.artifact_name) ?? stringValue(payload.name) ?? stringValue(payload.message) ?? 'Untitled artifact',
     content_type: stringValue(payload.content_type),
-    text_content: stringValue(payload.text_content),
+    text_content: stringValue(payload.artifact_text) ?? stringValue(payload.text_content),
     message_id: stringValue(payload.message_id),
+    url: stringValue(payload.artifact_url) ?? stringValue(payload.url),
   }
 }
 
@@ -101,44 +133,45 @@ function interventionOptions(value: unknown): InterventionOption[] {
   })
 }
 
+/**
+ * The id that ties requested → delivered → resolved together.
+ *
+ * The live stream carries a real intervention_id on all three events. The
+ * recorded fixture predates that field, so its single request falls back to the
+ * node key: the fixture has one intervention per node, which makes that unique
+ * where it is used.
+ */
+function interventionId(event: DonaldEvent): string {
+  return stringValue(event.payload.intervention_id) ??
+    stringValue(event.payload.intervention_uuid) ??
+    event.node_key ??
+    event.idempotency_key
+}
+
+function interventionOrigin(event: DonaldEvent): InterventionOrigin {
+  return stringValue(event.payload.origin) === 'operator' ? 'operator' : 'agent'
+}
+
 function withNode(state: RunState, event: DonaldEvent, update: (node: RunNode) => RunNode): RunState {
   const current = event.node_key ? state.nodes[event.node_key] ?? placeholderNode(event) : null
   if (!current) return state
   return { ...state, nodes: { ...state.nodes, [current.node_key]: update(current) } }
 }
 
-type RecoverableRunStatus =
-  | 'blocked_on_user_decision'
-  | 'blocked_on_missing_data'
-  | 'blocked_on_provider_outage'
-
-function recoverableRunStatus(value: RunNode['status'] | RunState['run']['status']): RecoverableRunStatus | null {
-  switch (value) {
-    case 'blocked_on_user_decision':
-    case 'blocked_on_missing_data':
-    case 'blocked_on_provider_outage':
-      return value
-    default:
-      return null
-  }
-}
-
-function runStatusFromBlockedNodes(state: RunState): RunState['run']['status'] {
-  const remaining = Object.values(state.nodes)
-    .filter((node) => !node.removed)
-    .flatMap((node) => {
-      const status = recoverableRunStatus(node.status)
-      return status ? [status] : []
-    })
-  const current = recoverableRunStatus(state.run.status)
-  return current && remaining.includes(current) ? current : remaining[0] ?? 'running'
-}
-
 export function applyEvent(state: RunState, event: DonaldEvent): RunState {
   if (state.applied_idempotency_keys[event.idempotency_key] || event.sequence <= state.last_sequence) return state
 
+  // The run's name rides every delta, not just run_started, so a browser that
+  // opens a run already in flight gets a real heading immediately instead of
+  // waiting for a replay of event one.
+  const runName = stringValue(event.payload.run_name)
+  const runSummary = stringValue(event.payload.run_summary)
+
   let next: RunState = {
     ...state,
+    run: runName || runSummary
+      ? { ...state.run, name: runName ?? state.run.name, plan_summary: runSummary ?? state.run.plan_summary }
+      : state.run,
     event_log: [...state.event_log, event],
     last_sequence: event.sequence,
     applied_idempotency_keys: { ...state.applied_idempotency_keys, [event.idempotency_key]: true },
@@ -151,7 +184,11 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
         run: {
           ...next.run,
           key: stringValue(event.payload.run_key) ?? stringValue(event.payload.run_uuid) ?? next.run.key,
-          name: stringValue(event.payload.name) ?? next.run.name,
+          // run_name is what the live stream calls it; name is the recorded
+          // fixture's spelling. Without either the heading falls back to the
+          // run_key, which is an addressing slug, not a title for a person.
+          name: stringValue(event.payload.run_name) ?? stringValue(event.payload.name) ?? next.run.name,
+          plan_summary: stringValue(event.payload.run_summary) ?? stringValue(event.payload.message) ?? next.run.plan_summary,
           status: 'running',
         },
       }
@@ -199,7 +236,13 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
                 output_summary: null,
                 artifacts: [],
                 removed: false,
+                node_type: null,
+                tool_name: null,
+                status_message: null,
+                error_message: null,
+                manual_minutes: null,
               }),
+              description: stringValue(step.description) ?? existing?.description ?? null,
               label: stringValue(step.label) ?? existing?.label ?? key,
               agent_label: stringValue(step.agent_label) ?? existing?.agent_label ?? null,
               planned: booleanValue(step.planned) ?? true,
@@ -259,6 +302,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
       }
       next = withNode(next, event, (node) => ({
         ...node,
+        ...nodeFactsFromPayload(event.payload, node),
         label: stringValue(event.payload.label) ?? node.label,
         agent_label: event.agent_label ?? node.agent_label,
         planned: booleanValue(event.payload.planned) ?? node.planned,
@@ -308,11 +352,12 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
     case 'node_status_changed': {
       const status = event.payload.status
       if (!isNodeStatus(status)) break
-      const previousNodeStatus = event.node_key ? next.nodes[event.node_key]?.status : null
       next = withNode(next, event, (node) => ({
         ...node,
+        ...nodeFactsFromPayload(event.payload, node),
         status,
         estimated_seconds: numberValue(event.payload.estimated_seconds) ?? node.estimated_seconds,
+        manual_minutes: numberValue(event.payload.manual_minutes) ?? node.manual_minutes,
         actual_seconds: numberValue(event.payload.actual_seconds) ?? node.actual_seconds,
         started_at: stringValue(event.payload.started_at) ?? node.started_at,
         finished_at: status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'skipped'
@@ -320,18 +365,6 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
           : node.finished_at,
         progress_percent: status === 'succeeded' ? 100 : node.progress_percent,
       }))
-      if (
-        status === 'blocked_on_user_decision' ||
-        status === 'blocked_on_missing_data' ||
-        status === 'blocked_on_provider_outage'
-      ) {
-        next = { ...next, run: { ...next.run, status } }
-      } else if (
-        status === 'in_progress' &&
-        recoverableRunStatus(previousNodeStatus ?? 'not_started')
-      ) {
-        next = { ...next, run: { ...next.run, status: runStatusFromBlockedNodes(next) } }
-      }
       if (event.node_key && status === 'succeeded') {
         next = {
           ...next,
@@ -346,6 +379,7 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
     case 'node_updated':
       next = withNode(next, event, (node) => ({
         ...node,
+        ...nodeFactsFromPayload(event.payload, node),
         progress_percent: numberValue(event.payload.progress_percent) ?? node.progress_percent,
         elapsed_seconds: numberValue(event.payload.elapsed_seconds) ?? node.elapsed_seconds,
         input_summary: stringValue(event.payload.input_summary) ?? node.input_summary,
@@ -356,36 +390,90 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
       next = withNode(next, event, (node) => ({ ...node, artifacts: [...node.artifacts, artifactFromPayload(event.payload)] }))
       break
     case 'intervention_requested': {
-      next = withNode(next, event, (node) => ({ ...node, status: 'blocked_on_user_decision' }))
-      next = {
-        ...next,
-        run: { ...next.run, status: 'blocked_on_user_decision' },
-        open_intervention: {
-          type: stringValue(event.payload.type) ?? 'steer',
-          node_key: event.node_key,
-          prompt: stringValue(event.payload.prompt) ?? 'Decision required',
-          requested_at: event.occurred_at,
-          options: interventionOptions(event.payload.options),
-        },
+      const id = interventionId(event)
+      const origin = interventionOrigin(event)
+      // A request can be applied twice: the browser that raised it draws a local
+      // echo immediately and the server's own event follows on the stream. The
+      // event carries the newest description of the request; the lifecycle
+      // carries how far it has got, and must survive being described again.
+      const previous = next.interventions[id]
+      const record: InterventionRecord = {
+        id,
+        type: stringValue(event.payload.type) ?? previous?.type ?? 'steer',
+        origin,
+        node_key: event.node_key ?? previous?.node_key ?? null,
+        prompt: stringValue(event.payload.prompt) ?? stringValue(event.payload.message) ?? previous?.prompt ?? 'Decision required',
+        options: interventionOptions(event.payload.options),
+        status: previous?.status ?? 'queued',
+        queued_at: previous?.queued_at ?? event.occurred_at,
+        delivered_at: previous?.delivered_at ?? null,
+        resolved_at: previous?.resolved_at ?? null,
+        outcome: previous?.outcome ?? null,
+        response: previous?.response ?? null,
+      }
+      next = { ...next, interventions: { ...next.interventions, [id]: record } }
+
+      // Only an agent asking a question blocks its own step. An operator
+      // steering a running step changes nothing about what the agent is doing
+      // right now — it will see the instruction on its next check — and drawing
+      // the step as blocked would claim a brake we do not have.
+      if (origin === 'agent') {
+        next = withNode(next, event, (node) => ({ ...node, status: 'blocked_on_user_decision' }))
+        next = {
+          ...next,
+          open_intervention: {
+            id,
+            type: record.type,
+            node_key: event.node_key,
+            prompt: record.prompt,
+            requested_at: event.occurred_at,
+            options: record.options,
+          },
+        }
       }
       break
     }
-    case 'intervention_resolved':
+    case 'intervention_delivered': {
+      const id = interventionId(event)
+      const existing = next.interventions[id]
+      if (existing) {
+        next = {
+          ...next,
+          interventions: {
+            ...next.interventions,
+            [id]: { ...existing, status: existing.status === 'resolved' ? 'resolved' : 'delivered', delivered_at: event.occurred_at },
+          },
+        }
+      }
+      break
+    }
+    case 'intervention_resolved': {
+      const id = interventionId(event)
+      const existing = next.interventions[id]
+      if (existing) {
+        next = {
+          ...next,
+          interventions: {
+            ...next.interventions,
+            [id]: {
+              ...existing,
+              status: 'resolved',
+              resolved_at: event.occurred_at,
+              outcome: stringValue(event.payload.outcome) ?? stringValue(event.payload.intervention_status),
+              response: stringValue(event.payload.message),
+            },
+          },
+        }
+      }
       if (next.open_intervention?.node_key) {
         const node = next.nodes[next.open_intervention.node_key]
         if (node?.status === 'blocked_on_user_decision') {
           next = { ...next, nodes: { ...next.nodes, [node.node_key]: { ...node, status: 'not_started' } } }
         }
       }
-      next = {
-        ...next,
-        run: {
-          ...next.run,
-          status: runStatusFromBlockedNodes(next),
-        },
-        open_intervention: null,
-      }
+      next = { ...next, open_intervention: null }
       break
+    }
     case 'run_updated':
       next = {
         ...next,

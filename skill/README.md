@@ -12,7 +12,8 @@ Transport is **streamable HTTP**. There is **no authentication** (demo).
 https://mcp.donald.todes.mx/v1/mcp
 ```
 
-**Claude Code** — `.mcp.json` in the project, or `~/.claude.json` for every project:
+**Agents configured by a JSON file** — put this in the client's MCP config
+(commonly `.mcp.json` beside the project, or a per-user equivalent):
 
 ```json
 {
@@ -25,22 +26,21 @@ https://mcp.donald.todes.mx/v1/mcp
 }
 ```
 
-**Claude Agent SDK** — add the same entry to the `mcpServers` option when
-constructing the agent.
+**Agents constructed in code** — add the same entry to whatever `mcpServers`
+option the SDK exposes.
 
 **Any other MCP client** — point it at that URL as a streamable-HTTP server.
 Nothing else to configure; there are no headers, tokens or scopes.
 
 Verify the connection by asking the agent to list its tools. You should see
-fifteen `donald` tools, starting with `start_run`.
+eighteen `donald` tools, starting with `start_run`.
 
 ## 2. Give the agent the skill
 
-**Agents that support skills** (Claude Code and anything reading the same
-format): copy `donald-flow/` into the agent's skills directory —
-`.claude/skills/donald-flow/` for a project, `~/.claude/skills/donald-flow/`
-for a user. The `description` in its frontmatter is what makes the agent load it
-at the right moment, so keep it intact.
+**Agents that support skills**: copy `donald-flow/` into whatever directory
+the agent loads skills from — usually a `skills/` folder scoped either to the
+project or to the user. The `description` in its frontmatter is what makes the
+agent load it at the right moment, so keep it intact.
 
 **Agents that do not support skills**: paste the body of
 `donald-flow/SKILL.md` (everything below the frontmatter) into the agent's

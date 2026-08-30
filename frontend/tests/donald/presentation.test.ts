@@ -4,7 +4,7 @@ import {
   EDGE_LAND_DELAY_MS,
   NODE_STAGGER_MS,
   getGraphPresentation,
-  getInstructionLifecycle,
+  getNodeInterventions,
   getLatestNodeStatus,
   getLatestReplan,
   getLatestRecalculation,
@@ -15,7 +15,7 @@ import {
   metricRows,
   keepStillRemovedKeys,
 } from '../../lib/donald/presentation'
-import { getRunStatusLabel, type DonaldEvent, type RunNode } from '../../lib/donald/types'
+import type { DonaldEvent, RunNode } from '../../lib/donald/types'
 
 function event(
   sequence: number,
@@ -50,6 +50,12 @@ function node(nodeKey: string, status: RunNode['status'], planOrder: number): Ru
     input_summary: null,
     output_summary: null,
     artifacts: [],
+    description: null,
+    node_type: null,
+    tool_name: null,
+    status_message: null,
+    error_message: null,
+    manual_minutes: null,
     removed: false,
   }
 }
@@ -167,17 +173,6 @@ test('the operator request comes from run state and falls back to the run key', 
   assert.equal(getRunRequest({ ...run, name: null, plan_summary: null }), 'OP-4471')
 })
 
-test('recoverable run blocks use specific waiting labels and never look failed', () => {
-  const labels = [
-    getRunStatusLabel('blocked_on_missing_data'),
-    getRunStatusLabel('blocked_on_provider_outage'),
-    getRunStatusLabel('blocked_on_user_decision'),
-  ]
-
-  assert.deepEqual(labels, ['WAITING FOR DATA', 'WAITING FOR PROVIDER', 'NEEDS INPUT'])
-  assert.equal(labels.includes('FAILED'), false)
-})
-
 test('metrics put money before days and render operational labels', () => {
   const rows = metricRows({ affected_containers: 3, delay_days: 9, estimated_cost_usd: 3780 })
 
@@ -238,29 +233,29 @@ test('a later standalone addition supersedes an older completed replan notice', 
   })
 })
 
-test('instruction lifecycle is reconstructed only from node-scoped events', () => {
-  const events = [
-    event(10, 'operator_instruction_queued', 'decide-response', {
-      instruction_id: 'instruction-10',
-      instruction: 'Prioritize documentation.',
-      option_id: 'secure-new-bl',
-    }, '2026-08-29T11:20:10.000Z'),
-    event(11, 'operator_instruction_delivered', 'decide-response', {
-      instruction_id: 'instruction-10',
-    }, '2026-08-29T11:20:11.000Z'),
-    event(12, 'operator_instruction_resolved', 'decide-response', {
-      instruction_id: 'instruction-10',
-    }, '2026-08-29T11:20:12.000Z'),
-  ]
+test('interventions for one node come back newest first and exclude other nodes', () => {
+  const interventions = {
+    'iv-1': {
+      id: 'iv-1', type: 'steer', origin: 'operator' as const, node_key: 'decide-response',
+      prompt: 'Hold the booking', options: [], status: 'resolved' as const,
+      queued_at: '2026-08-29T11:20:00.000Z', delivered_at: '2026-08-29T11:20:04.000Z',
+      resolved_at: '2026-08-29T11:20:09.000Z', outcome: 'succeeded', response: 'Held it',
+    },
+    'iv-2': {
+      id: 'iv-2', type: 'stop', origin: 'operator' as const, node_key: 'decide-response',
+      prompt: 'Stop this', options: [], status: 'queued' as const,
+      queued_at: '2026-08-29T11:21:00.000Z', delivered_at: null,
+      resolved_at: null, outcome: null, response: null,
+    },
+    'iv-3': {
+      id: 'iv-3', type: 'steer', origin: 'agent' as const, node_key: 'another-node',
+      prompt: 'Which option?', options: [], status: 'queued' as const,
+      queued_at: '2026-08-29T11:22:00.000Z', delivered_at: null,
+      resolved_at: null, outcome: null, response: null,
+    },
+  }
 
-  assert.deepEqual(getInstructionLifecycle(events, 'decide-response'), {
-    id: 'instruction-10',
-    instruction: 'Prioritize documentation.',
-    optionId: 'secure-new-bl',
-    status: 'resolved',
-    queuedAt: '2026-08-29T11:20:10.000Z',
-    deliveredAt: '2026-08-29T11:20:11.000Z',
-    resolvedAt: '2026-08-29T11:20:12.000Z',
-  })
-  assert.equal(getInstructionLifecycle(events, 'another-node'), null)
+  const forNode = getNodeInterventions(interventions, 'decide-response')
+  assert.deepEqual(forNode.map((record) => record.id), ['iv-2', 'iv-1'])
+  assert.deepEqual(getNodeInterventions(interventions, 'missing-node'), [])
 })

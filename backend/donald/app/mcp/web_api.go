@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/nextwave/donald/core/module/intervention"
 	intervention_types "github.com/nextwave/donald/core/module/intervention/types"
+	payload_entity "github.com/nextwave/donald/entity/agent_event_payload"
 	intervention_entity "github.com/nextwave/donald/entity/intervention"
 	"github.com/nextwave/donald/enums"
 )
@@ -40,6 +42,7 @@ func (h *Handler) registerWebAPI(r chi.Router) {
 	r.Get("/v1/runs", h.listRuns)
 	r.Get("/v1/runs/{run_key}", h.getRun)
 	r.Post("/v1/runs/{run_key}/interventions", h.raiseIntervention)
+	r.Get("/v1/runs/{run_key}/nodes/{node_key}/suggestions", h.nodeSuggestions)
 }
 
 // listRuns backs the run picker: newest first, no filter expression required.
@@ -222,15 +225,44 @@ func (h *Handler) raiseIntervention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.core.Intervention().Insert(r.Context(), intervention_types.UpsertRequest{
-		Intervention: intervention_entity.Intervention{
-			UUID: id, RunUUID: run.UUID, NodeUUID: node.UUID,
-			Type: kind, Prompt: nullString(req.Prompt),
-			Status:          enums.INTERVENTION_STATUS_REGISTERED,
-			RequestedByUUID: requester,
-			CreatedBy:       requester, UpdatedBy: requester,
+	// The request is recorded as an EVENT, not just a row.
+	//
+	// Writing only the row made the intervention invisible to everyone except the
+	// browser that raised it: that tab drew a local echo, every other watcher saw
+	// nothing, and a refresh lost it entirely — because the graph is rebuilt from
+	// the event log and the log had no record of it. Committing it means the stop
+	// or steer replays on reconnect and reaches every open tab, which is the
+	// whole point of a supervision surface that more than one person can watch.
+	if _, _, err := h.commit(r.Context(), mutation{
+		runUUID:        run.UUID,
+		eventType:      enums.AGENT_EVENT_TYPE_INTERVENTION_REQUESTED,
+		nodeUUID:       &node.UUID,
+		idempotencyKey: "intervention_requested:" + id.String(),
+		payload: payload_entity.AgentEventPayload{
+			InterventionUUID: &id,
+			Message:          nullString(req.Prompt),
+			// origin distinguishes an operator pressing a button from an agent
+			// calling request_decision. They are the same row and the same event
+			// type, but they mean opposite things to the graph: an agent asking
+			// is blocked until answered, an operator steering is not.
+			Detail: detailJSON(map[string]string{
+				"origin":            "operator",
+				"intervention_type": kind.String(),
+			}),
 		},
-	}, intervention.WithSkipCache()); err != nil {
+		apply: func(ctx context.Context, tx *sql.Tx) error {
+			_, err := h.core.Intervention().Insert(ctx, intervention_types.UpsertRequest{
+				Intervention: intervention_entity.Intervention{
+					UUID: id, RunUUID: run.UUID, NodeUUID: node.UUID,
+					Type: kind, Prompt: nullString(req.Prompt),
+					Status:          enums.INTERVENTION_STATUS_REGISTERED,
+					RequestedByUUID: requester,
+					CreatedBy:       requester, UpdatedBy: requester,
+				},
+			}, intervention.WithSQLTransaction(tx))
+			return err
+		},
+	}); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not record the request")
 		return
 	}

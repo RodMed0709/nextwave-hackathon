@@ -12,6 +12,23 @@ image:
       value: "/root/config,/root/hostconfig/nuzur/donald"
     - name: DONALD_ROLE
       value: "api"
+    # Prompt suggestions for the operator's stop/steer box.
+    #
+    # optional:true is deliberate — the pod must start and the run must be
+    # watchable whether or not a key is configured. Without it the suggestions
+    # endpoint returns its static fallback set and nothing else changes.
+    #
+    # The key lives ONLY in the cluster, created by scripts/05-openai-secret.sh.
+    # It is never in this file, in values.yaml, or anywhere else in this repo,
+    # which is public.
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: donald-openai
+          key: api-key
+          optional: true
+    - name: OPENAI_MODEL
+      value: "gpt-4o-mini"
 
 ingress:
   enabled: true

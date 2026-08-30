@@ -78,6 +78,34 @@ type deltaPayload struct {
 	OutputSummary null.String `json:"summary,omitempty"`
 	ActualSeconds *int64      `json:"actual_seconds,omitempty"`
 
+	// The rest of what the agent actually told us about the step.
+	//
+	// These columns have been written since the first version of the MCP surface
+	// and never left the database. The one that mattered most was error_message:
+	// a step could fail, the agent's explanation would be stored, and the person
+	// watching would see a red card saying FAILED and nothing else. The others
+	// are the difference between a node that says "Reconcile routing" and one
+	// that says what it is, which tool it runs and how far along it is.
+	Description   null.String `json:"description,omitempty"`
+	NodeType      string      `json:"node_type,omitempty"`
+	ToolName      null.String `json:"tool_name,omitempty"`
+	StatusMessage null.String `json:"status_message,omitempty"`
+	ErrorMessage  null.String `json:"error_message,omitempty"`
+	NodeProgress  null.Int64  `json:"node_progress_percent,omitempty"`
+
+	// ManualMinutes is how long this step would have taken a person, as reported
+	// by the agent on complete_action. It rides the event log rather than being
+	// recomputed per render so the savings a card shows never changes between two
+	// people looking at the same run.
+	ManualMinutes *int64 `json:"manual_minutes,omitempty"`
+
+	// Artifact facts for artifact_added. Without these the event names a uuid the
+	// client cannot resolve, so attached evidence never rendered at all.
+	ArtifactName string `json:"artifact_name,omitempty"`
+	ArtifactType string `json:"artifact_type,omitempty"`
+	ArtifactURL  string `json:"artifact_url,omitempty"`
+	ArtifactText string `json:"artifact_text,omitempty"`
+
 	// Edge endpoints by key. Without these an edge event names two uuids and a
 	// client cannot draw the edge at all.
 	EdgeKey       string `json:"edge_key,omitempty"`
@@ -85,8 +113,26 @@ type deltaPayload struct {
 	TargetNodeKey string `json:"target_node_key,omitempty"`
 
 	// Intervention facts for the stop/steer events.
-	Type   string `json:"type,omitempty"`
-	Prompt string `json:"prompt,omitempty"`
+	//
+	// InterventionID is the correlation key: requested, delivered and resolved
+	// are three separate events about one request, and a client cannot draw the
+	// "queued → delivered → resolved" trail without something to join them on.
+	Type           string `json:"type,omitempty"`
+	Prompt         string `json:"prompt,omitempty"`
+	InterventionID string `json:"intervention_id,omitempty"`
+	// Origin is "operator" when a person raised it and "agent" when the agent
+	// asked a question of its own. Only the second one blocks the step.
+	Origin             string `json:"origin,omitempty"`
+	InterventionStatus string `json:"intervention_status,omitempty"`
+
+	// The run's own name and summary.
+	//
+	// The browser had no way to learn either: the snapshot endpoint carries them
+	// but the viewer builds everything from the stream, and the stream described
+	// only nodes. So every run was titled with its run_key — a slug the agent
+	// invented for addressing, shown to a person as if it were a heading.
+	RunName    string `json:"run_name,omitempty"`
+	RunSummary string `json:"run_summary,omitempty"`
 
 	// Plan is the whole declared plan, present on plan_declared only.
 	Plan *planWire `json:"plan,omitempty"`

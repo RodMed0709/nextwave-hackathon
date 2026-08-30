@@ -1,4 +1,4 @@
-import type { DonaldEvent, NodeSummary, RunNode, RunState } from './types'
+import type { DonaldEvent, InterventionRecord, NodeSummary, RunNode, RunState } from './types'
 
 export const NODE_STAGGER_MS = 120
 export const EDGE_LAND_DELAY_MS = 340
@@ -45,16 +45,6 @@ export type RecalculationNotice = {
   kind: 'replan' | 'addition'
   reason: string | null
   evidenceIds: string[]
-}
-
-export type InstructionLifecycle = {
-  id: string
-  instruction: string
-  optionId: string | null
-  status: 'queued' | 'delivered' | 'resolved'
-  queuedAt: string
-  deliveredAt: string | null
-  resolvedAt: string | null
 }
 
 export function keepStillRemovedKeys(
@@ -178,36 +168,31 @@ export function getLatestRecalculation(events: readonly DonaldEvent[]): Recalcul
     : null
 }
 
-export function getInstructionLifecycle(
-  events: readonly DonaldEvent[],
+/**
+ * Every stop or steer raised against one step, newest first.
+ *
+ * This used to be rebuilt by scanning the event log for `operator_instruction_*`
+ * events - a shape the server has never emitted. The real events are
+ * intervention_requested / _delivered / _resolved, correlated by intervention
+ * id, and the reducer now folds them into state.interventions as they arrive.
+ * Reading that is both correct and cheaper than re-scanning the whole log for
+ * every node on every render.
+ */
+export function getNodeInterventions(
+  interventions: Record<string, InterventionRecord>,
   nodeKey: string,
-): InstructionLifecycle | null {
-  let queuedEvent: DonaldEvent | null = null
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]
-    if (event.node_key === nodeKey && event.event_type === 'operator_instruction_queued') {
-      queuedEvent = event
-      break
-    }
-  }
-  if (!queuedEvent) return null
-  const id = stringValue(queuedEvent.payload.instruction_id) ?? queuedEvent.idempotency_key
-  const later = events.filter((event) =>
-    event.node_key === nodeKey &&
-    event.sequence >= queuedEvent.sequence &&
-    stringValue(event.payload.instruction_id) === id,
-  )
-  const delivered = later.find((event) => event.event_type === 'operator_instruction_delivered') ?? null
-  const resolved = later.find((event) => event.event_type === 'operator_instruction_resolved') ?? null
-  return {
-    id,
-    instruction: stringValue(queuedEvent.payload.instruction) ?? 'Operator instruction',
-    optionId: stringValue(queuedEvent.payload.option_id),
-    status: resolved ? 'resolved' : delivered ? 'delivered' : 'queued',
-    queuedAt: queuedEvent.occurred_at,
-    deliveredAt: delivered?.occurred_at ?? null,
-    resolvedAt: resolved?.occurred_at ?? null,
-  }
+): InterventionRecord[] {
+  return Object.values(interventions)
+    .filter((record) => record.node_key === nodeKey)
+    .sort((left, right) => Date.parse(right.queued_at) - Date.parse(left.queued_at))
+}
+
+/** The one still waiting on the agent, if any. */
+export function getPendingIntervention(
+  interventions: Record<string, InterventionRecord>,
+  nodeKey: string,
+): InterventionRecord | null {
+  return getNodeInterventions(interventions, nodeKey).find((record) => record.status !== 'resolved') ?? null
 }
 
 export function getPlanRevealDurationMs(event: DonaldEvent): number {
@@ -325,4 +310,74 @@ export function getLatestNodeStatus(
   }
 
   return null
+}
+
+
+/**
+ * What a person's hour is worth, for turning saved minutes into saved money.
+ *
+ * One number, set in one place and SHOWN on screen next to the figure it
+ * produces. A savings claim whose arithmetic is hidden is a marketing number;
+ * one that shows its rate is an argument the viewer can check and disagree with.
+ */
+export const LABOR_RATE_USD_PER_HOUR =
+  Number(process.env.NEXT_PUBLIC_DONALD_LABOR_RATE_USD) || 45
+
+export type AutomationSaving = {
+  minutes: number
+  humanTime: string
+  money: string
+  basis: string
+}
+
+function humanMinutes(minutes: number): string {
+  if (minutes < 60) return `${Math.round(minutes)} min`
+  const hours = Math.floor(minutes / 60)
+  const rest = Math.round(minutes % 60)
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
+function usd(amount: number): string {
+  return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount)}`
+}
+
+/**
+ * What this step saved by being done by an agent instead of a person.
+ *
+ * Returns null when the agent did not say. That is deliberate: a step with no
+ * reported baseline shows nothing rather than a number we made up. Inventing one
+ * here would be indistinguishable on screen from one the agent actually
+ * measured, and the difference is the entire point.
+ */
+export function getAutomationSaving(node: RunNode): AutomationSaving | null {
+  const minutes = node.manual_minutes
+  if (typeof minutes !== 'number' || minutes <= 0) return null
+  return {
+    minutes,
+    humanTime: humanMinutes(minutes),
+    money: usd((minutes / 60) * LABOR_RATE_USD_PER_HOUR),
+    basis: `${humanMinutes(minutes)} of manual work at ${usd(LABOR_RATE_USD_PER_HOUR)}/h`,
+  }
+}
+
+/** The run's total, over the steps that reported a baseline. */
+export function getRunSavings(nodes: Record<string, RunNode>): AutomationSaving | null {
+  const minutes = Object.values(nodes)
+    .filter((node) => !node.removed && node.status === 'succeeded')
+    .reduce((total, node) => total + (node.manual_minutes ?? 0), 0)
+  if (minutes <= 0) return null
+  return {
+    minutes,
+    humanTime: humanMinutes(minutes),
+    money: usd((minutes / 60) * LABOR_RATE_USD_PER_HOUR),
+    basis: `${humanMinutes(minutes)} of manual work at ${usd(LABOR_RATE_USD_PER_HOUR)}/h`,
+  }
+}
+
+/** A step the operator can still influence. A finished step is a fact, not a lever. */
+export function canIntervene(node: RunNode): boolean {
+  if (node.removed) return false
+  return node.status === 'not_started' ||
+    node.status === 'in_progress' ||
+    node.status.startsWith('blocked_on_')
 }

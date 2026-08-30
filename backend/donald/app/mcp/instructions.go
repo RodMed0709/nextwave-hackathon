@@ -60,6 +60,15 @@ moment it stops matching what you are doing:
 Every step ends in exactly one of complete / fail / cancel / skip / block, or is
 still running.
 
+## Say what the step would have cost a person
+
+**complete_action** takes ` + "`manual_minutes`" + `: how long that step would have taken
+a competent person doing it by hand, waiting and system-switching included.
+Reading an arrival notice and pulling the fields out ≈ 8. Reconciling an invoice
+against a PO line by line ≈ 25. Chasing a carrier by email and waiting for the
+reply ≈ 45. It is recorded once, exactly as you say it, and shown from then on —
+so be conservative, and omit it rather than guess.
+
 ## You do not need to poll blindly
 
 Every mutation you make comes back with **pending_instructions**. Zero (the usual
@@ -78,8 +87,11 @@ you left off.
 ## Someone may ask you to stop
 
 **check_instructions** is normally empty; carry on. If it returns a stop or a
-steer, honour it if you can, then **resolve_instruction** to say what you did.
-Nobody can tell whether you complied until you do.
+steer, honour it by CHANGING THE GRAPH — **cancel_action** or **skip_action** for
+a stop, **add_action** or **declare_actions** for a redirect — then
+**resolve_instruction** to say what you did. An instruction you acknowledge while
+the plan carries on unchanged makes the person's controls look fake, and nobody
+can tell whether you complied until you say so.
 
 ## Never report secrets
 
