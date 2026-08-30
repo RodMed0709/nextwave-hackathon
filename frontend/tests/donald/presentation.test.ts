@@ -6,6 +6,7 @@ import {
   getGraphPresentation,
   getNodeInterventions,
   getLatestNodeStatus,
+  getLatestArtifact,
   getLatestReplan,
   getLatestRecalculation,
   getPrimaryMetric,
@@ -17,7 +18,7 @@ import {
   keepStillRemovedKeys,
   shouldShowInstructionForm,
 } from '../../lib/donald/presentation'
-import type { DonaldEvent, RunNode } from '../../lib/donald/types'
+import type { DonaldEvent, RunArtifact, RunNode } from '../../lib/donald/types'
 
 function event(
   sequence: number,
@@ -66,6 +67,20 @@ test('custom instruction form is gated only while direct options are available',
   assert.equal(shouldShowInstructionForm(2, false), false)
   assert.equal(shouldShowInstructionForm(2, true), true)
   assert.equal(shouldShowInstructionForm(0, false), true)
+})
+
+test('card artifact selection returns only the latest artifact', () => {
+  const first: RunArtifact = {
+    artifact_type: 'document', name: 'initial.md', content_type: 'text/markdown',
+    text_content: null, message_id: null, url: null,
+  }
+  const latest: RunArtifact = {
+    artifact_type: 'document', name: 'final.md', content_type: 'text/markdown',
+    text_content: null, message_id: null, url: null,
+  }
+
+  assert.equal(getLatestArtifact([first, latest]), latest)
+  assert.equal(getLatestArtifact([]), null)
 })
 
 test('graph presentation staggers planned nodes and draws each edge after its target lands', () => {

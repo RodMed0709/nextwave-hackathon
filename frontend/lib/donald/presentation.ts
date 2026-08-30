@@ -1,4 +1,4 @@
-import type { DonaldEvent, InterventionRecord, NodeSummary, RunNode, RunState, RunSubtaskStatus } from './types'
+import type { DonaldEvent, InterventionRecord, NodeSummary, RunArtifact, RunNode, RunState, RunSubtaskStatus } from './types'
 
 export const NODE_STAGGER_MS = 120
 export const EDGE_LAND_DELAY_MS = 340
@@ -33,6 +33,10 @@ export type SubtaskPresentation = {
 
 export function shouldShowInstructionForm(optionCount: number, customInstructionRequested: boolean): boolean {
   return optionCount === 0 || customInstructionRequested
+}
+
+export function getLatestArtifact(artifacts: readonly RunArtifact[]): RunArtifact | null {
+  return artifacts.at(-1) ?? null
 }
 
 export function getSubtaskPresentation(status: RunSubtaskStatus): SubtaskPresentation {

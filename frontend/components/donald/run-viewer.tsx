@@ -50,6 +50,7 @@ import {
   canIntervene,
   getAutomationSaving,
   getGraphPresentation,
+  getLatestArtifact,
   getLatestNodeStatus,
   getLatestRecalculation,
   getLatestReplan,
@@ -713,6 +714,7 @@ function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void
 
 function FlowCard({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
+  const latestArtifact = getLatestArtifact(node.artifacts)
   const primaryMetric = getPrimaryMetric(node.output_summary?.metrics ?? {})
   const saving = getAutomationSaving(node)
   const pendingIntervention = data.interventions.find((record) => record.status !== 'resolved') ?? null
@@ -755,6 +757,12 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
       {pendingIntervention && (
         <p className="card-instruction"><Hand size={11} /> {pendingIntervention.type === 'stop' ? 'Stop' : 'Steer'} sent — {pendingIntervention.status === 'queued' ? 'waiting for the agent' : 'agent has it'}</p>
+      )}
+      {latestArtifact && (
+        <div className="card-artifact" title={latestArtifact.name}>
+          <FileText aria-hidden="true" size={12} />
+          <span>{latestArtifact.name}</span>
+        </div>
       )}
       <span className="expand-hint">
         {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}

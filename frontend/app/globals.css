@@ -320,6 +320,9 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .subtask-struck .subtask-label { text-decoration: line-through; }
 .subtask-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .subtask-more { padding-left: 21px; color: #6b7680; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.card-artifact { display: flex; min-width: 0; align-items: center; gap: 6px; margin-top: 11px; padding: 6px 8px; border: 1px solid #d4cec0; border-radius: 7px; background: #e9e5db; color: #3a5268; font-size: 9px; font-weight: 700; }
+.card-artifact svg { flex: none; }
+.card-artifact span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expand-hint { display: block; margin-top: 13px; color: #7b858c; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 
 .card-details { margin-top: 16px; border-top: 1px solid #d8d0c1; cursor: default; }
