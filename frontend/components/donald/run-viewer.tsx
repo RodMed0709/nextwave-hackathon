@@ -137,7 +137,9 @@ const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
 function createSource(runKey: string | null): DonaldEventSource {
-  return API_BASE_URL ? liveSource(API_BASE_URL, runKey) : recordedSource()
+  // With no API configured the run key names a recorded run instead, so
+  // /runs/<name> plays that recording rather than the default one.
+  return API_BASE_URL ? liveSource(API_BASE_URL, runKey) : recordedSource({ recording: runKey })
 }
 
 function displayStatus(node: RunNode): DisplayStatus {

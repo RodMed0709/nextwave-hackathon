@@ -16,6 +16,8 @@ export type DonaldEventSource = AsyncIterable<DonaldEvent> & {
 type SourceOptions = {
   fetch?: Fetch
   wait?: Wait
+  /** Which recorded run to play. Omitted plays the default one. */
+  recording?: string | null
 }
 
 export type OperatorInstructionInput = {
@@ -61,7 +63,8 @@ export function recordedSource(options: SourceOptions = {}): DonaldEventSource {
   let eventsPromise: Promise<DonaldEvent[]> | null = null
 
   const load = () => {
-    eventsPromise ??= fetcher('/api/donald-recording').then(async (response) => {
+    const query = options.recording ? `?recording=${encodeURIComponent(options.recording)}` : ''
+    eventsPromise ??= fetcher(`/api/donald-recording${query}`).then(async (response) => {
       if (!response.ok) throw new Error(`Recording request failed with ${response.status}`)
       return parseEventStream(await response.text())
     })

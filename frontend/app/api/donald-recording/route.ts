@@ -3,8 +3,18 @@ import { join } from 'node:path'
 
 export const runtime = 'nodejs'
 
-export async function GET() {
-  const recording = await readFile(join(process.cwd(), 'lib', 'donald', 'events.recorded.jsonl'), 'utf8')
+// An allowlist, not a path built from the query: `recording` arrives from the
+// URL, and joining user input onto a filesystem path is how a route like this
+// ends up serving whatever the caller names.
+const RECORDINGS: Record<string, string> = {
+  default: 'events.recorded.jsonl',
+  'land-pickup': 'events.land-pickup.jsonl',
+}
+
+export async function GET(request: Request) {
+  const requested = new URL(request.url).searchParams.get('recording')
+  const file = RECORDINGS[requested ?? 'default'] ?? RECORDINGS.default
+  const recording = await readFile(join(process.cwd(), 'lib', 'donald', file), 'utf8')
   return new Response(recording, {
     headers: {
       'cache-control': 'public, max-age=3600',
