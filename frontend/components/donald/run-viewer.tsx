@@ -41,8 +41,10 @@ import {
 } from '@xyflow/react'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
 import {
+  getFitViewport,
   getLayoutBounds,
   layoutGraph,
+  MIN_FIT_ZOOM,
   type LayoutPosition,
   type NodeSize,
 } from '@/lib/donald/layout'
@@ -117,7 +119,7 @@ type FlowNodeData = {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_DONALD_API ?? null
-const COLLAPSED_SIZE: NodeSize = { width: 300, height: 190 }
+const COLLAPSED_SIZE: NodeSize = { width: 380, height: 230 }
 // A replay is compressed to about this long, whatever the run really took, with
 // every gap kept proportional inside it.
 const REPLAY_TARGET_MS = 45_000
@@ -129,15 +131,12 @@ const REPLAY_MIN_GAP_MS = 250
 const REPLAY_MAX_GAP_MS = 1_600
 // How coarsely the graph's extent is measured before the camera reacts to it.
 // One card width: smaller than a new column, larger than any text reflow.
-const VIEWPORT_QUANTUM = 300
+const VIEWPORT_QUANTUM = 380
 // Kept in step with .node-drawer in globals.css: the camera treats the drawer as
 // part of the right margin so a selected card never hides behind it.
 const DRAWER_WIDTH = 430
 // Framing: a little breathing room, and a zoom ceiling so a one-node run does
 // not open magnified to fill the screen and then crawl back out as work arrives.
-const FIT_PADDING = 0.14
-const MAX_FIT_ZOOM = 1.15
-const MIN_FIT_ZOOM = 0.18
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
@@ -1111,21 +1110,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     const { width, height } = container.getBoundingClientRect()
     if (width === 0 || height === 0) return
 
-    const zoom = Math.min(
-      Math.max(
-        Math.min(
-          (width * (1 - FIT_PADDING)) / Math.max(1, bounds.width),
-          (height * (1 - FIT_PADDING)) / Math.max(1, bounds.height),
-        ),
-        MIN_FIT_ZOOM,
-      ),
-      MAX_FIT_ZOOM,
-    )
-    moveCamera(flowInstance, container, {
-      x: width / 2 - (bounds.x + bounds.width / 2) * zoom,
-      y: height / 2 - (bounds.y + bounds.height / 2) * zoom,
-      zoom,
-    })
+    moveCamera(flowInstance, container, getFitViewport(bounds, { width, height }))
   }, [flowInstance, layout, nodeSizes])
 
   /**
@@ -1360,8 +1345,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           edges={visualEdges}
           edgeTypes={edgeTypes}
           fitView
-          fitViewOptions={{ padding: 0.16, maxZoom: 1.25 }}
-          minZoom={0.18}
+          fitViewOptions={{ padding: 0.1, maxZoom: 1.4 }}
+          minZoom={MIN_FIT_ZOOM}
           nodeTypes={nodeTypes}
           nodes={visualNodes}
           nodesConnectable={false}
