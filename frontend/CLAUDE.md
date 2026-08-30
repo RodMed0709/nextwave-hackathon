@@ -26,3 +26,20 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   do not ask the backend to change its events.
 - Gates before claiming done: `npx pnpm@10 exec tsc --noEmit`, `npx pnpm@10 test`,
   `npx pnpm@10 build`.
+
+## The case you are building for
+
+The pitch case is **Berríos OP-4471** — spec at
+[`../docs/berrios-op4471-case.md`](../docs/berrios-op4471-case.md), run key
+`berrios-op4471` (the default run). Its *"Expected UI per step"* table is the roadmap
+for interface work; the root `AGENTS.md` repeats it with the file map. Rules:
+
+- Presentation is data-driven: map action/event names in `lib/donald/operational-stages.ts`
+  and `lib/donald/action-presentation.ts`. Never hardcode run-specific branches in
+  components.
+- Recordings are generated (`../scripts/gen-berrios-op4471.py`) — never hand-edit a
+  `.jsonl`.
+- Never generate `localhost`/`127.0.0.1` as any API base, env value or example — the
+  deployed API is the dev environment. Full rule in the root `AGENTS.md`.
+- Verify visually against `http://localhost:3000/runs/berrios-op4471` (recorded, works
+  offline) and against a live key streamed from `api.usedonald.com`.
