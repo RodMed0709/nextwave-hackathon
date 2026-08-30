@@ -658,7 +658,6 @@ type transitionSpec struct {
 	to                enums.AgentNodeStatus
 	idempotencySuffix string
 	message           string
-	detail            null.String
 	mutate            func(*agent_node_entity.AgentNode)
 
 	// detail is the tool-specific extra this transition wants recorded with its
