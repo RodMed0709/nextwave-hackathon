@@ -4,6 +4,7 @@ import {
   ACTION_PRESENTATIONS,
   DONALD_ACTION_IDS,
   actionPresentationForNode,
+  decisionOptionPresentation,
 } from '../../lib/donald/action-presentation'
 
 test('action presentation registry defines every canonical Donald action', () => {
@@ -25,4 +26,34 @@ test('action presentation resolves canonical node-key prefixes', () => {
 test('action presentation resolves semantic aliases from current recordings', () => {
   assert.equal(actionPresentationForNode({ nodeKey: 'calculate_exposure', label: 'Quantify the exposure' }).id, 'impact')
   assert.equal(actionPresentationForNode({ nodeKey: 'receive-update', label: 'Review carrier update' }).id, 'ingest')
+})
+
+test('decision options reduce operational copy to price and one short consequence', () => {
+  assert.deepEqual(decisionOptionPresentation({
+    id: 'alternative-routing',
+    label: 'Re-book MSC ILONA FE2440 - direct San Juan, ETA Oct 3, $0',
+    rationale: 'Recovers four days and protects the committed delivery.',
+    rank: 1,
+    maximum_cost_usd: 0,
+    client_commitment: null,
+    document: null,
+  }), {
+    price: '$0',
+    consequence: 'direct San Juan, ETA Oct 3',
+    tooltip: 'Recovers four days and protects the committed delivery.',
+  })
+
+  assert.deepEqual(decisionOptionPresentation({
+    id: 'premium-transload',
+    label: 'Transload at Caucedo onto a feeder - ETA Oct 1, +$2,400',
+    rationale: 'Two days faster, but adds handling risk.',
+    rank: 2,
+    maximum_cost_usd: 2400,
+    client_commitment: null,
+    document: null,
+  }), {
+    price: '+$2,400',
+    consequence: 'ETA Oct 1',
+    tooltip: 'Two days faster, but adds handling risk.',
+  })
 })

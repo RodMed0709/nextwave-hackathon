@@ -1,3 +1,5 @@
+import type { InterventionOption } from './types'
+
 export const DONALD_ACTION_IDS = [
   'ingest',
   'identify',
@@ -21,6 +23,12 @@ export type ActionPresentation = {
   label: string
   petAsset: string
   animationKind: DonaldAnimationKind
+}
+
+export type DecisionOptionPresentation = {
+  price: string
+  consequence: string
+  tooltip: string
 }
 
 export const DEFAULT_DONALD_PET_ASSET = '/donald_favicon.png'
@@ -164,4 +172,22 @@ export function donaldActionIdForNode(input: {
     }
   }
   return null
+}
+
+export function decisionOptionPresentation(option: InterventionOption): DecisionOptionPresentation {
+  const price = option.maximum_cost_usd === null
+    ? option.label.match(/\+?\$[\d,]+(?:\.\d{1,2})?/)?.[0] ?? 'Cost TBD'
+    : option.maximum_cost_usd === 0
+      ? '$0'
+      : `+$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(option.maximum_cost_usd)}`
+  const consequenceSource = option.label.split(/\s[-–—]\s/).slice(1).join(' - ') || option.label
+  const consequence = consequenceSource
+    .replace(/,?\s*\+?\$[\d,]+(?:\.\d{1,2})?(?:\s*USD)?/gi, '')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+
+  return {
+    price,
+    consequence: consequence || 'Review operational impact',
+    tooltip: option.rationale ?? option.label,
+  }
 }

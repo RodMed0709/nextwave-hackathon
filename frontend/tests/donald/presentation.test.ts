@@ -14,6 +14,7 @@ import {
   getRunRequest,
   getSubtaskPresentation,
   getVisiblyActiveNodeKey,
+  getVisiblyActiveNodeKeys,
   metricRows,
   keepStillRemovedKeys,
   shouldShowInstructionForm,
@@ -134,6 +135,21 @@ test('the most recently started in-progress node is the only visibly active node
   ]
 
   assert.equal(getVisiblyActiveNodeKey(nodes, events), 'latest')
+})
+
+test('every in-progress node stays visibly active when work runs in parallel', () => {
+  const nodes = {
+    ambient: node('ambient', 'in_progress', 1),
+    response: node('response', 'in_progress', 2),
+    done: node('done', 'succeeded', 3),
+  }
+  const events = [
+    event(1, 'node_status_changed', 'ambient', { status: 'in_progress' }),
+    event(2, 'node_status_changed', 'response', { status: 'in_progress' }),
+    event(3, 'node_status_changed', 'done', { status: 'succeeded' }),
+  ]
+
+  assert.deepEqual(getVisiblyActiveNodeKeys(nodes, events), ['response', 'ambient'])
 })
 
 test('live status prefers event copy and otherwise narrates progress without a percentage', () => {

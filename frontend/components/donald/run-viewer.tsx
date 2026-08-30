@@ -14,8 +14,6 @@ import {
 import {
   AlertTriangle,
   Check,
-  ChevronDown,
-  ChevronUp,
   CircleDot,
   Clock3,
   ExternalLink,
@@ -64,7 +62,7 @@ import {
   getRunRequest,
   getSubtaskPresentation,
   getRunSavings,
-  getVisiblyActiveNodeKey,
+  getVisiblyActiveNodeKeys,
   metricRows,
   shouldShowInstructionForm,
   type LiveNodeStatus,
@@ -81,14 +79,12 @@ import {
 } from '@/lib/donald/source'
 import { RunControls } from '@/components/donald/run-controls'
 import { ClientArea } from '@/components/donald/client-area'
-import { DonaldNarration } from '@/components/donald/donald-narration'
-import { OperationalStageAccordion, stageDomId } from '@/components/donald/operational-stage'
-import { ActionAnimation } from '@/components/donald/animations/action-animation'
+import { OperationalStage, stageDomId } from '@/components/donald/operational-stage'
 import {
   actionPresentationForNode,
+  decisionOptionPresentation,
   type ActionPresentation,
 } from '@/lib/donald/action-presentation'
-import type { ActionAnimationState } from '@/components/donald/animations/action-animation-registry'
 import {
   clientProjectMetadata,
   operationalStageForNode,
@@ -141,15 +137,6 @@ type FlowNodeData = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_DONALD_API ?? null
 const COLLAPSED_SIZE: NodeSize = { width: 380, height: 230 }
-// A replay is compressed to about this long, whatever the run really took, with
-// every gap kept proportional inside it.
-const REPLAY_TARGET_MS = 45_000
-// The floor is what stops a replay flickering. Events in a real run can land
-// milliseconds apart; replaying them that way flips edge and node states a dozen
-// times a second, which no amount of easing can make readable. A quarter second
-// is the shortest gap that still reads as one change at a time.
-const REPLAY_MIN_GAP_MS = 250
-const REPLAY_MAX_GAP_MS = 1_600
 // How coarsely the graph's extent is measured before the camera reacts to it.
 // One card width: smaller than a new column, larger than any text reflow.
 const VIEWPORT_QUANTUM = 380
@@ -168,9 +155,12 @@ const STAGE_GRAPH_MIN_HEIGHT = 360
 // judge just asked for - streams from the real API and accepts interventions.
 const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup', 'berrios-op4471'])
 
+function isRecordedRunKey(runKey: string | null): boolean {
+  return runKey === null || RECORDED_RUNS.has(runKey)
+}
+
 function createSource(runKey: string | null): DonaldEventSource {
-  const recorded = runKey === null || RECORDED_RUNS.has(runKey)
-  if (!API_BASE_URL || recorded) return recordedSource({ recording: runKey })
+  if (!API_BASE_URL || isRecordedRunKey(runKey)) return recordedSource({ recording: runKey })
   return liveSource(API_BASE_URL, runKey)
 }
 
@@ -240,17 +230,6 @@ function statusClass(status: DisplayStatus): string {
   return status.toLowerCase().replace(' ', '-')
 }
 
-function animationState(status: DisplayStatus): ActionAnimationState {
-  switch (status) {
-    case 'RUNNING': return 'running'
-    case 'DONE': return 'done'
-    case 'NEEDS HUMAN':
-    case 'BLOCKED': return 'blocked'
-    case 'FAILED': return 'failed'
-    default: return 'waiting'
-  }
-}
-
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
   const date = new Date(iso)
@@ -295,36 +274,11 @@ function latestRunAgent(events: readonly DonaldEvent[]): string | null {
   return null
 }
 
-function currentAgentName(nodes: Record<string, RunNode>, activeNodeKey: string | null, events: readonly DonaldEvent[]): string | null {
-  if (activeNodeKey) return nodes[activeNodeKey]?.agent_label ?? null
-  return latestRunAgent(events) ?? declaredAgent(events)
-}
-
-function eventDescription(event: DonaldEvent): string {
-  const label = typeof event.payload.label === 'string' ? event.payload.label : event.node_key
-  const actor = event.agent_label ?? 'Donald'
-  switch (event.event_type) {
-    case 'run_started': return 'Run started'
-    case 'plan_declared': return 'Execution plan declared'
-    case 'node_added': return `${actor} added ${label ?? 'a step'}`
-    case 'node_removed': return `${actor} removed ${label ?? 'a step'}`
-    case 'edge_added': return 'Flow connection added'
-    case 'edge_removed': return 'Flow connection removed'
-    case 'node_status_changed': return `${actor} changed ${event.node_key ?? 'step'} status`
-    case 'node_updated': return typeof event.payload.headline === 'string'
-      ? `${actor}: ${event.payload.headline}`
-      : `${actor} updated ${event.node_key ?? 'a step'}`
-    case 'artifact_added': return `${actor} added evidence`
-    case 'agent_message': return typeof event.payload.message === 'string' ? event.payload.message : `${actor} sent a message`
-    case 'run_updated': return 'Execution graph replanned'
-    case 'intervention_requested': return 'Human decision requested'
-    case 'intervention_resolved': return 'Human decision resolved'
-    case 'operator_instruction_queued': return 'Operator instruction queued'
-    case 'operator_instruction_delivered': return 'Operator instruction delivered'
-    case 'operator_instruction_resolved': return 'Operator instruction resolved'
-    case 'run_finished': return 'Run finished'
-    default: return 'Runtime event received'
-  }
+function currentAgentNames(nodes: Record<string, RunNode>, activeNodeKeys: readonly string[], events: readonly DonaldEvent[]): Set<string> {
+  const active = new Set(activeNodeKeys.flatMap((key) => nodes[key]?.agent_label ?? []))
+  if (active.size > 0) return active
+  const fallback = latestRunAgent(events) ?? declaredAgent(events)
+  return new Set(fallback ? [fallback] : [])
 }
 
 function parseMessageMeta(artifact: RunArtifact): { sender: string | null; date: string | null } {
@@ -407,9 +361,7 @@ function OptionButton({
   disabled: boolean
   onChoose: (option: InterventionOption) => void
 }) {
-  const cost = option.maximum_cost_usd === null
-    ? null
-    : `$${new Intl.NumberFormat('en-US').format(option.maximum_cost_usd)} USD`
+  const presentation = decisionOptionPresentation(option)
   return (
     <button
       className={`decision-option ${option.rank === 1 ? 'recommended' : ''}`}
@@ -418,21 +370,13 @@ function OptionButton({
         event.stopPropagation()
         onChoose(option)
       }}
+      title={presentation.tooltip}
       type="button"
     >
-      <span className="option-title">
-        <b>{option.label}</b>
-        {option.rank === 1 && <em>Recommended</em>}
-        {cost && <strong>{cost}</strong>}
-      </span>
-      {option.rationale && <small>{option.rationale}</small>}
-      {(option.document || option.client_commitment) && (
-        <span className="option-meta">
-          {option.document && `Document · ${option.document}`}
-          {option.document && option.client_commitment && ' · '}
-          {option.client_commitment && `Commitment · ${option.client_commitment}`}
-        </span>
-      )}
+      <strong className="option-price">{presentation.price}</strong>
+      <span className="option-arrow" aria-hidden="true">→</span>
+      <span className="option-consequence">{presentation.consequence}</span>
+      {option.rank === 1 && <em>Recommended</em>}
     </button>
   )
 }
@@ -445,7 +389,9 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
   )
   const gateKey = data.intervention?.id ?? data.runtimeNode.node_key
   const showInstructionForm = shouldShowInstructionForm(options.length, customInstructionKey === gateKey)
-  const pending = data.interventions.find((record) => record.status !== 'resolved') ?? null
+  const pending = data.interventions.find((record) =>
+    record.origin === 'operator' && record.status !== 'resolved',
+  ) ?? null
   const busy = data.submitting || Boolean(pending)
 
   const send = (kind: InstructionKind) => {
@@ -463,8 +409,7 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
     >
       {data.intervention && (
         <>
-          <div className="section-label"><AlertTriangle size={13} /> Human input required</div>
-          <p className="intervention-prompt">{data.intervention.prompt}</p>
+          <div className="section-label"><AlertTriangle size={13} /> Choose a response</div>
           <div className="decision-options">
             {options.map((option) => (
               <OptionButton
@@ -573,7 +518,7 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
         </>
       )}
 
-      {data.interventions.map((record) => <InstructionTrail key={record.id} record={record} />)}
+      {!data.intervention && data.interventions.map((record) => <InstructionTrail key={record.id} record={record} />)}
       {data.instructionError && <p className="instruction-error">{data.instructionError}</p>}
     </section>
   )
@@ -727,7 +672,9 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   const latestArtifact = getLatestArtifact(node.artifacts)
   const primaryMetric = getPrimaryMetric(node.output_summary?.metrics ?? {})
   const saving = getAutomationSaving(node)
-  const pendingIntervention = data.interventions.find((record) => record.status !== 'resolved') ?? null
+  const pendingIntervention = data.interventions.find((record) =>
+    record.origin === 'operator' && record.status !== 'resolved',
+  ) ?? null
   const title = node.output_summary?.headline ?? node.label
   const classes = [
     'flow-card',
@@ -735,6 +682,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
     statusClass(data.displayStatus),
     data.selected ? 'selected' : '',
     data.visiblyActive ? 'visibly-active' : '',
+    data.intervention ? 'decision-open' : '',
     pendingIntervention ? 'steered' : '',
   ].filter(Boolean).join(' ')
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -758,10 +706,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <span className="status"><StatusMark status={data.displayStatus} /> {data.displayStatus}</span>
       </div>
       <h2>{title}</h2>
-      <ActionAnimation
-        presentation={data.actionPresentation}
-        state={animationState(data.displayStatus)}
-      />
+      {data.intervention && <InstructionBox data={data} />}
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {saving && (
         <div className="card-saving" title={saving.basis}>
@@ -779,9 +724,11 @@ function FlowCard({ data }: { data: FlowNodeData }) {
           <span>{latestArtifact.name}</span>
         </div>
       )}
-      <span className="expand-hint">
-        {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}
-      </span>
+      {!data.intervention && (
+        <span className="expand-hint">
+          {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}
+        </span>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   )
@@ -841,10 +788,10 @@ function FlowNodeRenderer(props: NodeProps) {
     observer.observe(element)
     return () => observer.disconnect()
   }, [data])
-  // One width, always. Selection is a ring, not a size change — see NodeDrawer.
+  // Normal selection stays fixed; only a live decision grows at its graph anchor.
   const style = {
     '--node-enter-delay': `${data.appearance.delayMs}ms`,
-    width: `${COLLAPSED_SIZE.width}px`,
+    width: `${data.intervention ? 620 : COLLAPSED_SIZE.width}px`,
   } as CSSProperties
   return (
     <div
@@ -878,31 +825,10 @@ function edgesForStage(
   ))
 }
 
-function crossStageTransitions(
-  stage: OperationalStageSummary,
-  stages: OperationalStageSummary[],
-  nodes: Record<string, RunNode>,
-  edges: Record<string, RunEdge>,
-): string[] {
-  const stageByNode = new Map(stages.flatMap((candidate) =>
-    candidate.nodeKeys.map((nodeKey) => [nodeKey, candidate] as const),
-  ))
-  const labels = new Set<string>()
-  for (const edge of Object.values(edges)) {
-    if (!stage.nodeKeys.includes(edge.source_node_key)) continue
-    const targetStage = stageByNode.get(edge.target_node_key)
-    if (!targetStage || targetStage.id === stage.id) continue
-    if (!nodes[edge.source_node_key] || !nodes[edge.target_node_key]) continue
-    labels.add(targetStage.id === 'below' ? 'Signal / trigger below the line' : `Continues to ${targetStage.eyebrow}`)
-  }
-  return [...labels]
-}
-
 export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null }) {
   const initialKey = requestedRunKey ?? 'latest'
   const [state, setState] = useState(() => createInitialRunState(initialKey))
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  const [streamOpen, setStreamOpen] = useState(true)
   const [sourceError, setSourceError] = useState<string | null>(null)
   const [instructionError, setInstructionError] = useState<string | null>(null)
   const [submittingNodeKey, setSubmittingNodeKey] = useState<string | null>(null)
@@ -910,18 +836,15 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   // Set the moment the person pans or zooms by hand. From then on the canvas is
   // theirs: an agent adding a node must not move a camera someone is holding.
   const [viewportPinned, setViewportPinned] = useState(false)
-  const [sourceGeneration, setSourceGeneration] = useState(0)
   const [measuredSizes, setMeasuredSizes] = useState<Record<string, NodeSize>>({})
   const [suggestions, setSuggestions] = useState<Record<string, PromptSuggestion[]>>({})
-  const [replaying, setReplaying] = useState(false)
-  const [stageExpansionOverrides, setStageExpansionOverrides] = useState<Partial<Record<OperationalStageId, boolean>>>({})
-  const replayingRef = useRef(false)
-  const replayTimerRef = useRef<number | null>(null)
+  const [decisionRecalculationKey, setDecisionRecalculationKey] = useState<string | null>(null)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
   const layoutRef = useRef<Partial<Record<OperationalStageId, Record<string, LayoutPosition>>>>({})
   const stageCanvasRefs = useRef<Partial<Record<OperationalStageId, HTMLElement | null>>>({})
+  const decisionRecalculationTimerRef = useRef<number | null>(null)
   if (!sourceRef.current) sourceRef.current = createSource(requestedRunKey)
 
   /**
@@ -966,9 +889,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
   useEffect(() => {
     if (state.open_intervention) return
-    // A replay is re-folding the log from scratch; letting the live reader write
-    // into the same state at the same time would interleave two timelines.
-    if (replaying) return
     let cancelled = false
     void (async () => {
       while (!cancelled) {
@@ -983,21 +903,12 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }
     })()
     return () => { cancelled = true }
-  }, [readNext, replaying, sourceGeneration, state.open_intervention])
+  }, [readNext, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  /**
-   * Card sizes, which selection no longer affects.
-   *
-   * Cards used to grow from 300x190 to 430x650 in place. Because a column's
-   * pitch is set by its widest card and a column is centred on its own total
-   * height, opening one card slid its siblings apart, pushed every downstream
-   * column sideways, swung the edges attached to it, and forced the camera to
-   * zoom out — all while the run carried on behind the disruption. The detail
-   * moved to a drawer precisely so that reading one step cannot destroy the map
-   * of the whole run, which is the thing the person is there to watch.
-   */
+  // Measured sizes let the one in-place decision reserve room without allowing
+  // ordinary detail selection to rearrange the graph.
   const nodeSizes = useMemo(() => Object.fromEntries(Object.keys(state.nodes).map((key) => {
     const measured = measuredSizes[key]
     return [key, measured ?? COLLAPSED_SIZE]
@@ -1010,10 +921,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   ].join('|'), [nodeSizes, state.edges, state.nodes])
 
   const graphPresentation = useMemo(() => getGraphPresentation(state.event_log), [state.event_log])
-  const visiblyActiveKey = useMemo(
-    () => getVisiblyActiveNodeKey(state.nodes, state.event_log),
+  const visiblyActiveKeys = useMemo(
+    () => getVisiblyActiveNodeKeys(state.nodes, state.event_log),
     [state.event_log, state.nodes],
   )
+  const visiblyActiveKeySet = useMemo(() => new Set(visiblyActiveKeys), [visiblyActiveKeys])
   const stageSummaries = useMemo(() => summarizeOperationalStages(state.nodes), [state.nodes])
   const stageLayouts = useMemo(() => {
     const next: Partial<Record<OperationalStageId, Record<string, LayoutPosition>>> = {}
@@ -1026,27 +938,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     return next
   }, [nodeSizes, stageSummaries, state.edges, state.nodes, structuralSignature])
   const activeStageId = useMemo(() => {
-    if (visiblyActiveKey && state.nodes[visiblyActiveKey]) return operationalStageForNode(state.nodes[visiblyActiveKey])
+    const latestActiveKey = visiblyActiveKeys[0]
+    if (latestActiveKey && state.nodes[latestActiveKey]) return operationalStageForNode(state.nodes[latestActiveKey])
     return stageSummaries.find((stage) => stage.state === 'needs-human')?.id ??
       stageSummaries.find((stage) => stage.id === 'below' && stage.state === 'in-progress')?.id ??
       stageSummaries.find((stage) => stage.state === 'in-progress')?.id ??
       null
-  }, [stageSummaries, state.nodes, visiblyActiveKey])
-  const expandedStageIds = useMemo(() => new Set(stageSummaries.flatMap((stage) => {
-    const override = stageExpansionOverrides[stage.id]
-    const expanded = override ?? (
-      stage.id === activeStageId ||
-      stage.state === 'needs-human' ||
-      (stage.id === 'below' && stage.state === 'in-progress')
-    )
-    return expanded ? [stage.id] : []
-  })), [activeStageId, stageExpansionOverrides, stageSummaries])
-  const toggleStage = useCallback((stageId: OperationalStageId) => {
-    setStageExpansionOverrides((current) => ({
-      ...current,
-      [stageId]: !expandedStageIds.has(stageId),
-    }))
-  }, [expandedStageIds])
+  }, [stageSummaries, state.nodes, visiblyActiveKeys])
 
   const updateMeasurement = useCallback((nodeKey: string, size: NodeSize) => {
     setMeasuredSizes((current) => {
@@ -1063,7 +961,25 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   ) => {
     setSubmittingNodeKey(node.node_key)
     setInstructionError(null)
+    if (options.optionId) {
+      if (decisionRecalculationTimerRef.current) window.clearTimeout(decisionRecalculationTimerRef.current)
+      setDecisionRecalculationKey(`${node.node_key}:${options.optionId}:${Date.now()}`)
+      decisionRecalculationTimerRef.current = window.setTimeout(() => {
+        setDecisionRecalculationKey(null)
+        decisionRecalculationTimerRef.current = null
+      }, 2_200)
+    }
     try {
+      if (options.optionId && (!API_BASE_URL || isRecordedRunKey(requestedRunKey))) {
+        const source = sourceRef.current
+        while (source) {
+          const result = await source.next({ immediate: true })
+          if (result.done) break
+          setState((current) => applyEvent(current, result.value))
+          if (result.value.event_type === 'intervention_resolved') break
+        }
+        return
+      }
       const event = await postOperatorInstruction(API_BASE_URL, state.run.key, {
         nodeKey: node.node_key,
         instruction,
@@ -1077,7 +993,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     } finally {
       setSubmittingNodeKey(null)
     }
-  }, [state.last_sequence, state.run.key])
+  }, [requestedRunKey, state.last_sequence, state.run.key])
+
+  useEffect(() => () => {
+    if (decisionRecalculationTimerRef.current) window.clearTimeout(decisionRecalculationTimerRef.current)
+  }, [])
 
   /**
    * Suggestions are fetched for the card that is OPEN, and only that one.
@@ -1130,9 +1050,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             nodeType: node.node_type,
           }),
           selected,
-          visiblyActive: visiblyActiveKey === node.node_key,
+          visiblyActive: visiblyActiveKeySet.has(node.node_key),
           appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
-          liveStatus: visiblyActiveKey === node.node_key ? getLatestNodeStatus(node, state.event_log) : null,
+          liveStatus: visiblyActiveKeySet.has(node.node_key) ? getLatestNodeStatus(node, state.event_log) : null,
           intervention,
           interventions: getNodeInterventions(state.interventions, node.node_key),
           steerable: canIntervene(node),
@@ -1150,7 +1070,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       const target = state.nodes[edge.target_node_key]
       const exiting = edge.status === 'removed' || source.removed || target.removed
       const status: RuntimeEdgeStatus =
-        target.node_key === visiblyActiveKey ? 'ACTIVE' :
+        visiblyActiveKeySet.has(target.node_key) ? 'ACTIVE' :
         source.status === 'failed' || target.status === 'failed' ? 'FAILED' :
         target.status.startsWith('blocked_on_') ? 'BLOCKED' :
         edge.status === 'traversed' ? 'DONE' :
@@ -1175,9 +1095,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       nodes,
       edges,
       height,
-      transitions: crossStageTransitions(stage, stageSummaries, state.nodes, state.edges),
     }
-  }), [expandedKey, graphPresentation.edges, graphPresentation.nodes, nodeSizes, stageLayouts, stageSummaries, state.edges, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKey])
+  }), [expandedKey, graphPresentation.edges, graphPresentation.nodes, nodeSizes, stageLayouts, stageSummaries, state.edges, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKeySet])
 
   const allVisualNodes = useMemo(() => stageGraphs.flatMap((stage) => stage.nodes), [stageGraphs])
 
@@ -1217,7 +1136,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [flowInstances, nodeSizes, stageLayouts])
 
   const zoomToFit = useCallback(() => {
-    const expandedStages = stageSummaries.filter((stage) => expandedStageIds.has(stage.id) && stage.totalActions > 0)
+    const expandedStages = stageSummaries.filter((stage) => stage.totalActions > 0)
     const orderedStages = [
       ...expandedStages.filter((stage) => stage.id === activeStageId),
       ...expandedStages.filter((stage) => stage.id !== activeStageId),
@@ -1226,7 +1145,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     if (activeStageId) {
       document.getElementById(stageDomId(activeStageId))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }
-  }, [activeStageId, expandedStageIds, stageSummaries, zoomStageToFit])
+  }, [activeStageId, stageSummaries, zoomStageToFit])
+
+  const changeZoom = useCallback((direction: 'in' | 'out') => {
+    setViewportPinned(true)
+    for (const instance of Object.values(flowInstances)) {
+      if (!instance) continue
+      if (direction === 'in') void instance.zoomIn({ duration: 0 })
+      else void instance.zoomOut({ duration: 0 })
+    }
+  }, [flowInstances])
 
   /**
    * The camera follows the EXTENT of the graph, quantised.
@@ -1303,6 +1231,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     if (!expandedKey) return
     const stage = stageSummaries.find((candidate) => candidate.nodeKeys.includes(expandedKey))
     if (!stage) return
+    document.getElementById(stageDomId(stage.id))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     const instance = flowInstances[stage.id]
     const position = stageLayouts[stage.id]?.[expandedKey]
     const size = nodeSizes[expandedKey]
@@ -1311,6 +1240,21 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
     const viewport = instance.getViewport()
     const { width, height } = container.getBoundingClientRect()
+    const decisionIsInPlace = state.open_intervention?.node_key === expandedKey
+    if (decisionIsInPlace) {
+      const margin = 24
+      const zoom = Math.min(
+        1,
+        (width - margin * 2) / Math.max(1, size.width),
+        (height - margin * 2) / Math.max(1, size.height),
+      )
+      moveCamera(instance, container, {
+        x: width / 2 - (position.x + size.width / 2) * zoom,
+        y: height / 2 - (position.y + size.height / 2) * zoom,
+        zoom,
+      })
+      return
+    }
     const drawerWidth = container.querySelector<HTMLElement>('.node-drawer')
       ?.getBoundingClientRect().width ?? DRAWER_WIDTH
     const margin = 24
@@ -1327,89 +1271,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       Math.abs(next.zoom - viewport.zoom) < 0.001
     ) return
     moveCamera(instance, container, next)
-  }, [expandedKey, flowInstances, nodeSizes, stageLayouts, stageSummaries])
+  }, [expandedKey, flowInstances, nodeSizes, stageLayouts, stageSummaries, state.open_intervention])
 
-  /**
-   * Replay the run from its first event, at the pace it actually happened.
-   *
-   * The events are already in the log — this re-folds them rather than asking
-   * the server for anything, so a replay works on a finished run and cannot
-   * disturb a live one. Gaps are taken from the real occurred_at timestamps and
-   * then compressed to fit a watchable span: a run that took nine minutes is
-   * unwatchable at true speed, but a fixed tick would flatten the rhythm that
-   * makes the graph readable — the pause where the agent was thinking is the
-   * part worth seeing.
-   */
-  const replay = useCallback(() => {
-    const recorded = [...state.event_log].sort((left, right) => left.sequence - right.sequence)
-    if (recorded.length < 2 || replayingRef.current) return
-
-    replayingRef.current = true
-    setReplaying(true)
-    setExpandedKey(null)
-    setInstructionError(null)
-    layoutRef.current = {}
-    setMeasuredSizes({})
-    setState(createInitialRunState(initialKey))
-
-    const first = Date.parse(recorded[0].occurred_at)
-    const span = Math.max(1, Date.parse(recorded[recorded.length - 1].occurred_at) - first)
-    const scale = Math.min(1, REPLAY_TARGET_MS / span)
-
-    let index = 0
-    const step = () => {
-      if (!replayingRef.current) return
-      const event = recorded[index]
-      if (!event) {
-        replayingRef.current = false
-        setReplaying(false)
-        return
-      }
-      setState((current) => applyEvent(current, event))
-      index += 1
-      const next = recorded[index]
-      if (!next) {
-        replayTimerRef.current = window.setTimeout(step, 0)
-        return
-      }
-      const gap = (Date.parse(next.occurred_at) - Date.parse(event.occurred_at)) * scale
-      replayTimerRef.current = window.setTimeout(
-        step,
-        motionDuration(Math.min(REPLAY_MAX_GAP_MS, Math.max(REPLAY_MIN_GAP_MS, gap))),
-      )
-    }
-    step()
-  }, [initialKey, state.event_log])
-
-  useEffect(() => () => {
-    replayingRef.current = false
-    if (replayTimerRef.current) window.clearTimeout(replayTimerRef.current)
-  }, [])
-
-  const reset = useCallback(async () => {
-    replayingRef.current = false
-    if (replayTimerRef.current) window.clearTimeout(replayTimerRef.current)
-    setReplaying(false)
-    abortRef.current?.abort()
-    await readPromiseRef.current
-    sourceRef.current = createSource(requestedRunKey)
-    layoutRef.current = {}
-    setState(createInitialRunState(initialKey))
-    setExpandedKey(null)
-    setMeasuredSizes({})
-    setSuggestions({})
-    setSourceError(null)
-    setInstructionError(null)
-    setViewportPinned(false)
-    setSourceGeneration((generation) => generation + 1)
-  }, [initialKey, requestedRunKey])
-
-  const latestEvents = [...state.event_log].reverse().slice(0, 7)
   const latestReplan = getLatestReplan(state.event_log)
   const latestRecalculation = getLatestRecalculation(state.event_log)
   const request = getRunRequest(state.run)
   const runSavings = getRunSavings(state.nodes)
-  const activeAgent = currentAgentName(state.nodes, visiblyActiveKey, state.event_log)
+  const activeAgents = currentAgentNames(state.nodes, visiblyActiveKeys, state.event_log)
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
 
   return (
@@ -1423,7 +1291,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               {clientMetadata.agents.length === 0 && <strong>Unavailable</strong>}
               {clientMetadata.agents.map((agent) => (
                 <span
-                  className={agent.label === activeAgent ? 'agent-chip active' : 'agent-chip'}
+                  className={activeAgents.has(agent.label) ? 'agent-chip active' : 'agent-chip'}
                   key={`${agent.label}-${agent.role ?? 'agent'}`}
                   title={agent.role ?? agent.label}
                 >
@@ -1435,7 +1303,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           <div className="kpi-grid" aria-label="Run KPIs">
             <div className="kpi-card">
               <span>Status</span>
-              <strong>{replaying ? 'REPLAY' : runStatusLabel(state)}</strong>
+              <strong>{runStatusLabel(state)}</strong>
             </div>
             <div className="kpi-card" title={runSavings?.basis}>
               <span>Time Saved</span>
@@ -1445,31 +1313,18 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               <span>Value Saved</span>
               <strong>{runSavings?.money ?? '$0'}</strong>
             </div>
-            <div className="kpi-card">
-              <span>Events</span>
-              <strong>{state.event_log.length}</strong>
-            </div>
-          </div>
-          <div className="run-metadata" aria-label="Run metadata">
-            <code>{state.run.key}</code>
-            <small>· revision {state.run.graph_revision}</small>
           </div>
         </section>
-        <div className="run-status-pill" aria-label={`Run status: ${replaying ? 'Replaying' : runStatusLabel(state)}`}>
+        <div className="run-status-pill" aria-label={`Run status: ${runStatusLabel(state)}`}>
           <i className="live-dot" />
-          {replaying ? 'REPLAY' : runStatusLabel(state)}
+          {runStatusLabel(state)}
         </div>
         <RunControls
-          canReplay={state.event_log.length >= 2}
           onFit={() => { setViewportPinned(false); zoomToFit() }}
-          onReplay={() => replaying ? void reset() : replay()}
-          replaying={replaying}
+          onZoomIn={() => changeZoom('in')}
+          onZoomOut={() => changeZoom('out')}
         />
       </header>
-
-      <DonaldNarration
-        stages={stageSummaries}
-      />
 
       <section className="canvas-panel">
         {latestRecalculation && (
@@ -1483,26 +1338,21 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             )}
           </div>
         )}
+        {decisionRecalculationKey && (
+          <div className="replan-overlay decision" key={decisionRecalculationKey}>
+            <div className="recalculating">Recalculating…</div>
+          </div>
+        )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
-        {selectedNodeData && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
+        {selectedNodeData && !selectedNodeData.intervention && (
+          <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />
+        )}
         <div className="operational-stage-stack">
-          {stageGraphs.map(({ stage, nodes, edges, height, transitions }, index) => {
-            const expanded = expandedStageIds.has(stage.id)
-            return (
+          {stageGraphs.map(({ stage, nodes, edges, height }) => (
               <div className="operational-stage-group" key={stage.id}>
-                {index === 1 && (
-                  <div className="stage-line-divider" aria-label="Signal or trigger boundary">
-                    <span>Signal / Trigger</span>
-                  </div>
-                )}
-                <OperationalStageAccordion
-                  expanded={expanded}
-                  onToggle={() => toggleStage(stage.id)}
-                  stage={stage}
-                  transitions={transitions}
-                >
+                <OperationalStage stage={stage}>
                   {nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
-                  {expanded && nodes.length > 0 && (
+                  {nodes.length > 0 && (
                     <div
                       className="stage-flow"
                       ref={(element) => { stageCanvasRefs.current[stage.id] = element }}
@@ -1531,31 +1381,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                       </ReactFlow>
                     </div>
                   )}
-                </OperationalStageAccordion>
+                </OperationalStage>
               </div>
-            )
-          })}
+          ))}
         </div>
       </section>
-
-      <footer className={`event-stream ${streamOpen ? 'open' : ''}`}>
-        <button className="stream-toggle" onClick={() => setStreamOpen((open) => !open)} type="button">
-          <span><i className="live-dot" /> Live event stream <small>{state.event_log.length} events</small></span>
-          {streamOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>
-        {streamOpen && (
-          <div className="events">
-            {latestEvents.map((event) => (
-              <div className="event" key={event.idempotency_key}>
-                <code>{formatTime(event.occurred_at)}</code><span>{eventDescription(event)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="event-stream-brand" aria-label="Donald">
-          <img src="/donald-logo-official.png" alt="" aria-hidden="true" width={52} height={18} />
-        </div>
-      </footer>
     </main>
   )
 }
