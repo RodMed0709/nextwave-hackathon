@@ -84,6 +84,7 @@ import { ExecutiveStrip } from '@/components/donald/executive-strip'
 import { getExecutivePhases } from '@/lib/donald/executive-phases'
 import { PromptBar } from '@/components/donald/prompt-bar'
 import { pickSteerTargetKey } from '@/lib/donald/steer-target'
+import { AmbientStrip } from '@/components/donald/ambient-strip'
 import { ClientArea } from '@/components/donald/client-area'
 import { DonaldNarration } from '@/components/donald/donald-narration'
 import { ImpactReceipt } from '@/components/donald/impact-receipt'
@@ -93,6 +94,7 @@ import type { ActionAnimationState } from '@/components/donald/animations/action
 import {
   actionPresentationForNode,
   decisionOptionPresentation,
+  donaldActionIdForNode,
   isEmailNode,
   type ActionPresentation,
 } from '@/lib/donald/action-presentation'
@@ -722,8 +724,12 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
  */
 function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void }) {
   const node = data.runtimeNode
+  // A decision is a choice, not a reading assignment: when the gate is open
+  // the drawer shows the question and the options — nothing else. The full
+  // step detail is still one card-click away after deciding.
+  const decisionOnly = Boolean(data.intervention)
   return (
-    <aside aria-label={`Details for ${node.label}`} className="node-drawer">
+    <aside aria-label={`Details for ${node.label}`} className={decisionOnly ? 'node-drawer decision-only' : 'node-drawer'}>
       <header className="drawer-header">
         <div>
           <span className="owner"><UserRound size={12} /> {node.agent_label ?? 'Donald'}</span>
@@ -731,20 +737,26 @@ function NodeDrawer({ data, onClose }: { data: FlowNodeData; onClose: () => void
             <StatusMark status={data.displayStatus} /> {data.displayStatus}
           </span>
         </div>
-        <h2>{humanizeStepTitle({
+        <h2>{decisionOnly ? 'Your call' : humanizeStepTitle({
           nodeKey: node.node_key,
           label: node.label,
           nodeType: node.node_type,
           toolName: node.tool_name,
-          headline: node.output_summary?.headline,
         }).title}</h2>
-        <code>{node.node_key}</code>
+        {!decisionOnly && <code>{node.node_key}</code>}
         <button aria-label="Close details" className="drawer-close" onClick={onClose} type="button">
           <X size={16} />
         </button>
       </header>
       <div className="drawer-body">
-        <ExpandedDetails data={data} />
+        {decisionOnly
+          ? (
+            <>
+              {data.intervention?.prompt && <p className="decision-question">{data.intervention.prompt}</p>}
+              <InstructionBox data={data} />
+            </>
+          )
+          : <ExpandedDetails data={data} />}
       </div>
     </aside>
   )
@@ -1452,6 +1464,19 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
   const nextTask = getNextTaskSummary(state)
   const steerTargetKey = pickSteerTargetKey(state, nextTask.nodeKeys, visiblyActiveKeys)
+  const triggerHeadline = useMemo(() => {
+    for (const node of Object.values(state.nodes)) {
+      if (node.removed) continue
+      const actionId = donaldActionIdForNode({
+        nodeKey: node.node_key,
+        label: node.label,
+        nodeType: node.node_type,
+        toolName: node.tool_name,
+      })
+      if (actionId === 'detect' && node.output_summary?.headline) return node.output_summary.headline
+    }
+    return null
+  }, [state.nodes])
   const adjust = useCallback(() => {
     if (!steerTargetKey) return
     setExpandedKey(steerTargetKey)
@@ -1463,8 +1488,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     if (!steerTargetKey) return
     const node = state.nodes[steerTargetKey]
     if (!node) return
-    // Open the card the instruction lands on, so the person sees it queue.
+    // Open the card the instruction lands on, so the person sees it queue,
+    // and give the moment a beat of "Recalculating…" — the visible buffer
+    // between asking and the agent taking it in.
     setExpandedKey(node.node_key)
+    if (decisionRecalculationTimerRef.current) window.clearTimeout(decisionRecalculationTimerRef.current)
+    setDecisionRecalculationKey(`steer:${node.node_key}:${Date.now()}`)
+    decisionRecalculationTimerRef.current = window.setTimeout(() => {
+      setDecisionRecalculationKey(null)
+      decisionRecalculationTimerRef.current = null
+    }, 2_200)
     await submitInstruction(node, instruction)
   }, [state.nodes, steerTargetKey, submitInstruction])
 
@@ -1488,6 +1521,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               ))}
             </div>
           </div>
+          {/* Two numbers, not four: value protected already lives in the stage
+              receipts below, and an event count means nothing to a client. */}
           <div className="kpi-grid" aria-label="Run KPIs">
             <div className="kpi-card">
               <span>Status</span>
@@ -1496,14 +1531,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             <div className="kpi-card" title={runSavings?.basis}>
               <span>Time Saved</span>
               <strong>{runSavings?.humanTime ?? '0m'}</strong>
-            </div>
-            <div className="kpi-card" title={runSavings?.basis}>
-              <span>Value Protected</span>
-              <strong>{runSavings?.money ?? '$0'}</strong>
-            </div>
-            <div className="kpi-card">
-              <span>Events</span>
-              <strong>{state.event_log.length}</strong>
             </div>
           </div>
           <div className={`next-task-card state-${nextTask.state}`} aria-label="Next task in line">
@@ -1551,12 +1578,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           {stageGraphs.map(({ stage, nodes, edges, height, receipt }) => (
             <div className="operational-stage-group" key={stage.id}>
                 {/* The narrative hinge: without it the two lanes read as two
-                    unrelated boxes. This is the one sentence that explains
-                    why the case below exists at all. */}
+                    unrelated boxes. It names the SPECIFIC thing the watch
+                    caught, so it never repeats the lane description. */}
                 {stage.id === 'below' && stage.totalActions > 0 && (
                   <div className="lane-handoff" aria-label="How this case started">
                     <Zap aria-hidden="true" size={14} />
-                    <span>The watch caught something — it opened this case</span>
+                    <span>{triggerHeadline
+                      ? `The watch caught it: ${triggerHeadline}`
+                      : 'The watch caught something — it opened this case'}</span>
                   </div>
                 )}
                 <OperationalStage
@@ -1565,8 +1594,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                     : null}
                   stage={stage}
                 >
-                  {nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
-                  {nodes.length > 0 && (
+                  {stage.id === 'above' && (
+                    <AmbientStrip
+                      caseStudy={clientMetadata.caseStudy}
+                      nodes={stage.nodeKeys.flatMap((nodeKey) => state.nodes[nodeKey] ? [state.nodes[nodeKey]] : [])}
+                    />
+                  )}
+                  {stage.id !== 'above' && nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
+                  {stage.id !== 'above' && nodes.length > 0 && (
                     <div
                       className="stage-flow"
                       ref={(element) => { stageCanvasRefs.current[stage.id] = element }}
@@ -1604,7 +1639,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                       </ReactFlow>
                     </div>
                   )}
-                  {stage.id !== 'unclassified' && <ImpactReceipt receipt={receipt} />}
+                  {stage.id === 'below' && <ImpactReceipt receipt={receipt} />}
                 </OperationalStage>
             </div>
           ))}

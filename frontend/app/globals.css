@@ -344,17 +344,20 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .prompt-bar-spin { animation: spin 1s linear infinite; }
 
 .header {
-  position: relative;
-  min-height: 190px;
+  /* Follows the scroll: the client, the objective, the agents and the next
+     task stay in sight however deep the graph gets. */
+  position: sticky;
+  top: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 58fr) minmax(520px, 42fr);
   align-items: start;
   gap: 34px;
-  padding: 62px 18px 14px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid #2c5275;
   background: linear-gradient(100deg, #07182c, #0d2845 70%, #0a2038);
   box-shadow: 0 10px 30px #020a1399;
-  z-index: 20;
+  z-index: 30;
 }
 
 .client-area {
@@ -404,16 +407,20 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .client-meta-field.strong strong {
   color: #fbfaf4;
-  font-size: clamp(24px, 1.85vw, 34px);
-  line-height: 1;
+  font-size: clamp(30px, 2.6vw, 44px);
+  font-weight: 800;
+  line-height: 1.02;
+  white-space: normal;
 }
 .current-task-block {
   max-width: min(920px, 100%);
 }
-.current-task-block > span { color: var(--chartreuse); }
+.current-task-block > span { color: var(--chartreuse); font-size: 11px; }
 .current-task-block strong {
   color: #fbfaf4;
-  font-size: clamp(18px, 1.35vw, 26px);
+  font-size: clamp(21px, 1.7vw, 30px);
+  font-weight: 700;
+  line-height: 1.15;
   white-space: normal;
 }
 .operational-intelligence {
@@ -478,15 +485,16 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .agent-chip {
   max-width: 100%;
-  min-height: 20px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   border: 1px solid #426787;
   border-radius: 999px;
-  padding: 3px 7px;
+  padding: 5px 11px;
   background: #07182c75;
   color: #cbd9df;
-  font-size: 9px;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
@@ -633,6 +641,117 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   font-weight: 800;
   letter-spacing: .05em;
 }
+/* The Watch as a compact perpetual loop — slim, alive, no DONE badges. */
+.ambient-strip { display: grid; gap: 8px; padding: 2px 20px 12px; }
+.ambient-items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ambient-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 10px 14px;
+  border: 1px solid #1d3f61;
+  border-radius: 11px;
+  background: #0b2138;
+}
+.ambient-loop {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid #24486e;
+  border-top-color: var(--chartreuse);
+  border-radius: 50%;
+  animation: spin 2.6s linear infinite;
+}
+.ambient-copy { display: grid; gap: 2px; min-width: 0; }
+.ambient-copy strong { color: #eef4f5; font-size: 13px; font-weight: 800; line-height: 1.2; }
+.ambient-copy small {
+  color: #93a9b8;
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ambient-proof {
+  margin: 0;
+  color: var(--chartreuse);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+/* Decision drawer trimmed to the question and the options. */
+.node-drawer.decision-only .drawer-body { padding-top: 6px; }
+.decision-question { margin: 0 0 4px; color: #2b3036; font-size: 14px; font-weight: 600; line-height: 1.45; }
+
+/* Screen two of the demo flow: the client and their standing prompt. */
+.start-case-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: radial-gradient(1200px 700px at 50% 12%, #0d2845, var(--navy-deep));
+  transition: opacity .38s var(--ease), transform .38s var(--ease);
+}
+.start-case-page.entering { opacity: 0; transform: scale(.985); }
+.start-case-shell {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 34px 36px 30px;
+  border: 1px solid #24486e;
+  border-radius: 18px;
+  background: #0b2138f2;
+  box-shadow: 0 30px 80px #020b14cc;
+}
+.start-case-eyebrow {
+  color: var(--chartreuse);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.start-case-shell h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: #fbfaf4;
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.start-case-lede { margin: 0; color: #93a9b8; font-size: 13px; }
+.start-case-shell textarea {
+  padding: 14px 16px;
+  border: 1px solid #24486e;
+  border-radius: 12px;
+  background: #071729;
+  color: #eef4f5;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.start-case-shell textarea:focus { outline: 1px solid var(--chartreuse); }
+.start-case-shell button {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--chartreuse);
+  color: #1c2a06;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.start-case-shell button:hover { transform: translateY(-1px); box-shadow: 0 10px 24px #d7f24c33; }
+.start-case-shell button:disabled { opacity: .6; cursor: default; }
+
 .lane-handoff {
   display: flex;
   align-items: center;

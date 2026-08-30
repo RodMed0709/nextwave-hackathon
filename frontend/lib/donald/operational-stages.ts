@@ -30,6 +30,8 @@ export type ClientProjectMetadata = {
   clientName: string | null
   business: string | null
   projectGoal: string | null
+  /** Published, attributable client results (e.g. the Berrios case-study numbers). */
+  caseStudy: string | null
   agents: ConnectedAgent[]
 }
 
@@ -125,7 +127,9 @@ function resolveStage(node: RunNode, graph: StageGraph | undefined, seen: Set<st
     )
     if (incoming) return resolveStage(graph.nodes[incoming.source_node_key], graph, seen)
   }
-  return mappedStageForNode(node) ?? 'unclassified'
+  // Unmapped work joins the response, never a third "unclassified" lane: a
+  // client should see two stories on this screen, not a junk drawer.
+  return mappedStageForNode(node) ?? 'below'
 }
 
 export function operationalStageForNode(node: RunNode, graph?: StageGraph): OperationalStageId {
@@ -205,6 +209,7 @@ export function clientProjectMetadata(events: readonly DonaldEvent[], fallbackGo
       stringValue(payload.implementation_goal) ??
       stringValue(payload.run_summary) ??
       fallbackGoal,
+    caseStudy: stringValue(payload.case_study),
     agents,
   }
 }

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 OUT = "events.berrios-op4471.jsonl"
 RUN_KEY = "berrios-op4471"
 T0 = datetime(2026, 8, 29, 5, 20, 4, tzinfo=timezone.utc)
-PACE = 0.6  # global pace factor: scales every advance so the run reads at ~68 s
+PACE = 0.85  # global pace factor: ~98 s — fast enough to hold a room, slow enough to read
 
 events = []
 clock = 0.0
@@ -97,6 +97,7 @@ emit("run_started", {
     "client_name": "Mueblerías Berríos — Puerto Rico",
     "scenario": "berrios-op4471",
     "provider": "Nauta",
+    "case_study": "Published Berrios results: $3M/yr less demurrage · 65% less manual work",
     "agents": [
         {"label": "Nina", "role": "Shipment Watch"},
         {"label": "Theo", "role": "Freight Anomaly"},

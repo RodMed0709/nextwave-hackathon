@@ -46,8 +46,8 @@ test('operational stage mapping groups targeted response actions below the line'
   assert.equal(operationalStageForNode(node({ node_key: 'act_book_alternate', label: 'Book alternate carrier' })), 'below')
 })
 
-test('operational stage mapping leaves unknown actions unclassified', () => {
-  assert.equal(operationalStageForNode(node({ node_key: 'audit-customs-documents', label: 'Audit customs documents' })), 'unclassified')
+test('operational stage mapping sends unknown actions to the response, never a third lane', () => {
+  assert.equal(operationalStageForNode(node({ node_key: 'audit-customs-documents', label: 'Audit customs documents' })), 'below')
 })
 
 test('operational stage summaries count only active non-removed actions', () => {
@@ -88,6 +88,7 @@ test('client project metadata reads only existing event metadata', () => {
     clientName: 'Muebles del Sur',
     business: 'Furniture imports',
     projectGoal: 'Resolve shipment delay',
+    caseStudy: null,
     agents: [{ label: 'Nina', role: 'Shipment Watch' }],
   })
 })
@@ -107,8 +108,9 @@ test('a discovered node inherits its parent stage instead of an "other work" buc
   }
 
   assert.equal(operationalStageForNode(email, { nodes, edges }), 'below')
-  // Without the graph the same node has no keyword mapping of its own.
-  assert.equal(operationalStageForNode(email), 'unclassified')
+  // Without the graph the same node has no keyword mapping of its own and
+  // still lands in the response - an unclassified lane is forbidden.
+  assert.equal(operationalStageForNode(email), 'below')
 
   // The whole flow hangs together: no separate unclassified section appears.
   const summaries = summarizeOperationalStages(nodes, edges)

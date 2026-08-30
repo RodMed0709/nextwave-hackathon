@@ -36,7 +36,8 @@ export function DonaldAccess() {
     setError('')
     setIsEntering(true)
     window.setTimeout(() => {
-      router.push(`/runs/${DEMO_CLIENT_ID}`)
+      // Second screen of the flow: the client and their standing prompt.
+      router.push('/start')
     }, 460)
   }
 
