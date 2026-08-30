@@ -1,31 +1,34 @@
-# Use case 02 — Blocked on missing data
+# Use case 02 — Waiting for a missing document
 
-**run_key** `nauta-blocked-data-002` · ~3 min · ends `succeeded` after a block clears
+**run_key** `nauta-blocked-data-<unique-suffix>` · ~3 min · ends `succeeded` after a block clears
 **Shows** — `block_action` with `missing_data`, the run going amber, then resuming
+
+**Fresh-run rule.** Generate a new suffix for every demo and verify the graph is empty before
+declaring the plan. Never reuse or resume a previous run for this scenario.
 
 ## The story
 
 A supplier ships early and the container is already on the water, but the **commercial
-invoice never arrived**. Without it customs value cannot be established, so classification
-and duty cannot be computed. The agent gets four steps in and stops — correctly.
+invoice never arrived**. Without it Donald cannot verify the shipment value, calculate
+duties, or submit the customs entry. The agent gets four steps in and stops — correctly.
 
-This is the scenario that proves a stuck run *looks* stuck. Before `block_action` existed
-an agent in this position had two bad options: keep posting progress and lie about being
-busy, or fail the step and overstate the problem. A run that is waiting must be visibly
-waiting, or nobody comes to unblock it.
+This scenario shows Donald pausing visibly and safely when required information is missing.
+Before `block_action` existed, an agent in this position had two bad options: keep posting
+progress and pretend to be busy, or fail the step and overstate the problem. A run that is
+waiting must clearly say what it needs, why work stopped, and how to continue.
 
 ## The plan
 
 | # | Stage | node_key | Label | Agent | ~sec | Depends on |
 |---|---|---|---|---|---|---|
-| 1 | INGEST | `ingest_asn` | Read advance shipping notice | Nina | 8 | — |
-| 2 | IDENTIFY | `identify_po` | Match to purchase order | Nina | 12 | 1 |
-| 3 | EXTRACT | `extract_packing_list` | Extract packing list | Theo | 20 | 2 |
-| 4 | EXTRACT | `extract_commercial_invoice` | Extract commercial invoice | Theo | 25 | 2 |
-| 5 | RECONCILE | `reconcile_customs_value` | Establish customs value | Theo | 22 | 3, 4 |
-| 6 | DETECT | `detect_classification_gap` | Check HS classification | Alec | 18 | 5 |
-| 7 | IMPACT | `calculate_duty` | Compute duty and fees | Marcus | 20 | 6 |
-| 8 | ACT | `act_file_entry` | File customs entry | Alec | 24 | 7 |
+| 1 | INGEST | `ingest_asn` | Read shipment notice | Nina | 8 | — |
+| 2 | IDENTIFY | `identify_po` | Find purchase order | Nina | 12 | 1 |
+| 3 | EXTRACT | `extract_packing_list` | Read packing list | Theo | 20 | 2 |
+| 4 | EXTRACT | `extract_commercial_invoice` | Find commercial invoice | Theo | 25 | 2 |
+| 5 | RECONCILE | `reconcile_customs_value` | Verify shipment value | Theo | 22 | 3, 4 |
+| 6 | DETECT | `detect_classification_gap` | Check product codes | Alec | 18 | 5 |
+| 7 | IMPACT | `calculate_duty` | Calculate duties and fees | Marcus | 20 | 6 |
+| 8 | ACT | `act_file_entry` | Submit customs entry | Alec | 24 | 7 |
 
 **Schema reminder.** Pass `agent_label` on every declared step so the UI can lane it, and
 use `depends_on: [...]` (not `after`) wherever a step waits on more than one predecessor.
@@ -37,13 +40,13 @@ This server exposes a **`wait`** tool (demo pacing is on). Durations in this bri
 decoration: use `wait` to spend them.
 
 ```
-start_action(node_key="predict_arrival")
-wait(10, "modelling berth window")
-report_progress(node_key="predict_arrival", message="berth window 07-SEP 12:00-18:00", percent=40)
-wait(10, "scoring gate-out")
-report_progress(node_key="predict_arrival", message="scoring gate-out probability", percent=75)
-wait(8, "finalising")
-complete_action(node_key="predict_arrival", output_summary="Berthing 07-SEP 14:00, gate-out 09-SEP. Confidence 0.82.")
+start_action(node_key="extract_packing_list")
+wait(7, "reading the packing list")
+report_progress(node_key="extract_packing_list", message="Reading the packing list for purchase order PO-44190.", percent=35)
+wait(7, "checking quantities")
+report_progress(node_key="extract_packing_list", message="Checking product quantities and package counts.", percent=75)
+wait(5, "finishing the packing-list check")
+complete_action(node_key="extract_packing_list", output_summary="Packing list verified: 9 products across 118 packages.")
 ```
 
 A single `wait` is capped at **30s** — for longer, chain several with a `report_progress`
@@ -63,11 +66,11 @@ Steps 1–3 run normally. Then:
 
 ```
 report_progress(node_key="extract_commercial_invoice",
-  message="searching supplier portal and mailbox for CI against PO-44190")
+  message="Looking for the commercial invoice for purchase order PO-44190 in the supplier portal and shared mailbox.")
 
 block_action(node_key="extract_commercial_invoice",
   reason="missing_data",
-  message="No commercial invoice for PO-44190. Supplier portal has the packing list and the BL but no CI. Customs value cannot be established without it.")
+  message="Commercial invoice missing for purchase order PO-44190. Donald needs it to verify the shipment value and calculate duties. Add the invoice to continue; nothing has been submitted.")
 ```
 
 Blocking the step also marks the **whole run** blocked — that is what puts it at the top
@@ -85,10 +88,10 @@ silence is the point.
 Then simulate the invoice arriving:
 
 ```
-report_progress(node_key="extract_commercial_invoice", message="CI-88907 received from supplier")
+report_progress(node_key="extract_commercial_invoice", message="Invoice 88907 received from the supplier.")
 start_action(node_key="extract_commercial_invoice")
 complete_action(node_key="extract_commercial_invoice",
-  output_summary="Invoice CI-88907 — USD 96,400, Incoterm FOB Ningbo, 9 SKUs")
+  output_summary="Invoice 88907 verified: shipment value USD 96,400 across 9 products.")
 ```
 
 `start_action` on a blocked step is how you resume. Same node_key — do not invent a new
@@ -97,13 +100,13 @@ the same node used to be silently swallowed.)
 
 ### 5–8 · Carry on
 
-- `reconcile_customs_value` → "Customs value USD 96,400 agrees with the PO."
-- `detect_classification_gap` → "Two SKUs classified 6403.99 need review; the rest are clean."
-- `calculate_duty` → "Duty USD 15,424 at 16%. MPF USD 341."
-- `act_file_entry` → "Entry 315-9982177-4 filed. Release expected within 24h."
+- `reconcile_customs_value` → "Shipment value USD 96,400 matches purchase order PO-44190."
+- `detect_classification_gap` → "Product codes verified. All 9 products are ready for filing."
+- `calculate_duty` → "Duties USD 15,424. Processing fee USD 341."
+- `act_file_entry` → "Customs entry 315-9982177-4 submitted. Release expected within 24 hours."
 
 ```
-finish_run(status="succeeded", message="Entry filed. Blocked 41s waiting on the commercial invoice.")
+finish_run(status="succeeded", message="Customs entry submitted. Donald paused safely for 42 seconds, resumed from the same step, and completed the filing without guessing any values.")
 ```
 
 Naming the blocked duration in the closing message is a nice touch — it is the number an
@@ -112,5 +115,6 @@ operations manager actually wants.
 ## Corner case in the same shape
 
 Run it again and **never** unblock. Let `finish_run(status="failed", message="No commercial
-invoice after 3 business days; escalated to the supplier manager.")` close it out with the
-step still blocked. Worth showing once: it proves a stuck run does not sit open forever.
+invoice after 3 business days. Escalated to the supplier manager; nothing was submitted.")`
+close it out with the step still blocked. Worth showing once: it proves a stuck run does not
+sit open forever.

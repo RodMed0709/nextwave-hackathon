@@ -210,3 +210,43 @@ creates a different graph, follows `AMD-1048-01`, and proves the $840 mismatch i
 - **Numbers count upward.** `$0 → $3,780` over 800 ms lands ten times harder than simply appearing.
 - **Never buttons named “Run A” and “Run B.”** Show real requests and real operation names.
 - **Only one active node at a time.** The eye must always know where to go.
+
+---
+
+# Pitch-ready visual direction
+
+The event-driven frontend on `main` remains the product foundation. The static prototype from
+`feat/donald-ui-v2` is reference material only; do not port its page, inspector, controls, graph,
+or benchmark copy.
+
+## The robot tells the story
+
+- Donald is the visual protagonist, not a decoration inside a white card.
+- Use Mau's robot asset and the idea of a state-aware companion, adapted to live runtime events.
+- A single robot travels along graph edges in 600–900 ms. It must visibly move between positions;
+  a glow or instant relocation does not count as movement.
+- Give the robot purposeful state animation: inspect while working, stop and point at what is
+  missing, receive new evidence, continue, and acknowledge completion once.
+- Keep speech to one short sentence at meaningful transitions. The animation carries the story;
+  text explains only what the motion cannot.
+- Respect `prefers-reduced-motion` with an equivalent non-traveling state transition.
+
+## The graph is a stage, not a wall of boxes
+
+- Do not make every action an identical white rectangle. Use shape, depth, color, and scale to
+  distinguish routine work, active work, waiting, decisions, money impact, and outcomes.
+- Activity pulses and orbiting indicators should be larger and legible on a projector, while still
+  directing attention to exactly one active step.
+- Structural animations remain event-driven: evidence enters, the robot reacts, edges activate,
+  and the graph changes only when runtime state changes.
+- Waiting is amber and calm; failure is red and unmistakably different.
+
+## Pitch copy and money
+
+- All user-visible product and demo copy is English.
+- Prefer plain outcomes over logistics or runtime jargon. A first-time viewer must understand what
+  happened, why it matters, and what happens next within five seconds.
+- Show economic impact only when the event payload supports it. Lead with one clear operation-level
+  number and its consequence; move sources, calculations, and benchmarks behind `View details`.
+- For the blocked-data demo, the core promise is: Donald does not guess when information is
+  missing. It pauses safely, explains what it needs, and resumes from the same step when it arrives.
