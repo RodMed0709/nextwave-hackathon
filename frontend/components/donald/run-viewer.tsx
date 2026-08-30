@@ -877,6 +877,8 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   const isEmail = isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })
   const emailArtifact = isEmail ? getLatestArtifact(node.artifacts) : null
   const doneHeadline = data.displayStatus === 'DONE' ? node.output_summary?.headline ?? null : null
+  // Bad news reads amber even when the step itself SUCCEEDED at detecting it.
+  const badNews = Boolean(doneHeadline && /cancel|declin|dropped|missed|late|slip|risk/i.test(doneHeadline))
   const cardTitle = (doneHeadline && doneHeadline.length > 52
     ? `${doneHeadline.slice(0, 49).trimEnd()}…`
     : doneHeadline) || humanTitle.title
@@ -889,6 +891,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
     data.intervention ? 'decision-open' : '',
     pendingIntervention ? 'steered' : '',
     data.appearance.steeredBorn ? 'steered-born' : '',
+    badNews ? 'bad-news' : '',
   ].filter(Boolean).join(' ')
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -924,9 +927,9 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       {data.intervention && <InstructionBox data={data} />}
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
-      {/* Subtasks live only in the expanded details now — the card face is
-          for the ANSWER. The headline moved into the title itself, so the
-          answer block carries just the finding's bullets. */}
+      {data.displayStatus !== 'DONE' && node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
+      {/* Once DONE the card face is for the ANSWER: the headline is the title
+          and the answer block carries the finding's bullets. */}
       {data.displayStatus === 'DONE' && findingBullets(node.output_summary?.detail).length > 0 && (
         <div className="card-answer">
           <ul>

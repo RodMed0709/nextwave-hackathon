@@ -212,24 +212,24 @@ emit("intervention_requested", {
     "type": "choice",
     "prompt": "The pickup was dropped. Three windows are open — pick one:",
     "options": [
-        {"id": "date-sep2", "label": "Tue Sep 2 — morning window, $0",
-         "rationale": "Earliest open window at the port.",
-         "rank": 1, "branch": "date-sep2", "maximum_cost_usd": 0},
-        {"id": "date-sep3", "label": "Wed Sep 3 — afternoon window, $0",
-         "rationale": "One buffer day, same cost.",
-         "rank": 2, "branch": "date-sep3", "maximum_cost_usd": 0},
-        {"id": "date-sep4", "label": "Thu Sep 4 — morning window, $0",
-         "rationale": "Latest option before demurrage bites.",
-         "rank": 3, "branch": "date-sep4", "maximum_cost_usd": 0},
+        {"id": "date-oct2am", "label": "Thu Oct 2 — morning, $0",
+         "rationale": "Standard slot at no charge, still beats the demurrage clock.",
+         "rank": 1, "branch": "date-oct2am", "maximum_cost_usd": 0},
+        {"id": "date-oct1am", "label": "Wed Oct 1 — morning, $120",
+         "rationale": "A day earlier, at a rush-slot surcharge.",
+         "rank": 2, "branch": "date-oct1am", "maximum_cost_usd": 120},
+        {"id": "date-oct2pm", "label": "Thu Oct 2 — afternoon, $45",
+         "rationale": "Same day, later gate — small after-noon fee.",
+         "rank": 3, "branch": "date-oct2pm", "maximum_cost_usd": 45},
     ],
-    "default_option_id": "date-sep2",
+    "default_option_id": "date-oct2am",
 }, node_key="decide_new_date", agent="Nina", advance=2.0)
 emit("agent_message", {
     "message": "Nina is holding the reschedule until you pick a window.",
 }, node_key="decide_new_date", agent="Nina", advance=6.0)
 emit("intervention_resolved", {
-    "option_id": "date-sep2",
-    "branch_id": "date-sep2",
+    "option_id": "date-oct2am",
+    "branch_id": "date-oct2am",
     "used_default": False,
 }, node_key="decide_new_date", agent="Nina", advance=4.0)
 done("decide_new_date",
@@ -241,13 +241,13 @@ done("decide_new_date",
 reveal("reconcile_confirmations", "Confirm the date", prev="decide_new_date", advance=1.2)
 start("reconcile_confirmations", advance=1.0)
 progress("reconcile_confirmations", "Confirming the picked window with the partner…", 25, advance=3.0)
-progress("reconcile_confirmations", "Sep 2: unavailable. Trying Sep 3…", 50, advance=3.0)
-progress("reconcile_confirmations", "Sep 3: unavailable. Trying Sep 4…", 75, advance=3.0)
+progress("reconcile_confirmations", "Oct 2 morning: unavailable. Trying Oct 1…", 50, advance=3.0)
+progress("reconcile_confirmations", "Oct 1: unavailable. Trying Oct 2 afternoon…", 75, advance=3.0)
 emit("node_status_changed", {
     "status": "failed",
     "headline": "All 3 dates failed",
-    "finding": "Sep 2, Sep 3 and Sep 4: all declined. "
-               "The partner cannot serve this container this week.",
+    "finding": "Oct 2 AM, Oct 1 and Oct 2 PM: all declined. "
+               "The partner cannot serve this container at all.",
     "error_message": "The plan died here: the partner declined every window.",
     "manual_minutes": 20,
 }, node_key="reconcile_confirmations", agent="Theo", advance=2.8)
@@ -267,7 +267,7 @@ emit("artifact_added", {
         "Subject: BERU-40022 — none of the proposed windows confirmed\n\n"
         "Dear all,\n\n"
         "Please be advised that none of the three proposed pickup windows "
-        "(Sep 2, Sep 3, Sep 4) could be confirmed with the current partner.\n\n"
+        "(Oct 1 and Oct 2) could be confirmed with the current partner.\n\n"
         "We are sourcing alternate carriers now and will present ranked "
         "options shortly. The demurrage clock on BERU-40022 is running.\n\n"
         "Kind regards,\n"
@@ -308,11 +308,11 @@ done("quantify_demurrage",
 # ── 6 · PLAN · alternate carriers, ranked ───────────────────────────────────
 reveal("plan_carriers", "Find alternate carriers", prev="quantify_demurrage", advance=1.2)
 start("plan_carriers", advance=1.0)
-progress("plan_carriers", "Bestway Transport: $480, pickup Sep 3", 33, advance=2.6)
-progress("plan_carriers", "Anytime Transport: $610, pickup Sep 2", 66, advance=2.6)
+progress("plan_carriers", "Bestway Transport: $480, pickup Oct 2", 33, advance=2.6)
+progress("plan_carriers", "Anytime Transport: $610, pickup Oct 1", 66, advance=2.6)
 done("plan_carriers",
      "Bestway beats the clock",
-     "Bestway: $480, Sep 3. Anytime: $610, Sep 2. Aqua Gulf: $395, Sep 8 "
+     "Bestway: $480, Oct 2. Anytime: $610, Oct 1. Aqua Gulf: $395, Oct 7 "
      "— cheapest on paper, but 5 extra days of demurrage erase the saving.",
      manual_minutes=18, advance=2.6)
 
@@ -323,20 +323,20 @@ emit("intervention_requested", {
     "type": "steer",
     "prompt": "The partner is out. Three PR carriers can take BERU-40022 — your call:",
     "options": [
-        {"id": "carrier-a", "label": "Bestway Transport — pickup Sep 3, $480",
+        {"id": "carrier-a", "label": "Bestway Transport — pickup Oct 2, $480",
          "rationale": "Largest bonded trucker in PR, dedicated port drayage; cheapest option that beats the clock.",
          "rank": 1, "branch": "carrier-a", "maximum_cost_usd": 480},
-        {"id": "carrier-b", "label": "Anytime Transport — pickup Sep 2, $610",
+        {"id": "carrier-b", "label": "Anytime Transport — pickup Oct 1, $610",
          "rationale": "Intermodal container service; a day earlier at a premium the schedule does not require.",
          "rank": 2, "branch": "carrier-b", "maximum_cost_usd": 610},
-        {"id": "carrier-c", "label": "Aqua Gulf Xpress — pickup Sep 8, $395",
+        {"id": "carrier-c", "label": "Aqua Gulf Xpress — pickup Oct 7, $395",
          "rationale": "Solid ~100-truck fleet; cheapest sticker, but 5 idle days of demurrage make it the dearest.",
          "rank": 3, "branch": "carrier-c", "maximum_cost_usd": 395},
     ],
     "default_option_id": "carrier-a",
 }, node_key="decide_carrier", agent="Rex", advance=2.2)
 emit("agent_message", {
-    "message": "Rex is holding the booking — Bestway's Sep 3 slot is first come, first served.",
+    "message": "Rex is holding the booking — Bestway's Oct 2 slot is first come, first served.",
 }, node_key="decide_carrier", agent="Rex", advance=7.0)
 emit("intervention_resolved", {
     "option_id": "carrier-a",
@@ -345,7 +345,7 @@ emit("intervention_resolved", {
 }, node_key="decide_carrier", agent="Rex", advance=5.0)
 done("decide_carrier",
      "Bestway approved — $480",
-     "Sep 3 pickup at $480: beats the clock, saves the schedule.",
+     "Oct 2 pickup at $480: beats the clock, saves the schedule.",
      manual_minutes=8, advance=1.8)
 
 # ── 8 · ACT · confirm with the carrier ──────────────────────────────────────
@@ -360,10 +360,10 @@ emit("artifact_added", {
         "To: dispatch@bestwaypr.example\n"
         "From: lex@ops.nauta.ai\n"
         "Date: 29 Aug 2026 14:24 UTC\n"
-        "Subject: BERU-40022 — pickup confirmed, Sep 3, $480\n\n"
+        "Subject: BERU-40022 — pickup confirmed, Oct 2, $480\n\n"
         "Dear Bestway Transport Dispatch,\n\n"
         "We hereby confirm the pickup of container BERU-40022 at San Juan "
-        "port on Sep 3, at the agreed rate of $480 all-in.\n\n"
+        "port on Oct 2, at the agreed rate of $480 all-in.\n\n"
         "Terminal reference and release documents follow in a separate "
         "message. Please acknowledge the booking.\n\n"
         "Kind regards,\n"
@@ -371,7 +371,7 @@ emit("artifact_added", {
     ),
 }, node_key="act_confirm_email", agent="Lex", advance=2.6)
 done("act_confirm_email",
-     "Pickup booked — Sep 3, $480",
+     "Pickup booked — Oct 2, $480",
      "Bestway confirmed. The container moves before demurrage does damage.",
      manual_minutes=12, advance=2.0)
 
@@ -395,7 +395,7 @@ emit("node_status_changed", {"status": "in_progress", "started_at": stamp(clock 
 done("fork_flow",
      "New flow live — original kept",
      "The dead plan is closed as a reference record, never overwritten. "
-     "A fresh flow carries the Sep 3 pickup; the watch resumes on it.",
+     "A fresh flow carries the Oct 2 pickup; the watch resumes on it.",
      manual_minutes=6, advance=2.4)
 
 # ── 9 · ACT (financial) · pay and record ────────────────────────────────────
@@ -411,7 +411,7 @@ emit("artifact_added", {
         "Payee:        Bestway Transport, Inc. (San Juan drayage)\n"
         "Amount:       USD 480.00\n"
         "Container:    BERU-40022\n"
-        "Service:      Port pickup — Sep 3\n"
+        "Service:      Port pickup — Oct 2\n"
         "References:   New flow (live) + original flow (reference)\n"
         "Copied to:    accounting@muebleriasberrios.pr\n\n"
         "Recorded for audit — Nauta Operations."
@@ -426,7 +426,7 @@ done("act_pay_record",
 
 emit("run_finished", {
     "summary": {
-        "headline": "BERU-40022 rescued — picked up Sep 3",
+        "headline": "BERU-40022 rescued — picked up Oct 2",
         "detail": (
             "The trucking partner dropped the pickup and every proposed window "
             "failed. Nauta sourced three Puerto Rico carriers, the operator approved the one "

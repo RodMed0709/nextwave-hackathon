@@ -21,7 +21,9 @@ export async function GET(request: Request) {
   const recording = await readFile(join(process.cwd(), 'lib', 'donald', file), 'utf8')
   return new Response(recording, {
     headers: {
-      'cache-control': 'public, max-age=3600',
+      // Never cache: Cloudflare held old fixtures for an hour and the site
+      // looked un-updated while localhost showed the new build.
+      'cache-control': 'no-store',
       'content-type': 'application/x-ndjson; charset=utf-8',
     },
   })

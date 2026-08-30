@@ -2225,3 +2225,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .render-button { padding: 8px 16px; font-size: 13px; }
 
 .operational-stage-title { display: grid; gap: 3px; justify-items: start; align-content: start; }
+
+/* Bad news on a green card is a lie: detected-bad-things read amber. */
+.flow-card.bad-news { border-color: var(--amber); background: #fff8ec; box-shadow: 0 0 0 2px #e8a23d44, 0 14px 30px #8a5c1022; }
+.flow-card.bad-news h2 { color: var(--amber-deep); }
+.flow-card.bad-news .card-header .status { background: var(--amber); color: #2a1a02; padding: 4px 10px; border-radius: 999px; font-weight: 900; box-shadow: none; }
