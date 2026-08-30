@@ -16,7 +16,7 @@ with the task normally and do not mention it.
 **start_run** returns a **watch_url**. Show it to the person immediately, before
 any work starts:
 
-> Follow along: https://donald.todes.mx/runs/<your-run-key>
+> Follow along: https://usedonald.com/runs/<your-run-key>
 
 Do this as the FIRST thing after starting the run. The graph is only useful to
 someone who is looking at it while it happens — a link produced at the end is a
@@ -232,10 +232,10 @@ you did with a credential, never the credential.
 ```
 start_run(run_key="sess_8f21", name="Reconcile March invoices",
           summary="Pull invoices from the billing API, match against the ledger, flag mismatches")
-→ {"ok": true, "watch_url": "https://donald.todes.mx/runs/sess_8f21", ...}
+→ {"ok": true, "watch_url": "https://usedonald.com/runs/sess_8f21", ...}
 
 # Tell the person, right now, before doing anything else:
-#   "Follow along: https://donald.todes.mx/runs/sess_8f21"
+#   "Follow along: https://usedonald.com/runs/sess_8f21"
 
 declare_actions(run_key="sess_8f21", actions=[
   {node_key: "fetch_invoices",  name: "Fetch invoices",       agent_label: "Nina"},

@@ -9,7 +9,7 @@ additive — no change to how their agents work.
 Transport is **streamable HTTP**. There is **no authentication** (demo).
 
 ```
-https://mcp.donald.todes.mx/v1/mcp
+https://mcp.usedonald.com/v1/mcp
 ```
 
 **Agents configured by a JSON file** — put this in the client's MCP config
@@ -20,7 +20,7 @@ https://mcp.donald.todes.mx/v1/mcp
   "mcpServers": {
     "donald": {
       "type": "http",
-      "url": "https://mcp.donald.todes.mx/v1/mcp"
+      "url": "https://mcp.usedonald.com/v1/mcp"
     }
   }
 }
@@ -69,16 +69,16 @@ domain knowledge and is not required for agents working in another domain.
 
 ## Checking it worked
 
-While an agent runs, the graph is at `https://donald.todes.mx`.
+While an agent runs, the graph is at `https://usedonald.com`.
 
 To check without the UI:
 
 ```sh
 # runs, newest first
-curl -s 'https://api.donald.todes.mx/v1/agent-runs?page_size=5'
+curl -s 'https://api.usedonald.com/v1/agent-runs?page_size=5'
 
 # live event stream for one run (replace the key)
-curl -N 'https://api.donald.todes.mx/v1/runs/<run_key>/stream?after=0'
+curl -N 'https://api.usedonald.com/v1/runs/<run_key>/stream?after=0'
 ```
 
 The stream prints `id:`, `event:` and `data:` lines as the agent reports. If it

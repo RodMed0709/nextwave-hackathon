@@ -6,9 +6,9 @@ Ubuntu 24.04), with MySQL in-cluster on the same node.
 
 | Hostname | Serves | Helm release |
 | --- | --- | --- |
-| `api.donald.todes.mx` | generated REST API + SSE stream `GET /v1/runs/{run_key}/stream` | `donald-api` (`DONALD_ROLE=api`) |
-| `mcp.donald.todes.mx` | MCP endpoint at **`/v1/mcp`** | `donald-mcp` (`DONALD_ROLE=mcp`) |
-| `donald.todes.mx` | React frontend — **not built yet**, placeholder page | `donald-web` |
+| `api.usedonald.com` | generated REST API + SSE stream `GET /v1/runs/{run_key}/stream` | `donald-api` (`DONALD_ROLE=api`) |
+| `mcp.usedonald.com` | MCP endpoint at **`/v1/mcp`** | `donald-mcp` (`DONALD_ROLE=mcp`) |
+| `usedonald.com` | React frontend — **not built yet**, placeholder page | `donald-web` |
 
 All three DNS names already resolve to `45.33.12.143` (verified).
 
@@ -293,14 +293,14 @@ this makes it explicit.
 ## Verifying by hand
 
 ```sh
-curl -i https://api.donald.todes.mx/healthz
-curl -s "https://api.donald.todes.mx/v1/clients?page_size=1"
-curl -N "https://api.donald.todes.mx/v1/runs/<run_key>/stream"
-curl -i -X POST https://mcp.donald.todes.mx/v1/mcp \
+curl -i https://api.usedonald.com/healthz
+curl -s "https://api.usedonald.com/v1/clients?page_size=1"
+curl -N "https://api.usedonald.com/v1/runs/<run_key>/stream"
+curl -i -X POST https://mcp.usedonald.com/v1/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
-curl -i https://donald.todes.mx/
+curl -i https://usedonald.com/
 ```
 
 On the box:
@@ -359,7 +359,7 @@ endpoints that do not exist (`agent_events`, `sequence_gt`). Once that is
 rewritten against the real endpoints:
 
 ```sh
-API=https://api.donald.todes.mx ./deploy-web.sh
+API=https://api.usedonald.com ./deploy-web.sh
 ```
 
 Endpoints the web app should use (all live now):
