@@ -520,8 +520,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .donald-robot-bubble {
   position: absolute;
   z-index: 4;
-  left: 137px;
-  top: 18px;
+  left: 50%;
+  top: -44px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -536,6 +536,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   font-size: 14px;
   font-weight: 850;
   letter-spacing: .02em;
+  transform: translateX(-50%);
   backdrop-filter: blur(10px);
   animation: donald-bubble-in 260ms var(--ease) both;
 }
@@ -575,8 +576,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   50% { opacity: 1; transform: scale(1.16); }
 }
 @keyframes donald-bubble-in {
-  from { opacity: 0; transform: translate(-7px, 5px) scale(.92); }
-  to { opacity: 1; transform: translate(0, 0) scale(1); }
+  from { opacity: 0; transform: translate(-50%, 7px) scale(.92); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

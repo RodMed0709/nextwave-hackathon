@@ -257,6 +257,21 @@ test('run completion settles success at the last truthful target', () => {
   })
 })
 
+test('a completed run restored from history places Donald at the last real node', () => {
+  const submitted = event(8, 'node_status_changed', 'submit', { status: 'succeeded' })
+  const finished = event(9, 'run_finished', null, { status: 'finished' })
+  const result = deriveRobotMotion({
+    event: finished,
+    events: [submitted, finished],
+    nodes: { submit: node('submit', 'succeeded', 3) },
+    edges: {},
+    previousNodeKey: null,
+  })
+
+  assert.equal(result.cue.targetNodeKey, 'submit')
+  assert.equal(result.cue.tone, 'success')
+})
+
 test('parallel focus targets the in-progress node with the latest sequence', () => {
   const earlier = event(3, 'node_status_changed', 'earlier', { status: 'in_progress' })
   const latest = event(8, 'node_status_changed', 'latest', { status: 'in_progress' })

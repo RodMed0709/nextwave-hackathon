@@ -149,7 +149,11 @@ function phaseFor(
 
 function targetFor(input: DeriveRobotMotionInput): string | null {
   if (input.event.event_type === 'run_finished' || input.event.event_type === 'run_failed') {
-    return input.previousNodeKey
+    if (input.previousNodeKey) return input.previousNodeKey
+    return [...input.events]
+      .sort((left, right) => right.sequence - left.sequence)
+      .find((event) => event.node_key && input.nodes[event.node_key] && !input.nodes[event.node_key].removed)
+      ?.node_key ?? null
   }
 
   const eventNode = input.event.node_key ? input.nodes[input.event.node_key] : null

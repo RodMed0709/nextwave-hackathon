@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
-import { ViewportPortal } from '@xyflow/react'
+import { useViewport, ViewportPortal } from '@xyflow/react'
 import { deriveRobotMotion } from '@/lib/donald/motion'
 import type { LayoutPosition, NodeSize } from '@/lib/donald/layout'
 import type { DonaldEvent, RunState } from '@/lib/donald/types'
@@ -28,10 +28,36 @@ type RobotBubble = {
   label: string
 }
 
+const ACTIVE_VERBS: Record<string, string> = {
+  Read: 'Reading',
+  Find: 'Finding',
+  Identify: 'Identifying',
+  Extract: 'Extracting',
+  Verify: 'Verifying',
+  Check: 'Checking',
+  Calculate: 'Calculating',
+  Submit: 'Submitting',
+  Send: 'Sending',
+  Reconcile: 'Reconciling',
+  Track: 'Tracking',
+  Forecast: 'Forecasting',
+  Decide: 'Deciding',
+  Reschedule: 'Rescheduling',
+}
+
+function activeNodeLabel(label: string): string {
+  const [verb, ...rest] = label.split(' ')
+  const activeVerb = ACTIVE_VERBS[verb]
+  return activeVerb ? `${activeVerb} ${rest.join(' ')}` : 'Working'
+}
+
 function bubbleFor(
   event: DonaldEvent,
   motion: ReturnType<typeof deriveRobotMotion>,
   tone: ReturnType<typeof deriveRobotMotion>['cue']['tone'],
+  nodeLabel: string,
+  nodeStatus: string | undefined,
+  waitingForUser: boolean,
 ): RobotBubble {
   if (motion.cue.metric) {
     return {
@@ -44,7 +70,12 @@ function bubbleFor(
     }
   }
 
-  if (tone === 'waiting') return { Icon: Clock3, label: 'Waiting' }
+  if (tone === 'waiting') {
+    if (waitingForUser) return { Icon: Clock3, label: 'Waiting for your response' }
+    if (nodeStatus === 'blocked_on_missing_data') return { Icon: FileText, label: 'Waiting for invoice' }
+    if (nodeStatus === 'blocked_on_provider_outage') return { Icon: Clock3, label: 'Waiting for Nauta agent' }
+    return { Icon: Clock3, label: 'Waiting' }
+  }
   if (tone === 'failure') return { Icon: TriangleAlert, label: 'Needs attention' }
   if (tone === 'success') return { Icon: Check, label: 'Done' }
 
@@ -61,10 +92,11 @@ function bubbleFor(
   if (event.event_type === 'artifact_added') return { Icon: FileText, label: 'File checked' }
   if (event.event_type === 'agent_message') return { Icon: Mail, label: 'Message received' }
   if (event.event_type.startsWith('operator_instruction_')) return { Icon: Send, label: 'Sending update' }
-  return { Icon: Sparkles, label: 'Working' }
+  return { Icon: Sparkles, label: activeNodeLabel(nodeLabel) }
 }
 
 export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageProps) {
+  const { zoom } = useViewport()
   const previousNodeKey = useRef<string | null>(null)
   const [displayNodeKey, setDisplayNodeKey] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
@@ -121,16 +153,27 @@ export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageP
   const tone = state.open_intervention?.node_key === displayNodeKey || targetNode?.status.startsWith('blocked_on_')
     ? 'waiting'
     : motion.cue.tone
-  const bubble = bubbleFor(latestEvent, motion, tone)
-  const BubbleIcon = bubble.Icon
   const nodeLabel = targetNode?.label ?? displayNodeKey
+  // React Flow scales portal content with the graph. Keep Donald legible when
+  // Fit zooms a long run out, while his graph-space anchor still follows the
+  // real node. This changes only the actor, never Maykel's camera or cards.
+  const robotScale = Math.min(3.6, Math.max(1, .85 / zoom))
+  const bubble = bubbleFor(
+    latestEvent,
+    motion,
+    tone,
+    nodeLabel,
+    targetNode?.status,
+    state.open_intervention?.node_key === displayNodeKey,
+  )
+  const BubbleIcon = bubble.Icon
 
   return (
     <ViewportPortal>
       <div
         className={`donald-robot-stage tone-${tone} transition-${motion.transition.kind} ${moving ? 'is-moving' : ''} ${fading ? 'is-fading' : ''} ${teleporting ? 'is-teleporting' : ''}`}
         style={{
-          transform: `translate3d(${position.x + size.width / 2 - 91}px, ${position.y - 205}px, 0)`,
+          transform: `translate3d(${position.x + size.width / 2 - 91}px, ${position.y - 205}px, 0) scale(${robotScale})`,
         }}
         aria-label={`Donald is ${bubble.label.toLowerCase()} at ${nodeLabel}`}
         aria-live="polite"
