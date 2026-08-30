@@ -16,6 +16,11 @@ export async function POST(request: Request): Promise<Response> {
   if (!(audio instanceof Blob) || audio.size === 0) {
     return new Response('No audio provided', { status: 400 })
   }
+  // The endpoint is public and every request bills the shared key, so cap the
+  // clip at a few minutes of speech; the prompt bar never records more.
+  if (audio.size > 6 * 1024 * 1024) {
+    return new Response('Audio too large', { status: 413 })
+  }
 
   const upstream = new FormData()
   upstream.append('file', audio, audio instanceof File ? audio.name : 'instruction.webm')
