@@ -126,12 +126,14 @@ function parseMetric(value: unknown): RobotCurrencyMetricCue | null {
   }
 }
 
-function toneFor(event: DonaldEvent): RobotMotionCue['tone'] {
+function toneFor(event: DonaldEvent, nodes: Record<string, RunNode>): RobotMotionCue['tone'] {
   const status = event.payload.status
+  const finishedWithFailure = event.event_type === 'run_finished' &&
+    Object.values(nodes).some((node) => node.status === 'failed')
+  if (event.event_type === 'run_failed' || status === 'failed' || finishedWithFailure) return 'failure'
   if (event.event_type === 'run_finished' || status === 'finished' || status === 'succeeded') {
     return 'success'
   }
-  if (event.event_type === 'run_failed' || status === 'failed') return 'failure'
   if (typeof status === 'string' && RECOVERABLE_STATUSES.has(status)) return 'waiting'
   return 'active'
 }
@@ -149,11 +151,20 @@ function phaseFor(
 
 function targetFor(input: DeriveRobotMotionInput): string | null {
   if (input.event.event_type === 'run_finished' || input.event.event_type === 'run_failed') {
-    if (input.previousNodeKey) return input.previousNodeKey
-    return [...input.events]
+    const orderedNodeKeys = [...input.events]
       .sort((left, right) => right.sequence - left.sequence)
-      .find((event) => event.node_key && input.nodes[event.node_key] && !input.nodes[event.node_key].removed)
-      ?.node_key ?? null
+      .map((event) => event.node_key)
+      .filter((nodeKey): nodeKey is string => Boolean(
+        nodeKey && input.nodes[nodeKey] && !input.nodes[nodeKey].removed,
+      ))
+    const failedRun = input.event.event_type === 'run_failed' ||
+      input.event.payload.status === 'failed' ||
+      Object.values(input.nodes).some((node) => node.status === 'failed')
+    const preferredStatus = failedRun ? 'failed' : 'succeeded'
+    const historicalTarget = orderedNodeKeys.find((nodeKey) => input.nodes[nodeKey].status === preferredStatus) ??
+      orderedNodeKeys.find((nodeKey) => !['not_started', 'skipped', 'cancelled'].includes(input.nodes[nodeKey].status)) ??
+      null
+    return historicalTarget ?? input.previousNodeKey
   }
 
   const eventNode = input.event.node_key ? input.nodes[input.event.node_key] : null
@@ -164,7 +175,14 @@ function targetFor(input: DeriveRobotMotionInput): string | null {
   const visiblyActive = getVisiblyActiveNodeKey(input.nodes, input.events)
   if (visiblyActive) return visiblyActive
   if (eventNode && !eventNode.removed) return eventNode.node_key
-  return input.previousNodeKey
+  if (input.previousNodeKey) return input.previousNodeKey
+  return Object.values(input.nodes)
+    .filter((node) => !node.removed)
+    .sort((left, right) =>
+      (left.plan_order ?? Number.MAX_SAFE_INTEGER) - (right.plan_order ?? Number.MAX_SAFE_INTEGER) ||
+      left.node_key.localeCompare(right.node_key),
+    )[0]
+    ?.node_key ?? null
 }
 
 function directEdge(
@@ -252,7 +270,7 @@ function transitionFor(
 
 export function deriveRobotMotion(input: DeriveRobotMotionInput): RobotMotion {
   const parsedActivity = parseActivity(input.event.payload.activity)
-  const tone = toneFor(input.event)
+  const tone = toneFor(input.event, input.nodes)
   const targetNodeKey = targetFor(input)
   return {
     cue: {

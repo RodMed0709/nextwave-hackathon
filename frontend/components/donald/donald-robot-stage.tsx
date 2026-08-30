@@ -59,6 +59,8 @@ function bubbleFor(
   nodeStatus: string | undefined,
   waitingForUser: boolean,
 ): RobotBubble {
+  if (nodeStatus === 'not_started') return { Icon: Sparkles, label: 'Ready to start' }
+
   if (motion.cue.metric) {
     return {
       Icon: CircleDollarSign,
@@ -71,7 +73,9 @@ function bubbleFor(
   }
 
   if (tone === 'waiting') {
-    if (waitingForUser) return { Icon: Clock3, label: 'Waiting for your response' }
+    if (waitingForUser || nodeStatus === 'blocked_on_user_decision') {
+      return { Icon: Clock3, label: 'Waiting for your response' }
+    }
     if (nodeStatus === 'blocked_on_missing_data') return { Icon: FileText, label: 'Waiting for invoice' }
     if (nodeStatus === 'blocked_on_provider_outage') return { Icon: Clock3, label: 'Waiting for Nauta agent' }
     return { Icon: Clock3, label: 'Waiting' }
@@ -100,8 +104,6 @@ export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageP
   const previousNodeKey = useRef<string | null>(null)
   const [displayNodeKey, setDisplayNodeKey] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
-  const [fading, setFading] = useState(false)
-  const [teleporting, setTeleporting] = useState(false)
   const latestEvent = state.event_log[state.event_log.length - 1] ?? null
 
   const motion = useMemo(() => latestEvent ? deriveRobotMotion({
@@ -124,18 +126,9 @@ export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageP
     }
 
     if (motion.transition.kind === 'fade') {
+      setDisplayNodeKey(targetNodeKey)
       setMoving(false)
-      setTeleporting(true)
-      setFading(true)
-      const swapTimer = window.setTimeout(() => {
-        setDisplayNodeKey(targetNodeKey)
-        setFading(false)
-      }, 160)
-      const finishTimer = window.setTimeout(() => setTeleporting(false), 340)
-      return () => {
-        window.clearTimeout(swapTimer)
-        window.clearTimeout(finishTimer)
-      }
+      return
     }
 
     setDisplayNodeKey(targetNodeKey)
@@ -154,10 +147,18 @@ export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageP
     ? 'waiting'
     : motion.cue.tone
   const nodeLabel = targetNode?.label ?? displayNodeKey
+  const columnXs = Object.values(layout).map((nodePosition) => nodePosition.x)
+  const minColumnX = Math.min(...columnXs)
+  const maxColumnX = Math.max(...columnXs)
+  const bubbleAlignment = position.x === minColumnX
+    ? 'right'
+    : position.x === maxColumnX
+      ? 'left'
+      : 'center'
   // React Flow scales portal content with the graph. Keep Donald legible when
   // Fit zooms a long run out, while his graph-space anchor still follows the
   // real node. This changes only the actor, never Maykel's camera or cards.
-  const robotScale = Math.min(3.6, Math.max(1, .85 / zoom))
+  const robotScale = Math.min(2.6, Math.max(.82, .5 / zoom))
   const bubble = bubbleFor(
     latestEvent,
     motion,
@@ -171,11 +172,15 @@ export function DonaldRobotStage({ layout, nodeSizes, state }: DonaldRobotStageP
   return (
     <ViewportPortal>
       <div
-        className={`donald-robot-stage tone-${tone} transition-${motion.transition.kind} ${moving ? 'is-moving' : ''} ${fading ? 'is-fading' : ''} ${teleporting ? 'is-teleporting' : ''}`}
+        className={`donald-robot-stage tone-${tone} transition-${motion.transition.kind} bubble-${bubbleAlignment} ${moving ? 'is-moving' : ''}`}
         style={{
           transform: `translate3d(${position.x + size.width / 2 - 91}px, ${position.y - 205}px, 0) scale(${robotScale})`,
         }}
-        aria-label={`Donald is ${bubble.label.toLowerCase()} at ${nodeLabel}`}
+        aria-label={
+          bubble.label === 'Needs attention'
+            ? `Donald needs attention at ${nodeLabel}`
+            : `Donald is ${bubble.label.toLowerCase()} at ${nodeLabel}`
+        }
         aria-live="polite"
       >
         <div className="donald-robot-bubble">

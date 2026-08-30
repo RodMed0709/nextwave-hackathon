@@ -97,6 +97,22 @@ test('the first active node places Donald without inventing a route', () => {
   })
 })
 
+test('a declared Nauta case places Donald at its first planned step before work starts', () => {
+  const declared = event(2, 'plan_declared', null)
+  const result = deriveRobotMotion({
+    event: declared,
+    events: [declared],
+    nodes: {
+      second: node('second', 'not_started', 2),
+      first: node('first', 'not_started', 1),
+    },
+    edges: { 'first-second': edge('first-second', 'first', 'second') },
+    previousNodeKey: null,
+  })
+
+  assert.equal(result.cue.targetNodeKey, 'first')
+})
+
 test('Donald travels only over the direct real edge to the active node', () => {
   const started = event(2, 'node_status_changed', 'calculate', { status: 'in_progress' })
   const result = deriveRobotMotion({
@@ -270,6 +286,43 @@ test('a completed run restored from history places Donald at the last real node'
 
   assert.equal(result.cue.targetNodeKey, 'submit')
   assert.equal(result.cue.tone, 'success')
+})
+
+test('final history wins over a stale rendered node after a burst of events', () => {
+  const reconciled = event(7, 'node_status_changed', 'reconcile', { status: 'succeeded' })
+  const submitted = event(12, 'node_status_changed', 'submit', { status: 'succeeded' })
+  const finished = event(13, 'run_finished', null, { status: 'finished' })
+  const result = deriveRobotMotion({
+    event: finished,
+    events: [reconciled, submitted, finished],
+    nodes: {
+      reconcile: node('reconcile', 'succeeded', 2),
+      submit: node('submit', 'succeeded', 3),
+    },
+    edges: { 'reconcile-submit': edge('reconcile-submit', 'reconcile', 'submit') },
+    previousNodeKey: 'reconcile',
+  })
+
+  assert.equal(result.cue.targetNodeKey, 'submit')
+})
+
+test('case 04 finishes on the failed portal step instead of the later skipped ERP step', () => {
+  const portalFailed = event(28, 'node_status_changed', 'submit_portal', { status: 'failed' })
+  const erpSkipped = event(29, 'node_status_changed', 'log_erp', { status: 'skipped' })
+  const finished = event(30, 'run_finished', null, { status: 'failed' })
+  const result = deriveRobotMotion({
+    event: finished,
+    events: [portalFailed, erpSkipped, finished],
+    nodes: {
+      submit_portal: node('submit_portal', 'failed', 11),
+      log_erp: node('log_erp', 'skipped', 12),
+    },
+    edges: { 'portal-erp': edge('portal-erp', 'submit_portal', 'log_erp') },
+    previousNodeKey: 'log_erp',
+  })
+
+  assert.equal(result.cue.targetNodeKey, 'submit_portal')
+  assert.equal(result.cue.tone, 'failure')
 })
 
 test('parallel focus targets the in-progress node with the latest sequence', () => {
