@@ -9,6 +9,8 @@ export const runtime = 'nodejs'
 const RECORDINGS: Record<string, string> = {
   default: 'events.recorded.jsonl',
   'land-pickup': 'events.land-pickup.jsonl',
+  'missing-invoice': 'events.missing-invoice.jsonl',
+  'replan': 'events.replan.jsonl',
 }
 
 export async function GET(request: Request) {
