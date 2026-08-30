@@ -28,6 +28,7 @@ export type RunArtifact = {
   content_type: string | null
   text_content: string | null
   message_id: string | null
+  url: string | null
 }
 
 export type NodeSummary = {
@@ -56,6 +57,25 @@ export type RunNode = {
   removed: boolean
   removed_at?: string | null
   removal_reason?: string | null
+
+  // What the agent said about the step beyond its label. All of this has been
+  // stored since the first version of the protocol and only reached the browser
+  // once the delta was widened to carry it.
+  description: string | null
+  node_type: string | null
+  tool_name: string | null
+  status_message: string | null
+  error_message: string | null
+
+  /**
+   * How long this step would have taken a person, in minutes.
+   *
+   * Reported once, by whoever is in a position to know, and then stored in the
+   * event log like everything else — never recomputed at render time. A savings
+   * figure that changes each time the card is opened is worse than no figure at
+   * all: this product's entire claim is that what you see can be trusted.
+   */
+  manual_minutes: number | null
 }
 
 export type RunEdge = {
@@ -77,11 +97,40 @@ export type InterventionOption = {
 }
 
 export type OpenIntervention = {
+  id: string
   type: string
   node_key: string | null
   prompt: string
   requested_at: string
   options: InterventionOption[]
+}
+
+/**
+ * One stop or steer, from the moment it is raised to the moment the agent says
+ * what it did about it.
+ *
+ * `origin` is the field that decides how the graph reacts. An agent asking a
+ * question has stopped and is waiting, so its step is blocked. An operator
+ * steering a step has not stopped anything — the agent is still working and will
+ * see the instruction on its next check — so drawing that step as blocked would
+ * claim a control we do not have.
+ */
+export type InterventionOrigin = 'operator' | 'agent'
+export type InterventionStatus = 'queued' | 'delivered' | 'resolved'
+
+export type InterventionRecord = {
+  id: string
+  type: string
+  origin: InterventionOrigin
+  node_key: string | null
+  prompt: string
+  options: InterventionOption[]
+  status: InterventionStatus
+  queued_at: string
+  delivered_at: string | null
+  resolved_at: string | null
+  outcome: string | null
+  response: string | null
 }
 
 export type RunState = {
@@ -97,6 +146,8 @@ export type RunState = {
   nodes: Record<string, RunNode>
   edges: Record<string, RunEdge>
   event_log: DonaldEvent[]
+  // Every intervention this run has seen, newest last, keyed by its id.
+  interventions: Record<string, InterventionRecord>
   open_intervention: OpenIntervention | null
   last_sequence: number
   applied_idempotency_keys: Record<string, true>

@@ -162,7 +162,7 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 
 	addTool(server, logger, &mcp.Tool{
 		Name:        "complete_action",
-		Description: "Mark a step as finished successfully.",
+		Description: "Mark a step as finished successfully. Pass manual_minutes when you can honestly estimate how long the same work would have taken a person by hand.",
 		Annotations: idempotent,
 	}, h.CompleteAction)
 

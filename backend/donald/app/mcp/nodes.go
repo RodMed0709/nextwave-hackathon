@@ -313,13 +313,26 @@ type CompleteActionParams struct {
 	RunKey        string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
 	NodeKey       string `json:"node_key" jsonschema:"The action that finished"`
 	OutputSummary string `json:"output_summary,omitempty" jsonschema:"Short summary of the result"`
+	ManualMinutes *int64 `json:"manual_minutes,omitempty" jsonschema:"Roughly how many minutes this step would have taken a person doing it by hand, start to finish. Your honest estimate; omit it if you genuinely cannot say."`
 }
 
+// manualMinutesCeiling is two working days. An estimate above it is not a
+// generous guess, it is a misread unit — an agent answering in seconds, or
+// pricing the whole run into one step — and letting it through would poison the
+// only number in the product a person is asked to take on faith.
+const manualMinutesCeiling = 2880
+
 func (h *Handler) CompleteAction(ctx context.Context, req *mcp.CallToolRequest, args CompleteActionParams) (*mcp.CallToolResult, any, error) {
+	if args.ManualMinutes != nil && (*args.ManualMinutes <= 0 || *args.ManualMinutes > manualMinutesCeiling) {
+		return nil, nil, fmt.Errorf(
+			"manual_minutes must be between 1 and %d (two working days) — got %d; omit it rather than sending a number you do not believe",
+			manualMinutesCeiling, *args.ManualMinutes)
+	}
 	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
 		to:                enums.AGENT_NODE_STATUS_SUCCEEDED,
 		idempotencySuffix: "complete",
 		message:           args.OutputSummary,
+		detail:            manualMinutesDetail(args.ManualMinutes),
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
 			ensureStarted(n, now)
@@ -420,6 +433,25 @@ func afterEdgeDetail(after, nodeKey string) map[string]string {
 		"source_node_key": after,
 		"target_node_key": nodeKey,
 	}
+}
+
+// manualMinutesDetail records how much human time the completed step stood in
+// for, on the event that completed it.
+//
+// It rides in `detail` because there is no column for it and adding one means a
+// schema change in nuzur — but the event log is the right home for it anyway.
+// The figure is written down ONCE, at the moment the agent claims it, and every
+// later reader replays that same number instead of deriving one. A saving that
+// says 45 minutes today and 40 tomorrow is a saving nobody believes, and being
+// believed is the entire value of the figure.
+//
+// Absent stays absent: an agent that cannot honestly estimate should leave the
+// card blank rather than have us invent a default on its behalf.
+func manualMinutesDetail(minutes *int64) null.String {
+	if minutes == nil {
+		return null.String{}
+	}
+	return detailJSON(map[string]any{"manual_minutes": *minutes})
 }
 
 // transitionKey builds the idempotency key for a node status change.
@@ -549,6 +581,12 @@ type transitionSpec struct {
 	idempotencySuffix string
 	message           string
 	mutate            func(*agent_node_entity.AgentNode)
+
+	// detail is the tool-specific extra this transition wants recorded with its
+	// event, in the same JSON-in-a-column form declare_actions and add_action
+	// already use. The zero value is SQL NULL, so every transition that has
+	// nothing extra to say carries nothing extra — the field is opt-in per tool.
+	detail null.String
 }
 
 // transition is the shared body of every node status change. Each tool stays a
@@ -605,6 +643,7 @@ func (h *Handler) transition(ctx context.Context, runKey, nodeKey string, spec t
 			PreviousStatus: previous,
 			NewStatus:      spec.to,
 			Message:        nullString(spec.message),
+			Detail:         spec.detail,
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.Status = spec.to
