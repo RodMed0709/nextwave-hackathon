@@ -1,5 +1,6 @@
 import {
   isNodeStatus,
+  sanitizeSubtasks,
   type DonaldEvent,
   type InterventionOption,
   type InterventionOrigin,
@@ -103,7 +104,7 @@ function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSumm
 }
 
 function subtaskSnapshot(payload: Record<string, unknown>): RunSubtask[] | undefined {
-  return Array.isArray(payload.subtasks) ? payload.subtasks as RunSubtask[] : undefined
+  return sanitizeSubtasks(payload.subtasks) ?? undefined
 }
 
 function artifactFromPayload(payload: Record<string, unknown>): RunArtifact {

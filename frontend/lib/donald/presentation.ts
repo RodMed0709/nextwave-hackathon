@@ -38,6 +38,11 @@ export function getSubtaskPresentation(status: RunSubtaskStatus): SubtaskPresent
     case 'done': return { icon: 'check', tone: 'muted', struck: true }
     case 'skipped': return { icon: 'minus', tone: 'muted', struck: true }
     case 'failed': return { icon: 'x', tone: 'failed', struck: false }
+    // Unreachable through the union, and deliberately handled anyway: without it
+    // an unexpected status returned undefined, and FlowCard crashed reading
+    // .tone off it. A status we do not know should look unstarted, not take the
+    // card down with it.
+    default: return { icon: 'ring', tone: 'muted', struck: false }
   }
 }
 

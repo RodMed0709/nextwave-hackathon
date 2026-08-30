@@ -1,4 +1,4 @@
-import { isDonaldEvent, isRunSubtaskStatus, type DonaldEvent, type RunSubtask } from './types'
+import { isDonaldEvent, sanitizeSubtasks, type DonaldEvent } from './types'
 
 type Wait = (milliseconds: number, signal?: AbortSignal) => Promise<void>
 type Fetch = typeof fetch
@@ -110,27 +110,9 @@ type DonaldDelta = {
   payload?: Record<string, unknown>
 }
 
-function adaptSubtasks(value: unknown): RunSubtask[] | null {
-  if (!Array.isArray(value)) return null
-  const seen = new Set<string>()
-  return value.flatMap((item) => {
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
-    const candidate = item as Record<string, unknown>
-    if (typeof candidate.key !== 'string' || !candidate.key.trim()) return []
-    if (typeof candidate.label !== 'string' || !candidate.label.trim()) return []
-    if (seen.has(candidate.key)) return []
-    seen.add(candidate.key)
-    return [{
-      key: candidate.key,
-      label: candidate.label,
-      status: isRunSubtaskStatus(candidate.status) ? candidate.status : 'pending',
-    }]
-  })
-}
-
 function adaptPayload(payload: Record<string, unknown>): Record<string, unknown> {
   if (!Object.hasOwn(payload, 'subtasks')) return payload
-  const subtasks = adaptSubtasks(payload.subtasks)
+  const subtasks = sanitizeSubtasks(payload.subtasks)
   if (subtasks !== null) return { ...payload, subtasks }
   const { subtasks: _malformed, ...rest } = payload
   return rest
