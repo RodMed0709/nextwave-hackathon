@@ -6,6 +6,7 @@ import {
   actionPresentationForNode,
   decisionOptionPresentation,
 } from '../../lib/donald/action-presentation'
+import { ACTION_ANIMATION_REGISTRY, getActionAnimationSpec } from '../../components/donald/animations/action-animation-registry'
 
 test('action presentation registry defines every canonical Donald action', () => {
   assert.equal(DONALD_ACTION_IDS.length, 12)
@@ -93,4 +94,19 @@ test('decision options show operational ETA deltas, never absolute dates, when t
   assert.equal(decisionOptionPresentation(fallback, gate).consequence, 'ETA +6 days, notify only')
   // The price stays the big lead of the "PRICE -> consequence" format.
   assert.equal(decisionOptionPresentation(transload, gate).price, '+$2,400')
+})
+
+
+test('every canonical Donald action has one SVG Repo card icon registered', () => {
+  for (const actionId of DONALD_ACTION_IDS) {
+    const spec = ACTION_ANIMATION_REGISTRY[actionId]
+    assert.equal(spec.kind, actionId)
+    assert.equal(spec.className, `action-animation-${actionId}`)
+    assert.match(spec.iconUrl, /^https:\/\/www\.svgrepo\.com\/show\//)
+    assert.match(spec.iconUrl, /\.svg$/)
+  }
+})
+
+test('unknown animation kind gracefully uses the default animation', () => {
+  assert.deepEqual(getActionAnimationSpec('unknown' as never), ACTION_ANIMATION_REGISTRY.default)
 })

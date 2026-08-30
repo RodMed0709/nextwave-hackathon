@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CARD_GAP, getFitViewport, getFocusedNodeViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
+import { CARD_GAP, getCombinedLayoutBounds, getFitViewport, getFocusedNodeViewport, getLayoutBounds, getVisibleNodeViewport, layoutGraph } from '../../lib/donald/layout'
 import type { RunEdge, RunNode } from '../../lib/donald/types'
 
 function node(nodeKey: string, planOrder: number): RunNode {
@@ -209,4 +209,32 @@ test('getFocusedNodeViewport centers the selected card at a readable zoom', () =
   assert.equal(Math.round(centerX), 600)
   assert.equal(Math.round(centerY), 380)
   assert.ok(viewport.zoom > 1)
+})
+
+
+test('getCombinedLayoutBounds covers multiple active stage bounds with padding', () => {
+  const bounds = getCombinedLayoutBounds([
+    { x: 48, y: 120, width: 380, height: 230 },
+    null,
+    { x: 48, y: 90, width: 844, height: 520 },
+  ], 48)
+
+  assert.deepEqual(bounds, { x: 0, y: 42, width: 940, height: 616 })
+})
+
+test('getFocusedNodeViewport keeps an expanded human-gate card fully visible', () => {
+  const viewport = getFocusedNodeViewport(
+    { x: 512, y: 160 },
+    { width: 620, height: 760 },
+    { width: 1180, height: 820 },
+  )
+
+  const left = 512 * viewport.zoom + viewport.x
+  const top = 160 * viewport.zoom + viewport.y
+  const right = left + 620 * viewport.zoom
+  const bottom = top + 760 * viewport.zoom
+  assert.ok(left >= 40)
+  assert.ok(right <= 1140)
+  assert.ok(top >= 40)
+  assert.ok(bottom <= 780)
 })

@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import '@/components/ui/split-flap-text.css'
 
 export const metadata: Metadata = {
   title: 'DONALD · Nauta Runtime Supervision',

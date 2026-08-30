@@ -41,6 +41,7 @@ import {
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
 import {
   FIT_PADDING,
+  getCombinedLayoutBounds,
   getFitViewport,
   getFocusedNodeViewport,
   getLayoutBounds,
@@ -427,6 +428,7 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
       {data.intervention && (
         <>
           <div className="section-label"><AlertTriangle size={13} /> Choose a response</div>
+          <p className="intervention-prompt">{data.intervention.prompt}</p>
           <div className="decision-options">
             {options.map((option) => (
               <OptionButton
@@ -647,7 +649,7 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
         </section>
       )}
 
-      {(data.steerable || data.interventions.length > 0) && <InstructionBox data={data} />}
+      {(!data.intervention && (data.steerable || data.interventions.length > 0)) && <InstructionBox data={data} />}
     </div>
   )
 }
@@ -723,6 +725,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <span className="owner"><UserRound size={12} /> {node.agent_label ?? 'Donald'}</span>
         <span className="status"><StatusMark status={data.displayStatus} /> {data.displayStatus}</span>
       </div>
+      <span className="action-chip">{data.actionPresentation.label}</span>
       <h2>{title}</h2>
       <ActionAnimation
         presentation={data.actionPresentation}
@@ -1083,6 +1086,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             nodeKey: node.node_key,
             label: node.label,
             nodeType: node.node_type,
+            toolName: node.tool_name,
+            headline: node.output_summary?.headline ?? null,
+            detail: node.output_summary?.detail ?? null,
           }),
           selected,
           visiblyActive: visiblyActiveKeySet.has(node.node_key),
@@ -1129,6 +1135,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       stage,
       nodes,
       edges,
+      bounds,
       height,
       receipt: getStageImpactReceipt(stage.id, Object.values(stageNodes)),
     }
@@ -1169,6 +1176,40 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     if (width === 0 || height === 0) return
 
     moveCamera(instance, container, getFitViewport(bounds, { width, height }))
+  }, [flowInstances, nodeSizes, stageLayouts])
+
+  const bothPrimaryStagesActive = useMemo(() => {
+    const activeStages = new Set(visiblyActiveKeys.flatMap((nodeKey) => {
+      const node = state.nodes[nodeKey]
+      if (!node || node.removed) return []
+      return [operationalStageForNode(node, { nodes: state.nodes, edges: state.edges })]
+    }))
+    return activeStages.has('above') && activeStages.has('below')
+  }, [state.edges, state.nodes, visiblyActiveKeys])
+
+  const zoomBothPrimaryStagesToFit = useCallback(() => {
+    const primaryStageIds: OperationalStageId[] = ['above', 'below']
+    const combined = getCombinedLayoutBounds(
+      primaryStageIds.map((stageId) => {
+        const positions = stageLayouts[stageId] ?? {}
+        return getLayoutBounds(positions, nodeSizes)
+      }),
+      48,
+    )
+    if (!combined) return false
+
+    let moved = false
+    for (const stageId of primaryStageIds) {
+      const instance = flowInstances[stageId]
+      const container = stageCanvasRefs.current[stageId]
+      if (!instance || !container) continue
+      const { width, height } = container.getBoundingClientRect()
+      if (width === 0 || height === 0) continue
+      moveCamera(instance, container, getFitViewport(combined, { width, height }))
+      moved = true
+    }
+    document.getElementById(stageDomId('above'))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    return moved
   }, [flowInstances, nodeSizes, stageLayouts])
 
   const zoomToFit = useCallback(() => {
@@ -1216,11 +1257,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
   const zoomToFitRef = useRef(zoomToFit)
   zoomToFitRef.current = zoomToFit
+  const zoomBothPrimaryStagesToFitRef = useRef(zoomBothPrimaryStagesToFit)
+  zoomBothPrimaryStagesToFitRef.current = zoomBothPrimaryStagesToFit
 
   useEffect(() => {
     if (viewportPinned || expandedKey) return
+    if (bothPrimaryStagesActive && zoomBothPrimaryStagesToFitRef.current()) return
     zoomToFitRef.current()
-  }, [expandedKey, flowInstances, viewportKey, viewportPinned])
+  }, [bothPrimaryStagesActive, expandedKey, flowInstances, viewportKey, viewportPinned])
 
   /**
    * A person taking hold of the canvas pins it.
@@ -1253,9 +1297,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     return () => { for (const cleanup of cleanups) cleanup() }
   }, [flowInstances, stageSummaries])
 
-  /** Center selected cards inside their own stage canvas. Normal inspection now
-   * happens in the graph, so the camera moves to the card instead of opening a
-   * separate drawer. Human intervention may still render the drawer below.
+  /** Center selected cards inside their own stage canvas. Normal inspection and
+   * human gates both happen in the graph, so no external drawer competes with
+   * the card.
    */
   useEffect(() => {
     if (!expandedKey) return
@@ -1381,7 +1425,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           </div>
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
-        {selectedNodeData?.intervention && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
         <div className="operational-stage-stack">
           {stageGraphs.map(({ stage, nodes, edges, height, receipt }) => (
             <div className="operational-stage-group" key={stage.id}>
