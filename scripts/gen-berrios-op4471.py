@@ -51,6 +51,7 @@ AGENT = {
     "detect_schedule_change": "Nina",
     "reconcile_booking": "Theo",
     "explain_change": "Rex",
+    "brief_boss_email": "Rex",
     "quantify_impact": "Rex",
     "plan_options": "Rex",
     "decide_response": "Rex",
@@ -236,6 +237,30 @@ done("reconcile_booking",
 start("explain_change", advance=1.4)
 progress("explain_change", "No port disruption or weather advisory on the lane", 40, advance=3.0)
 progress("explain_change", "MSC service bulletin: AURORA reassigned to another loop", 75, advance=2.8)
+
+# While the root cause crystallizes, Rex discovers a side job: the boss has to
+# hear this before the gate opens. A card grows downward off EXPLAIN and runs
+# in parallel with the rest of the chain — its events interleave with IMPACT
+# and PLAN below.
+BB = [
+    sub("draft_boss_email", "Draft the summary email"),
+    sub("send_boss_email", "Send to operations director"),
+    sub("boss_email_sent", "Sent"),
+]
+def bb(states):
+    return [dict(s, status=st) for s, st in zip(BB, states)]
+
+emit("node_added", {"label": "Brief the boss by email", "planned": False},
+     node_key="brief_boss_email", agent="Rex", advance=0.7)
+emit("edge_added", {
+    "edge_key": "explain_change-to-brief_boss_email",
+    "source_node_key": "explain_change",
+    "target_node_key": "brief_boss_email",
+    "planned": False,
+}, advance=0.4)
+start("brief_boss_email", bb(["running", "pending", "pending"]), advance=0.8,
+      input_summary="Root-cause finding — OP-4471")
+
 done("explain_change",
      "Carrier network optimization, not a disruption",
      "MSC reassigned MSC AURORA to another service loop and rolled its "
@@ -256,8 +281,33 @@ def im(states):
 start("quantify_impact", im(["running", "pending", "pending"]), advance=1.4)
 progress("quantify_impact", "3 POs on this booking: PO-7731, PO-7745, PO-7752", 30,
          im(["done", "running", "pending"]), advance=3.2)
+progress("brief_boss_email", "Summary drafted - root cause in plain language, next steps included", 55,
+         bb(["done", "running", "pending"]), advance=2.0)
 progress("quantify_impact", "PO-7731 is tied to a committed store delivery on Oct 10", 65,
-         im(["done", "done", "running"]), advance=3.0)
+         im(["done", "done", "running"]), advance=2.4)
+
+emit("artifact_added", {
+    "artifact_type": "text",
+    "message_id": "MSG-OP4471-2190",
+    "name": "Email to the boss — OP-4471 root cause",
+    "text_content": (
+        "To: director@berriosdist.pr\n"
+        "From: rex@ops.nauta.ai\n"
+        "Date: 29 Aug 2026 05:21 UTC\n"
+        "Subject: OP-4471 — why MSC changed the vessel\n\n"
+        "MSC pulled our assigned vessel (MSC AURORA) off OP-4471 and moved it to "
+        "another service loop — a routine network reshuffle on their side, not a "
+        "disruption and nothing caused by us.\n"
+        "Their fallback sailing would land the goods 10 days late, putting one "
+        "committed store delivery at risk.\n"
+        "We are pricing alternatives now; the leading option is a direct sailing "
+        "arriving Oct 3 at no extra cost.\n"
+        "The decision goes to the on-call operator shortly; the client will be "
+        "notified once the routing is locked.\n\n"
+        "Rex — Root Cause, Nauta (for Mueblerías Berríos)"
+    ),
+}, node_key="brief_boss_email", agent="Rex", advance=2.2)
+
 done("quantify_impact",
      "10-day slip on the fallback, 3 POs hit, 1 committed delivery at risk",
      "The carrier's fallback slips the ETA 10 days (Sep 27 to Oct 7), past "
@@ -281,6 +331,8 @@ def pl(states):
 start("plan_options", pl(["running", "pending", "pending"]), advance=1.4)
 progress("plan_options", "Accept fallback: $0, but Oct 7 risks PO-7731's committed Oct 10 delivery", 33,
          pl(["done", "running", "pending"]), advance=3.0)
+progress("brief_boss_email", "Sent to the operations director", 85,
+         bb(["done", "done", "running"]), advance=1.8)
 progress("plan_options", "MSC ILONA FE2440, direct San Juan: ETA Oct 3, $0 to amend", 66,
          pl(["done", "done", "running"]), advance=3.0)
 done("plan_options",
@@ -291,6 +343,15 @@ done("plan_options",
      "or accept the carrier's fallback at Oct 7 and notify. Ranked and ready "
      "for the gate.",
      manual_minutes=16, subtasks=pl(["done"] * 3), advance=3.6)
+
+# The side card lands before the gate: the director is briefed while the main
+# chain was still pricing options.
+done("brief_boss_email",
+     "Email sent — director briefed",
+     "The operations director has the root cause in plain language before the "
+     "gate opens: carrier-side reshuffle, 10-day fallback slip, direct re-book "
+     "at $0 already priced. No reply needed to proceed.",
+     manual_minutes=10, subtasks=bb(["done"] * 3), advance=1.5)
 
 # ── 6 · DECIDE · the human gate — impact crossed the threshold ──────────────
 start("decide_response", advance=1.4)
@@ -437,16 +498,43 @@ assert len(started) == 1 and started[0]["payload"]["client_name"] == "Mueblería
 assert sum(e["event_type"] == "intervention_requested" for e in lines) == 1, "expected 1 intervention"
 assert sum(e["event_type"] == "intervention_resolved" for e in lines) == 1, "expected 1 resolution"
 artifacts = [e for e in lines if e["event_type"] == "artifact_added"]
-assert len(artifacts) == 2, "expected 2 artifacts"
-email = artifacts[0]["payload"]["text_content"]
+assert len(artifacts) == 3, "expected 3 artifacts"
+boss = artifacts[0]["payload"]["text_content"]
+for token in ("director@berriosdist.pr", "rex@ops.nauta.ai",
+              "why MSC changed the vessel", "MSC AURORA", "Oct 3"):
+    assert token in boss, f"boss email missing {token}"
+email = artifacts[1]["payload"]["text_content"]
 for token in ("ETA Oct 3", "PO-7731", "PO-7745", "PO-7752", "BKG-4471-R2",
               "CS-0830", "MSC AURORA FE2431", "MSC ILONA FE2440", "+6 days"):
     assert token in email, f"email missing {token}"
-assert "BKG-4471-R2" in artifacts[1]["payload"]["text_content"], "confirmation missing booking ref"
+assert "BKG-4471-R2" in artifacts[2]["payload"]["text_content"], "confirmation missing booking ref"
+
+# The discovered card must actually run in parallel: born while EXPLAIN is
+# still open, overlapping IMPACT/PLAN, finished before the DECIDE gate.
+brief_start = next(e for e in lines if e["node_key"] == "brief_boss_email"
+                   and e["payload"].get("status") == "in_progress")
+brief_done = next(e for e in lines if e["node_key"] == "brief_boss_email"
+                  and e["payload"].get("status") == "succeeded")
+brief_add = next(e for e in lines if e["node_key"] == "brief_boss_email"
+                 and e["event_type"] == "node_added")
+assert brief_add["payload"].get("planned") is False, "brief card must be discovered, not planned"
+explain_done = next(e for e in lines if e["node_key"] == "explain_change"
+                    and e["payload"].get("status") == "succeeded")
+impact_done = next(e for e in lines if e["node_key"] == "quantify_impact"
+                   and e["payload"].get("status") == "succeeded")
+gate = next(e for e in lines if e["event_type"] == "intervention_requested")
+assert brief_start["occurred_at"] < explain_done["occurred_at"], \
+    "brief card must start while EXPLAIN still runs"
+assert brief_start["occurred_at"] < impact_done["occurred_at"] < brief_done["occurred_at"], \
+    "brief card must overlap the main chain"
+assert brief_done["sequence"] < gate["sequence"], "brief card must finish before the DECIDE gate"
 finished = [e for e in lines if e["event_type"] == "run_finished"]
 assert len(finished) == 1 and "3M" in finished[0]["payload"]["summary"]["detail"]
 dones = [e for e in lines if e["event_type"] == "node_status_changed"
          and e["payload"].get("status") == "succeeded"]
 assert all("manual_minutes" in e["payload"] for e in dones), "a done is missing manual_minutes"
 print(f"check ok: {len(lines)} valid JSON lines, sequences 1..{len(lines)}, "
-      f"1 intervention, 2 artifacts, {len(dones)} dones with manual_minutes, run_finished cites $3M")
+      f"1 intervention, 3 artifacts, {len(dones)} dones with manual_minutes, "
+      f"brief card overlaps main chain "
+      f"({brief_start['occurred_at'][11:19]}->{brief_done['occurred_at'][11:19]} UTC) "
+      f"and closes before the gate, run_finished cites $3M")
