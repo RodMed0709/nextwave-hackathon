@@ -42,6 +42,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import { RuntimeEdge, type RuntimeEdgeData, type RuntimeEdgeStatus } from '@/components/donald/runtime-edge'
+import { DonaldRobotStage } from '@/components/donald/donald-robot-stage'
 import {
   getLayoutBounds,
   layoutGraph,
@@ -1243,6 +1244,12 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           zoomOnDoubleClick={false}
         >
           <Background color="#6990b3" gap={42} variant={BackgroundVariant.Lines} />
+          <DonaldRobotStage
+            key={`${sourceGeneration}:${replaying ? 'replay' : 'live'}`}
+            layout={layout}
+            nodeSizes={nodeSizes}
+            state={state}
+          />
         </ReactFlow>
       </section>
 
