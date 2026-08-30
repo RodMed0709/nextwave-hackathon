@@ -9,6 +9,7 @@ export const runtime = 'nodejs'
 const RECORDINGS: Record<string, string> = {
   default: 'events.berrios-op4471.jsonl',
   'berrios-op4471': 'events.berrios-op4471.jsonl',
+  'berrios-op4471-v2': 'events.berrios-op4471-v2.jsonl',
   'land-pickup': 'events.land-pickup.jsonl',
   'missing-invoice': 'events.missing-invoice.jsonl',
   'replan': 'events.replan.jsonl',

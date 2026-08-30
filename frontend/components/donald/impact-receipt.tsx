@@ -48,16 +48,16 @@ export function ImpactReceipt({ receipt, manualMinutes = 0 }: { receipt: StageIm
       <div className="impact-receipt-heading">Impact Receipt</div>
       <div className="impact-receipt-grid">
         <div className="impact-receipt-card time-impact">
-          <span>Manual Work Replaced</span>
+          <span>Human Hours Saved</span>
           <strong>{formatReceiptMinutes(timeSaved)}</strong>
           <p className="impact-receipt-line">{timePhrase(timeSaved)}</p>
         </div>
         <div className="impact-receipt-card value-impact">
-          <span>Value Protected</span>
+          <span>Money Saved</span>
           <strong>{formatReceiptUsd(receipt.valueProtectedUsd)}</strong>
           <p className="impact-receipt-line">
             {receipt.valueProtectedUsd
-              ? 'Exposure avoided — 3 containers × 10 days × $138/day D&D benchmark'
+              ? 'Demurrage and delay costs this run avoided'
               : 'No money at risk on this stage'}
           </p>
         </div>

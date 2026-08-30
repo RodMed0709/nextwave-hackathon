@@ -243,7 +243,7 @@ const STAGE_GRAPH_MIN_HEIGHT = 300
 // recordings stay served from the bundle so the stage demo cannot depend on
 // the backend, while any other run key - an agent working right now, a run a
 // judge just asked for - streams from the real API and accepts interventions.
-const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup', 'berrios-op4471'])
+const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup', 'berrios-op4471', 'berrios-op4471-v2'])
 
 // Nauta's named roster — the product's cast, shown before the run's own
 // run_started event arrives (pre-render, only the Watch is on screen).
@@ -1280,7 +1280,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       const chosenOption = options.optionId
         ? state.open_intervention?.options.find((candidate) => candidate.id === options.optionId) ?? null
         : null
-      if (recorded && chosenOption && chosenOption.rank !== 1) {
+      if (recorded && chosenOption && chosenOption.rank !== 1 && state.open_intervention?.type !== 'choice') {
         // The recording only knows the recommended path. Any other choice
         // forks: the reader stops and a synthesized ending plays out the
         // scenario that was ACTUALLY chosen — no more "picked the transload,
@@ -2062,7 +2062,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               <strong>{runStatusLabel(state)}</strong>
             </div>
             <div className="kpi-card" title={runSavings?.basis}>
-              <span>Manual Work Replaced</span>
+              <span>Human Hours Saved</span>
               <strong>{runSavings?.humanTime ?? '0m'}</strong>
             </div>
           </div>

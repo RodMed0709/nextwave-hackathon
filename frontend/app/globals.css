@@ -1314,7 +1314,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .impact-receipt-card > strong {
   color: #fbfaf4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: clamp(24px, 2.1vw, 34px);
+  font-size: clamp(32px, 2.8vw, 46px);
   line-height: 1;
   letter-spacing: 0;
 }
