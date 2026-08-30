@@ -202,7 +202,7 @@ def done(key, headline, finding=None, manual_minutes=None, metrics=None,
 
 
 # ── 1 · DETECT · Nina — the ambient watch surfaces the mismatch ─────────────
-start("detect_schedule_change", advance=2.0,
+start("detect_schedule_change", advance=9.0,
       input_summary="MSC schedule change notification — OP-4471")
 progress("detect_schedule_change",
          "Carrier notice does not match the last known schedule", 60, advance=2.8)
@@ -466,7 +466,9 @@ done("confirm_booking",
      "MSC confirmed BKG-4471-R2 on MSC ILONA FE2440, direct San Juan, ETA "
      "Oct 3, amendment fee $0. Draft BL MSCUXM4471R2 issued with the "
      "confirmation.",
-     manual_minutes=12, subtasks=cb(["done"] * 2), advance=1.6)
+     manual_minutes=12,
+     metrics={"containers_affected": 3, "exposure_days": 10},
+     subtasks=cb(["done"] * 2), advance=1.6)
 
 progress("update_client_email", "Sent to Berrios imports - awaiting acknowledgement", 65,
          uc(["done", "done", "running"]), advance=2.0)

@@ -40,12 +40,14 @@ export function OperationalStage({
           without the viewer having heard the pitch. */}
       <header className="operational-stage-header">
         <div className="operational-stage-title">
-          <span className="stage-eyebrow">
-            {stage.id === 'above' && <i className="live-dot" />}
-            {stage.eyebrow}
-          </span>
+          {(stage.eyebrow || stage.id === 'above') && (
+            <span className="stage-eyebrow">
+              {stage.id === 'above' && <i className="live-dot" />}
+              {stage.eyebrow}
+            </span>
+          )}
           <h2>{stage.title}</h2>
-          <p>{stage.description}</p>
+          {stage.description && <p>{stage.description}</p>}
           {liveNote && <small className="stage-live-note">{liveNote}</small>}
         </div>
         <div className="operational-stage-status">

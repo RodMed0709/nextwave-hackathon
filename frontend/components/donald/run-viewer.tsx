@@ -84,6 +84,7 @@ import { ExecutiveStrip } from '@/components/donald/executive-strip'
 import { getExecutivePhases } from '@/lib/donald/executive-phases'
 import { PromptBar } from '@/components/donald/prompt-bar'
 import { pickSteerTargetKey } from '@/lib/donald/steer-target'
+import { AgentRail } from '@/components/donald/agent-rail'
 import { AmbientStrip } from '@/components/donald/ambient-strip'
 import { ClientArea } from '@/components/donald/client-area'
 import { DonaldNarration } from '@/components/donald/donald-narration'
@@ -1484,6 +1485,78 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [state.nodes, steerTargetKey])
 
+  /** Apply a locally synthesised event, sequenced just past whatever the run
+   * has seen — so it is never dropped as stale and never swallows a recorded
+   * event's integer sequence. */
+  const emitLocal = useCallback((event: Omit<DonaldEvent, 'sequence'>) => {
+    setState((current) => applyEvent(current, { ...event, sequence: current.last_sequence + 0.001 } as DonaldEvent))
+  }, [])
+
+  const syntheticTaskCountRef = useRef(0)
+
+  /**
+   * A recorded run has no agent behind it, so a bar instruction must still DO
+   * something visible: it grows the graph. The instruction becomes a new
+   * discovered card hanging off the steer target — violet, FROM YOUR
+   * INSTRUCTION — that runs and completes locally. Live runs skip this: the
+   * real agent picks the instruction up and grows the graph itself.
+   */
+  const synthesizeSteeredTask = useCallback((instruction: string, parentKey: string) => {
+    syntheticTaskCountRef.current += 1
+    const key = `steer_task_${syntheticTaskCountRef.current}`
+    const emailish = /\b(mail|email|send|notify|inform|write|client|customer)\b/i.test(instruction)
+    const label = instruction.length > 46 ? `${instruction.slice(0, 43)}…` : instruction
+    const agent = emailish ? 'Lex' : 'Rex'
+    let part = 0
+    const mk = (event_type: string, node_key: string | null, payload: Record<string, unknown>): Omit<DonaldEvent, 'sequence'> => {
+      part += 1
+      return {
+        event_type,
+        occurred_at: new Date().toISOString(),
+        agent_label: agent,
+        node_key,
+        idempotency_key: `synthetic:${key}:${part}`,
+        payload,
+      }
+    }
+    emitLocal(mk('node_added', key, { label, planned: false }))
+    emitLocal(mk('edge_added', null, {
+      edge_key: `${parentKey}-to-${key}`,
+      source_node_key: parentKey,
+      target_node_key: key,
+      planned: false,
+    }))
+    emitLocal(mk('node_status_changed', key, { status: 'in_progress', started_at: new Date().toISOString() }))
+    window.setTimeout(() => {
+      emitLocal(mk('node_updated', key, { message: 'Working on your instruction…', progress_percent: 55 }))
+    }, 2_800)
+    window.setTimeout(() => {
+      if (emailish) {
+        emitLocal(mk('artifact_added', key, {
+          artifact_type: 'text',
+          name: `Email — ${label}`,
+          text_content:
+            'To: the recipient you asked for\n' +
+            'From: lex@ops.nauta.ai\n' +
+            `Date: ${new Date().toUTCString()}\n` +
+            `Subject: ${label}\n\n` +
+            'Hi,\n\n' +
+            `As requested: ${instruction}\n\n` +
+            'Context on OP-4471: the shipment was re-booked onto MSC ILONA FE2440, ' +
+            'sailing direct to San Juan at no extra cost, with the new ETA on Oct 3. ' +
+            'The committed Oct 10 delivery holds.\n\n' +
+            'Lex — Expedite Communication, Nauta',
+        }))
+      }
+      emitLocal(mk('node_status_changed', key, {
+        status: 'succeeded',
+        headline: emailish ? 'Sent — as instructed' : 'Done — as instructed',
+        finding: `Completed from your instruction: ${instruction}`,
+        manual_minutes: 10,
+      }))
+    }, 6_400)
+  }, [emitLocal])
+
   const submitFromBar = useCallback(async (instruction: string) => {
     if (!steerTargetKey) return
     const node = state.nodes[steerTargetKey]
@@ -1499,28 +1572,15 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       decisionRecalculationTimerRef.current = null
     }, 2_200)
     await submitInstruction(node, instruction)
-  }, [state.nodes, steerTargetKey, submitInstruction])
+    const recorded = !API_BASE_URL || isRecordedRunKey(requestedRunKey)
+    if (recorded) synthesizeSteeredTask(instruction, node.node_key)
+  }, [requestedRunKey, state.nodes, steerTargetKey, submitInstruction, synthesizeSteeredTask])
 
   return (
     <main className="donald">
       <header className="header">
         <ClientArea metadata={clientMetadata} currentTask={request} />
         <section className="operational-intelligence" aria-label="Operational intelligence">
-          <div className="client-meta-field connected-agents-field">
-            <span>Connected Nauta</span>
-            <div className="agent-chip-list">
-              {clientMetadata.agents.length === 0 && <strong>Unavailable</strong>}
-              {clientMetadata.agents.map((agent) => (
-                <span
-                  className={activeAgents.has(agent.label) ? 'agent-chip active' : 'agent-chip'}
-                  key={`${agent.label}-${agent.role ?? 'agent'}`}
-                  title={agent.role ?? agent.label}
-                >
-                  {agent.label}{agent.role ? ` / ${agent.role}` : ''}
-                </span>
-              ))}
-            </div>
-          </div>
           {/* Two numbers, not four: value protected already lives in the stage
               receipts below, and an event count means nothing to a client. */}
           <div className="kpi-grid" aria-label="Run KPIs">
@@ -1596,7 +1656,6 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                 >
                   {stage.id === 'above' && (
                     <AmbientStrip
-                      caseStudy={clientMetadata.caseStudy}
                       nodes={stage.nodeKeys.flatMap((nodeKey) => state.nodes[nodeKey] ? [state.nodes[nodeKey]] : [])}
                     />
                   )}
@@ -1649,6 +1708,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       {emailPopupKey && state.nodes[emailPopupKey] && (
         <EmailPopup node={state.nodes[emailPopupKey]} onClose={() => setEmailPopupKey(null)} />
       )}
+
+      <AgentRail active={activeAgents} agents={clientMetadata.agents} />
 
       <div className="prompt-dock">
         <RunControls

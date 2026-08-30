@@ -26,19 +26,15 @@ function ContributionLine({ contribution }: { contribution: ImpactContribution }
   )
 }
 
-function ContextBlock({ receipt, kind }: { receipt: StageImpactReceipt; kind: 'time' | 'value' }) {
-  const context = kind === 'value'
-    ? receipt.contexts.find((candidate) => /D&D|exposure|container/i.test(candidate.text)) ?? receipt.contexts[1] ?? receipt.contexts[0]
-    : receipt.contexts.find((candidate) => /minute|visibility/i.test(candidate.text)) ?? receipt.contexts[0]
-
-  if (!context) return null
-  return (
-    <div className="impact-receipt-context">
-      <span>Industry Context</span>
-      <p title={context.text}>{context.text}</p>
-      <small>{context.source}</small>
-    </div>
-  )
+/** One human sentence, not a benchmark citation. */
+function timePhrase(minutes: number | null): string {
+  if (!minutes || minutes <= 0) return 'Nothing to count yet'
+  if (minutes >= 60) {
+    const hours = minutes / 60
+    const rounded = hours >= 10 ? Math.round(hours) : Math.round(hours * 10) / 10
+    return `${rounded} hours of manual work Donald just did for you`
+  }
+  return `${Math.round(minutes)} minutes of manual work Donald just did for you`
 }
 
 export function ImpactReceipt({ receipt }: { receipt: StageImpactReceipt }) {
@@ -49,16 +45,18 @@ export function ImpactReceipt({ receipt }: { receipt: StageImpactReceipt }) {
       <div className="impact-receipt-heading">Impact Receipt</div>
       <div className="impact-receipt-grid">
         <div className="impact-receipt-card time-impact">
-          <span>Est. Time Saved</span>
+          <span>Time Saved</span>
           <strong>{formatReceiptMinutes(receipt.timeSavedMinutes)}</strong>
-          <small>{receipt.timeNote}</small>
-          <ContextBlock receipt={receipt} kind="time" />
+          <p className="impact-receipt-line">{timePhrase(receipt.timeSavedMinutes)}</p>
         </div>
         <div className="impact-receipt-card value-impact">
-          <span>Est. Value Protected</span>
-          <strong>{receipt.valueProtectedUsd === null && receipt.stageId === 'above' ? 'Visibility layer' : formatReceiptUsd(receipt.valueProtectedUsd)}</strong>
-          <small>{receipt.valueNote}</small>
-          <ContextBlock receipt={receipt} kind="value" />
+          <span>Value Protected</span>
+          <strong>{formatReceiptUsd(receipt.valueProtectedUsd)}</strong>
+          <p className="impact-receipt-line">
+            {receipt.valueProtectedUsd
+              ? 'Demurrage & delay exposure avoided on this shipment'
+              : 'No money at risk on this stage'}
+          </p>
         </div>
       </div>
       {hasBreakdown && (

@@ -40,14 +40,14 @@ export const OPERATIONAL_STAGES: OperationalStageDefinition[] = [
     id: 'above',
     eyebrow: 'Running 24/7',
     title: 'The Watch',
-    description: 'Donald reads every carrier feed and document and keeps a live picture of every operation. It never stops — this is what catches problems before you do.',
+    description: '',
     capabilities: ['Ingest', 'Identify', 'Monitor'],
   },
   {
     id: 'below',
-    eyebrow: 'Triggered by the Watch',
+    eyebrow: '',
     title: 'The Response',
-    description: 'The watch caught something, so Donald opened this case: find the cause, size the damage, bring you the decision, act on it.',
+    description: '',
     capabilities: ['Predict', 'Detect', 'Extract', 'Reconcile', 'Explain', 'Impact', 'Plan', 'Decide', 'Act'],
   },
   {

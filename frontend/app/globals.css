@@ -672,12 +672,75 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.ambient-proof {
-  margin: 0;
+.ambient-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+.ambient-activity { animation: ambient-tick .4s var(--ease); }
+.ambient-count {
   color: var(--chartreuse);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .02em;
+  font-weight: 900;
+}
+@keyframes ambient-tick { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+
+/* The Nauta agents, riding along the right edge; the working one lights up. */
+.agent-rail {
+  position: fixed;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  z-index: 35;
+  display: grid;
+  gap: 8px;
+  width: 172px;
+  padding: 12px;
+  border: 1px solid #24486e;
+  border-radius: 14px;
+  background: #0b2138f0;
+  box-shadow: 0 18px 44px #020b1490;
+  backdrop-filter: blur(6px);
+}
+.agent-rail-title {
+  color: #8eaac0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.agent-rail-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid #1d3f61;
+  border-radius: 10px;
+  background: #071729;
+  opacity: .55;
+  transition: opacity var(--beat) var(--ease), border-color var(--beat) var(--ease);
+}
+.agent-rail-item i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #426787;
+}
+.agent-rail-item strong { display: block; color: #dce8ed; font-size: 13px; font-weight: 800; line-height: 1.15; }
+.agent-rail-item small { display: block; color: #7794ac; font-size: 9px; line-height: 1.2; }
+.agent-rail-item.working {
+  opacity: 1;
+  border-color: var(--chartreuse);
+  box-shadow: 0 0 0 1px #d7f24c2e;
+}
+.agent-rail-item.working i { background: var(--chartreuse); box-shadow: 0 0 10px #d7f24ccc; animation: action-pulse 1.3s ease-in-out infinite; }
+@media (max-width: 1280px) { .agent-rail { display: none; } }
+
+.impact-receipt-line {
+  margin: 4px 0 0;
+  color: #eef4f5;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 /* Decision drawer trimmed to the question and the options. */
