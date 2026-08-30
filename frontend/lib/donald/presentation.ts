@@ -321,7 +321,8 @@ export function getLatestNodeStatus(
       event.event_type !== 'agent_message'
     ) continue
 
-    const detail = Array.isArray(event.payload.subtasks) ? null : stringValue(event.payload.detail)
+    const hasSubtasks = Array.isArray(event.payload.subtasks) && event.payload.subtasks.length > 0
+    const detail = hasSubtasks ? null : stringValue(event.payload.detail)
     const text = stringValue(event.payload.status_message) ??
       stringValue(event.payload.message) ??
       stringValue(event.payload.headline) ??

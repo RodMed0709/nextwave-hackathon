@@ -86,7 +86,8 @@ function nodeFactsFromPayload(payload: Record<string, unknown>, node: RunNode): 
 
 function summaryFromPayload(payload: Record<string, unknown>, previous: NodeSummary | null): NodeSummary | null {
   const headline = stringValue(payload.headline) ?? previous?.headline ?? null
-  const findingDetail = Array.isArray(payload.subtasks) ? null : stringValue(payload.detail)
+  const hasSubtasks = Array.isArray(payload.subtasks) && payload.subtasks.length > 0
+  const findingDetail = hasSubtasks ? null : stringValue(payload.detail)
   const detail = stringValue(payload.finding) ?? findingDetail ?? previous?.detail ?? null
   const metricsObject = objectValue(payload.metrics)
   const metrics = { ...(previous?.metrics ?? {}) }

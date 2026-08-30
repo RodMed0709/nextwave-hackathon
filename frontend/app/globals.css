@@ -201,17 +201,19 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .primary-metric strong { color: #182c42; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; }
 .live-status { margin: 12px 0 0; display: flex; align-items: flex-start; gap: 7px; color: #45576a; font-size: 10px; line-height: 1.35; }
 .live-status i { width: 6px; height: 6px; margin-top: 3px; flex: none; border-radius: 50%; background: var(--chartreuse); box-shadow: 0 0 8px #a9c21b; }
-.subtask-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid #dcd5c7; list-style: none; }
+.subtask-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--paper-line); list-style: none; max-height: 148px; overflow: hidden; }
+.subtask-list-complete { max-height: none; overflow: visible; }
 .subtask-item { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: start; gap: 7px; font-size: 11px; line-height: 1.35; }
 .subtask-icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: inherit; }
 .subtask-icon-ring::before { width: 9px; height: 9px; content: ""; border: 1.5px solid currentColor; border-radius: 50%; }
 .subtask-icon-spinner::before { width: 11px; height: 11px; content: ""; border: 2px solid #94a44766; border-top-color: #5f7410; border-radius: 50%; animation: spin .72s linear infinite; }
-.subtask-muted { color: #7b858c; opacity: .72; }
+.subtask-muted { color: #6b7680; }
+.subtask-muted .subtask-icon { opacity: .7; }
 .subtask-emphasis { color: #45576a; font-weight: 700; }
 .subtask-failed { color: var(--red-deep); }
 .subtask-struck .subtask-label { text-decoration: line-through; }
-.subtask-label { min-width: 0; overflow-wrap: anywhere; }
-.subtask-more { color: #7b858c; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.subtask-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.subtask-more { padding-left: 21px; color: #6b7680; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
 .expand-hint { display: block; margin-top: 13px; color: #7b858c; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 
 .card-details { margin-top: 16px; border-top: 1px solid #d8d0c1; cursor: default; }
