@@ -106,6 +106,33 @@ Two fields carry more than they look like they do:
 
 Both are optional to the schema and load-bearing to the picture. Fill them in.
 
+## Show the work inside a step
+
+When a step has subtasks, declare them on `start_action` so the person watching
+sees the whole checklist before work begins. Each item has a stable `key`, a
+short English `label`, and a `status`: `pending`, `running`, `done`, `skipped`
+or `failed` (`pending` is the default).
+
+Every later `report_progress` sends the **complete ordered `subtasks` list**,
+not only the item that changed. A full snapshot makes retries idempotent and
+lets a caller that lost context resend the current truth without reconstructing
+earlier deltas.
+
+```
+start_action(run_key="sess_8f21", node_key="approve_animation_slice", subtasks=[
+  {key: "review_frames", label: "Review the key frames", status: "pending"},
+  {key: "check_timing", label: "Check the transition timing", status: "pending"},
+  {key: "approve_slice", label: "Approve the animation slice", status: "pending"},
+])
+
+report_progress(run_key="sess_8f21", node_key="approve_animation_slice",
+  message="Key frames approved; checking timing", subtasks=[
+    {key: "review_frames", label: "Review the key frames", status: "done"},
+    {key: "check_timing", label: "Check the transition timing", status: "running"},
+    {key: "approve_slice", label: "Approve the animation slice", status: "pending"},
+  ])
+```
+
 ## Two more things that matter
 
 **Invent a node_key per step and never change it.**
