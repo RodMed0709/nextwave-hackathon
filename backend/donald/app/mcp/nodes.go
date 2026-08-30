@@ -252,10 +252,12 @@ func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, arg
 }
 
 type ReportProgressParams struct {
-	RunKey  string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
-	NodeKey string `json:"node_key" jsonschema:"The action you are working on"`
-	Message string `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
-	Percent *int64 `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	RunKey   string       `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey  string       `json:"node_key" jsonschema:"The action you are working on"`
+	Message  string       `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
+	Percent  *int64       `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	Activity *ActivityCue `json:"activity,omitempty" jsonschema:"Optional explicit activity cue for event-driven presentation"`
+	Metric   *MetricCue   `json:"metric,omitempty" jsonschema:"Optional typed currency metric for event-driven presentation"`
 }
 
 // ReportProgress is the highest-frequency tool in the surface, so it stays
@@ -272,6 +274,10 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 	if args.Percent != nil && (*args.Percent < 0 || *args.Percent > 100) {
 		return nil, nil, fmt.Errorf("percent must be between 0 and 100 (got %d)", *args.Percent)
 	}
+	detail, err := encodeMotionCues(args.Activity, args.Metric)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Progress reports are NOT deduplicated across calls: two identical messages
 	// seconds apart are two real updates. The timestamp keeps the key unique.
@@ -285,6 +291,7 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 			Message:         nullString(args.Message),
 			ProgressPercent: nullInt64(args.Percent),
 			NewStatus:       node.Status,
+			Detail:          detail,
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.StatusMessage = nullString(args.Message)

@@ -104,6 +104,7 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 		if d.Payload.Detail.Valid {
 			var extra map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(d.Payload.Detail.String), &extra); err == nil {
+				liftMotionCues(&d.Payload)
 				assign := func(key string, dst *string) {
 					if raw, ok := extra[key]; ok {
 						_ = json.Unmarshal(raw, dst)

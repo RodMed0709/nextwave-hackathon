@@ -63,6 +63,8 @@ type deltaPayload struct {
 	ArtifactUUID     *uuid.UUID            `json:"artifact_uuid,omitempty"`
 	InterventionUUID *uuid.UUID            `json:"intervention_uuid,omitempty"`
 	Detail           null.String           `json:"detail,omitempty"`
+	Activity         *ActivityCue          `json:"activity,omitempty"`
+	Metric           *MetricCue            `json:"metric,omitempty"`
 
 	// Status is new_status by name. This is the field a client should read.
 	Status string `json:"status,omitempty"`
