@@ -132,6 +132,9 @@ export function actionPresentationForNode(input: {
   nodeKey: string
   label: string
   nodeType?: string | null
+  toolName?: string | null
+  headline?: string | null
+  detail?: string | null
 }): ActionPresentation {
   return ACTION_PRESENTATIONS[donaldActionIdForNode(input) ?? 'ingest']
 }
@@ -140,8 +143,21 @@ export function donaldActionIdForNode(input: {
   nodeKey: string
   label: string
   nodeType?: string | null
+  toolName?: string | null
+  headline?: string | null
+  detail?: string | null
 }): DonaldActionId | null {
-  const haystack = [input.nodeKey, input.label, input.nodeType ?? ''].filter(Boolean).join(' ')
+  for (const actionId of DONALD_ACTION_IDS) {
+    if (hasActionWord(input.nodeKey, actionId)) return actionId
+  }
+  const haystack = [
+    input.nodeKey,
+    input.label,
+    input.nodeType ?? '',
+    input.toolName ?? '',
+    input.headline ?? '',
+    input.detail ?? '',
+  ].filter(Boolean).join(' ')
   for (const actionId of DONALD_ACTION_IDS) {
     if (ACTION_KEYWORDS[actionId].some((keyword) => hasActionWord(haystack, keyword))) {
       return actionId
