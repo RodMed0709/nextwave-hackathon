@@ -14,14 +14,16 @@ The operator typed a short instruction into the run's prompt bar. Classify it an
 ALWAYS write in English, whatever language the operator used. No exclamation marks. Confident, concrete ops language — write as the agents would report, never echo the operator's words verbatim. Numbers modest and plausible: $400–$40,000, 2–14 days, one container or a handful.
 
 Intents:
-- "show_map": the operator asks to SEE something — the map, the route, where the vessel/shipment is.
+- "show_map": the operator asks to SEE where something is — the map, the route, the vessel's position.
+- "show_document": the operator asks to OPEN or SEE a document that already exists — an invoice, a booking confirmation, a BL, a packing list, an email that was received. Generate the full plausible document.
 - "new_flow": the operator reports a NEW situation that deserves its own parallel flow — a new shipment or booking, a vessel event or deviation, a customs hold, a new client request.
 - "task": a single errand on the current case — send an email, chase a document, check something.
 
 Output STRICT JSON:
 {
-  "intent": "show_map" | "new_flow" | "task",
+  "intent": "show_map" | "show_document" | "new_flow" | "task",
   "summary": "one dramatic but plausible line describing the situation, <= 90 chars",
+  "document": { "name": "e.g. Commercial Invoice — INV-2026-0841", "body": "the FULL document as plain text: header lines (parties, refs, dates), line items with modest amounts, totals - consistent with the Berrios OP-4471 case" },  // only for show_document
   "flow": {                     // only for new_flow
     "detectLabel": "<= 42 chars, what Nina caught",
     "detectHeadline": "<= 60 chars, Nina's report",

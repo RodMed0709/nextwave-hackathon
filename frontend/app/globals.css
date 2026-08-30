@@ -212,9 +212,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .executive-phase {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
+  align-content: start;
+  gap: 8px;
   padding: 12px 16px;
   border: 1px solid #1d3f61;
   border-radius: 12px;
@@ -222,6 +221,29 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   opacity: .55;
   transition: opacity var(--beat) var(--ease), border-color var(--beat) var(--ease);
 }
+.executive-phase-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.executive-phase-head strong { color: #f2f7f8; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+.executive-phase-note {
+  margin: 0;
+  color: #dce8ed;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.executive-phase-note.muted { color: #7794ac; font-weight: 500; }
+/* The ambient ticker embedded in the Watching cell: slim vertical rows. */
+.executive-phase .ambient-strip { padding: 0; }
+.executive-phase .ambient-items { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.executive-phase .ambient-item { padding: 5px 9px; border: 0; background: #071729; border-radius: 8px; }
+.executive-phase .ambient-item strong { display: none; }
+.executive-phase .ambient-copy small { font-size: 10.5px; color: #b9cbd9; }
+.executive-phase .ambient-loop { width: 14px; height: 14px; border-width: 2px; }
+.executive-phase .ambient-count { font-size: 10px; }
 .executive-phase.state-running { opacity: 1; border-color: var(--chartreuse); box-shadow: 0 0 0 1px #d7f24c2e, 0 10px 26px #020b1470; }
 .executive-phase.state-done { opacity: .92; border-color: #4a6d43; }
 .executive-phase-index {
@@ -736,7 +758,9 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   box-shadow: 0 0 0 1px #d7f24c2e;
 }
 .agent-rail-item.working i { background: var(--chartreuse); box-shadow: 0 0 10px #d7f24ccc; animation: action-pulse 1.3s ease-in-out infinite; }
-@media (max-width: 1280px) { .agent-rail { display: none; } }
+/* Always visible — the whole point is glancing who is working. */
+.agent-rail { max-height: 62vh; overflow-y: auto; width: 158px; }
+@media (max-width: 900px) { .agent-rail { display: none; } }
 
 .impact-receipt-line {
   margin: 4px 0 0;
@@ -1448,6 +1472,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .flow-card .spinner { width: 16px; height: 16px; }
 .action-chip { display: inline-flex; width: max-content; max-width: 100%; margin-top: 15px; border: 1px solid #b5c351; border-radius: 999px; padding: 4px 8px; background: #eef2dc; color: #4f6413; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase; }
 .flow-card h2 { margin: 10px 0 0; color: inherit; font-size: 30px; font-weight: 800; line-height: 1.06; letter-spacing: -.02em; text-wrap: balance; overflow-wrap: anywhere; }
+.flow-card h2.long { font-size: 20px; line-height: 1.2; letter-spacing: 0; }
 .flow-card.action-decide {
   border-color: #a2b63f;
   box-shadow: inset 0 1px #ffffff, 0 0 0 2px #d7f24c55, 0 18px 36px #020a1344;

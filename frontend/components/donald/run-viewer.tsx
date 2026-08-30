@@ -150,8 +150,9 @@ type InterpretedTask = {
   document?: { name?: string; body?: string }
 }
 type InterpretResult = {
-  intent?: 'show_map' | 'new_flow' | 'task'
+  intent?: 'show_map' | 'show_document' | 'new_flow' | 'task'
   summary?: string
+  document?: { name?: string; body?: string }
   flow?: InterpretedFlow
   task?: InterpretedTask
 }
@@ -813,6 +814,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   })
   const isEmail = isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })
   const emailArtifact = isEmail ? getLatestArtifact(node.artifacts) : null
+  const cardTitle = (data.displayStatus === 'DONE' && node.output_summary?.headline) || humanTitle.title
   const classes = [
     'flow-card',
     `action-${data.actionPresentation.id}`,
@@ -844,7 +846,12 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <span className="status"><StatusMark status={data.displayStatus} /> {data.displayStatus}</span>
       </div>
       <span className="action-chip">{data.actionPresentation.label}</span>
-      <h2 title={humanTitle.original ?? undefined}>{humanTitle.title}</h2>
+      {/* The title EVOLVES: while running it names the task, once done it
+          becomes the finding itself — titles are data, never fixed copy. */}
+      <h2
+        className={cardTitle.length > 30 ? 'long' : undefined}
+        title={humanTitle.original ?? node.label}
+      >{cardTitle}</h2>
       <ActionAnimation
         presentation={data.actionPresentation}
         state={animationState(data.displayStatus)}
@@ -852,19 +859,14 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       {data.intervention && <InstructionBox data={data} />}
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
-      {/* Subtasks are scaffolding: they matter while the work is happening.
-          Once the step is done they yield the space to the ANSWER — what this
-          step actually found — because "Finding the root cause ✓" without the
-          root cause is a question mark dressed as progress. */}
-      {data.displayStatus !== 'DONE' && node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
-      {data.displayStatus === 'DONE' && node.output_summary?.headline && (
+      {/* Subtasks live only in the expanded details now — the card face is
+          for the ANSWER. The headline moved into the title itself, so the
+          answer block carries just the finding's bullets. */}
+      {data.displayStatus === 'DONE' && findingBullets(node.output_summary?.detail).length > 0 && (
         <div className="card-answer">
-          <strong>{node.output_summary.headline}</strong>
-          {findingBullets(node.output_summary.detail).length > 0 && (
-            <ul>
-              {findingBullets(node.output_summary.detail).map((bullet) => <li key={bullet}>{bullet}</li>)}
-            </ul>
-          )}
+          <ul>
+            {findingBullets(node.output_summary?.detail).map((bullet) => <li key={bullet}>{bullet}</li>)}
+          </ul>
         </div>
       )}
       {pendingIntervention && (
@@ -1024,6 +1026,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [paused, setPaused] = useState(false)
   const [emailPopupKey, setEmailPopupKey] = useState<string | null>(null)
   const [mapPopup, setMapPopup] = useState<MapPopupData | null>(null)
+  // A document generated on the fly ("open the invoice we received") — shown
+  // in the same viewer without needing a card to hang off.
+  const [docPopup, setDocPopup] = useState<{ name: string; body: string } | null>(null)
   // Route data for synthesised cases, keyed by their node-key prefix, so the
   // map button on those cards shows THEIR voyage rather than the main one.
   const syntheticRoutesRef = useRef<Record<string, MapPopupData>>({})
@@ -1541,6 +1546,31 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
   const nextTask = getNextTaskSummary(state)
   const steerTargetKey = pickSteerTargetKey(state, nextTask.nodeKeys, visiblyActiveKeys)
+  // Live content for the executive strip: the watch ticker's nodes, the step
+  // running right now, and the last thing that went out.
+  const ambientNodes = useMemo(() => {
+    const above = stageSummaries.find((stage) => stage.id === 'above')
+    return above ? above.nodeKeys.flatMap((nodeKey) => state.nodes[nodeKey] ? [state.nodes[nodeKey]] : []) : []
+  }, [stageSummaries, state.nodes])
+  const solvingNow = useMemo(() => {
+    const activeKey = visiblyActiveKeys.find((key) => state.nodes[key] && !state.nodes[key].removed)
+    if (activeKey) {
+      const node = state.nodes[activeKey]
+      return humanizeStepTitle({ nodeKey: node.node_key, label: node.label, nodeType: node.node_type, toolName: node.tool_name }).title
+    }
+    return nextTask.titles[0] ?? null
+  }, [nextTask.titles, state.nodes, visiblyActiveKeys])
+  const actingNow = useMemo(() => {
+    let latest: RunNode | null = null
+    for (const node of Object.values(state.nodes)) {
+      if (node.removed || node.status !== 'succeeded') continue
+      if (!isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name }) &&
+        donaldActionIdForNode({ nodeKey: node.node_key, label: node.label, nodeType: node.node_type, toolName: node.tool_name }) !== 'act') continue
+      if (!latest || (node.finished_at ?? '') > (latest.finished_at ?? '')) latest = node
+    }
+    return latest ? latest.output_summary?.headline ?? latest.label : null
+  }, [state.nodes])
+
   const triggerHeadline = useMemo(() => {
     for (const node of Object.values(state.nodes)) {
       if (node.removed) continue
@@ -1639,6 +1669,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         finding: task?.finding ?? content?.summary ?? `Completed from your instruction: ${instruction}`,
         manual_minutes: 10,
       }))
+      // The deliverable pops on its own: an email or document you asked for
+      // should not need a second click to be seen.
+      if (emailish || task?.document?.body) setEmailPopupKey(key)
     }, 6_400)
   }, [emitLocal])
 
@@ -1742,6 +1775,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         finding: 'The client has the deviation and the new ETA; alternatives stay priced in case the schedule degrades further.',
         manual_minutes: 12,
       }))
+      setEmailPopupKey(actKey)
     }, 12_000)
   }, [emitLocal])
 
@@ -1777,6 +1811,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       if (response.ok) interpreted = await response.json() as InterpretResult
     } catch {
       // Fall through to the keyword heuristics.
+    }
+
+    if (interpreted?.intent === 'show_document' && interpreted.document?.body) {
+      // "Open the invoice we received" is a question too: show the document,
+      // freshly written by the director, queue nothing.
+      setDocPopup({
+        name: interpreted.document.name ?? 'Document',
+        body: interpreted.document.body,
+      })
+      return
     }
 
     if (interpreted?.intent === 'show_map' || (!interpreted && /\b(show|see|open|view|where)\b.*\b(map|route|vessel|voyage)\b/i.test(instruction))) {
@@ -1841,7 +1885,16 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         </div>
       </header>
 
-      <ExecutiveStrip phases={getExecutivePhases(state.nodes)} />
+      <ExecutiveStrip
+        actingNow={actingNow}
+        phases={getExecutivePhases(state.nodes)}
+        solvingNow={solvingNow}
+        watchContent={(
+          <AmbientStrip
+            nodes={ambientNodes}
+          />
+        )}
+      />
 
       <DonaldNarration
         stages={stageSummaries}
@@ -1866,7 +1919,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
         <div className="operational-stage-stack">
-          {stageGraphs.map(({ stage, nodes, edges, height, receipt }) => (
+          {/* The Watch lives in the executive strip now; only the case lanes
+              render as graph sections — one flow to read, less scrolling. */}
+          {stageGraphs.filter(({ stage }) => stage.id !== 'above').map(({ stage, nodes, edges, height, receipt }) => (
             <div className="operational-stage-group" key={stage.id}>
                 {/* The narrative hinge: without it the two lanes read as two
                     unrelated boxes. It names the SPECIFIC thing the watch
@@ -1879,19 +1934,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                       : 'The watch caught something — it opened this case'}</span>
                   </div>
                 )}
-                <OperationalStage
-                  liveNote={stage.id === 'above' && state.event_log.length > 0
-                    ? `${state.event_log.length} events processed · last activity ${formatTime(state.event_log[state.event_log.length - 1].occurred_at)}`
-                    : null}
-                  stage={stage}
-                >
-                  {stage.id === 'above' && (
-                    <AmbientStrip
-                      nodes={stage.nodeKeys.flatMap((nodeKey) => state.nodes[nodeKey] ? [state.nodes[nodeKey]] : [])}
-                    />
-                  )}
-                  {stage.id !== 'above' && nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
-                  {stage.id !== 'above' && nodes.length > 0 && (
+                <OperationalStage stage={stage}>
+                  {nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
+                  {nodes.length > 0 && (
                     <div
                       className="stage-flow"
                       ref={(element) => { stageCanvasRefs.current[stage.id] = element }}
@@ -1941,6 +1986,21 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       )}
 
       {mapPopup && <MapPopup data={mapPopup} onClose={() => setMapPopup(null)} />}
+
+      {docPopup && (
+        <div className="email-popup-backdrop" onClick={() => setDocPopup(null)} role="presentation">
+          <article aria-label={docPopup.name} className="email-popup" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div className="email-popup-title">
+                <FileText aria-hidden="true" size={14} />
+                <strong>{docPopup.name}</strong>
+              </div>
+              <button aria-label="Close document" onClick={() => setDocPopup(null)} type="button"><X size={16} /></button>
+            </header>
+            <div className="email-popup-body">{docPopup.body}</div>
+          </article>
+        </div>
+      )}
 
       <AgentRail active={activeAgents} agents={clientMetadata.agents} />
 

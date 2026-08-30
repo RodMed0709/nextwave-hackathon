@@ -38,11 +38,22 @@ export function MapPopup({ data, onClose }: { data: MapPopupData; onClose: () =>
             </radialGradient>
           </defs>
           <rect width="900" height="400" fill="url(#map-ocean)" />
+          {/* Stylised continents so it reads as a WORLD map at a glance:
+              Asia/SEA on the left, the Pacific in the middle, the Americas on
+              the right — matching the demo's east-to-west voyages. */}
+          <g fill="#12365c" stroke="#1d4a75" strokeWidth="1.5">
+            <path d="M 20 40 Q 120 10 210 45 Q 265 70 245 120 Q 220 165 165 195 Q 120 230 95 205 Q 40 175 30 120 Z" />
+            <path d="M 140 215 Q 175 205 190 235 Q 200 270 175 285 Q 145 290 135 260 Z" />
+            <path d="M 640 20 Q 740 5 830 35 Q 880 60 875 115 Q 850 150 800 155 Q 755 175 735 150 Q 690 130 675 90 Q 650 60 640 20 Z" />
+            <path d="M 760 170 Q 805 165 830 195 Q 850 230 830 265 Q 800 275 785 250 Q 765 215 760 170 Z" />
+            <path d="M 800 280 Q 840 285 850 325 Q 850 370 820 385 Q 795 380 792 340 Q 790 305 800 280 Z" />
+            <path d="M 350 300 Q 400 285 440 305 Q 455 335 425 355 Q 380 365 355 340 Z" />
+          </g>
           {[80, 160, 240, 320].map((y) => (
-            <line key={y} x1="0" y1={y} x2="900" y2={y} stroke="#6990b3" strokeOpacity=".12" />
+            <line key={y} x1="0" y1={y} x2="900" y2={y} stroke="#6990b3" strokeOpacity=".1" />
           ))}
           {[150, 300, 450, 600, 750].map((x) => (
-            <line key={x} x1={x} y1="0" x2={x} y2="400" stroke="#6990b3" strokeOpacity=".12" />
+            <line key={x} x1={x} y1="0" x2={x} y2="400" stroke="#6990b3" strokeOpacity=".1" />
           ))}
 
           {/* planned route */}
