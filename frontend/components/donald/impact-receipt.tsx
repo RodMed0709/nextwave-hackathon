@@ -37,17 +37,20 @@ function timePhrase(minutes: number | null): string {
   return `${Math.round(minutes)} minutes of manual work Donald just did for you`
 }
 
-export function ImpactReceipt({ receipt }: { receipt: StageImpactReceipt }) {
+export function ImpactReceipt({ receipt, manualMinutes = 0 }: { receipt: StageImpactReceipt; manualMinutes?: number }) {
   const hasBreakdown = receipt.contributions.length > 0
+  // The header sums manual_minutes; showing a different benchmark total here
+  // made both numbers look invented. One truth, everywhere.
+  const timeSaved = manualMinutes > 0 ? manualMinutes : receipt.timeSavedMinutes
 
   return (
     <section className="impact-receipt" aria-label="Impact receipt">
       <div className="impact-receipt-heading">Impact Receipt</div>
       <div className="impact-receipt-grid">
         <div className="impact-receipt-card time-impact">
-          <span>Time Saved</span>
-          <strong>{formatReceiptMinutes(receipt.timeSavedMinutes)}</strong>
-          <p className="impact-receipt-line">{timePhrase(receipt.timeSavedMinutes)}</p>
+          <span>Manual Work Replaced</span>
+          <strong>{formatReceiptMinutes(timeSaved)}</strong>
+          <p className="impact-receipt-line">{timePhrase(timeSaved)}</p>
         </div>
         <div className="impact-receipt-card value-impact">
           <span>Value Protected</span>

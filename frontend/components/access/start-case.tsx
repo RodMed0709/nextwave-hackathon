@@ -41,6 +41,7 @@ export function StartCase() {
       <section className="start-case-shell" aria-label="Start a case">
         <span className="start-case-eyebrow">Client workspace</span>
         <h1><UserRound aria-hidden="true" size={26} /> {CLIENT_NAME}</h1>
+        <p className="start-case-operator">Signed in as: <strong>Operations Director</strong> — the person Nauta escalates decisions to.</p>
         <p className="start-case-lede">What they asked Nauta:</p>
         <textarea
           aria-label="Standing request to Nauta"

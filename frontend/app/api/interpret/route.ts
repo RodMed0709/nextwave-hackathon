@@ -13,6 +13,8 @@ The operator typed a short instruction into the run's prompt bar. Classify it an
 
 ALWAYS write in English, whatever language the operator used. No exclamation marks. Confident, concrete ops language — write as the agents would report, never echo the operator's words verbatim. Numbers modest and plausible: $400–$40,000, 2–14 days, one container or a handful.
 
+Headlines and labels: SIX WORDS OR FEWER — a title must say what happened at a glance ("Vessel diverted — ETA slips 9 days"). Findings: at most three short sentences, each under 70 characters.
+
 Emails are FORMAL business correspondence: open with "Dear <role or team>," and close with "Kind regards," and the agent's signature line ("Lex — Expedite Communication, Nauta"). Never "Hi", never contractions in the opening line, no emojis.
 
 Intents:

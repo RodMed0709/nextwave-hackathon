@@ -157,6 +157,50 @@ type InterpretResult = {
   task?: InterpretedTask
 }
 
+/**
+ * The director's JSON, made usable whatever shape the model chose: gpt-4o-mini
+ * frequently FLATTENS the schema (task/flow fields at the top level), so the
+ * bucket is rebuilt from loose fields rather than trusted to exist.
+ */
+function normalizeInterpreted(raw: unknown): InterpretResult {
+  if (!raw || typeof raw !== 'object') return {}
+  const record = raw as Record<string, unknown>
+  const str = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined
+  const result: InterpretResult = {
+    intent: record.intent as InterpretResult['intent'],
+    summary: str(record.summary),
+    flow: record.flow as InterpretedFlow | undefined,
+    task: record.task as InterpretedTask | undefined,
+    document: record.document as InterpretResult['document'],
+  }
+  if (!result.task && (record.label || record.doneHeadline || record.emailBody)) {
+    result.task = {
+      label: str(record.label),
+      doneHeadline: str(record.doneHeadline),
+      finding: str(record.finding),
+      email: typeof record.email === 'boolean' ? record.email : undefined,
+      emailSubject: str(record.emailSubject),
+      emailBody: str(record.emailBody),
+      document: result.intent !== 'show_document' ? result.document : undefined,
+    }
+  }
+  if (!result.flow && (record.detectLabel || record.assessHeadline || record.detectHeadline)) {
+    result.flow = {
+      detectLabel: str(record.detectLabel),
+      detectHeadline: str(record.detectHeadline),
+      assessHeadline: str(record.assessHeadline),
+      assessFinding: str(record.assessFinding),
+      actLabel: str(record.actLabel),
+      emailSubject: str(record.emailSubject),
+      emailBody: str(record.emailBody),
+      origin: str(record.origin),
+      destination: str(record.destination),
+      mapNote: str(record.mapNote),
+    }
+  }
+  return result
+}
+
 /** Why a read ended. See readNext for why this is not just `event | null`. */
 type ReadOutcome =
   | { status: 'event'; event: DonaldEvent }
@@ -347,7 +391,8 @@ function parseMessageMeta(artifact: RunArtifact): { sender: string | null; date:
   }
 }
 
-/** The step's finding as at most three short bullets — the card's answer. */
+/** The step's finding as at most three SHORT bullets — a demo is read from
+ * across a room, so each one is clipped to a single glanceable line. */
 function findingBullets(detail: string | null | undefined): string[] {
   if (!detail) return []
   return detail
@@ -355,6 +400,7 @@ function findingBullets(detail: string | null | undefined): string[] {
     .map((sentence) => sentence.trim().replace(/[.;]$/, ''))
     .filter((sentence) => sentence.length > 0)
     .slice(0, 3)
+    .map((sentence) => sentence.length > 72 ? `${sentence.slice(0, 69).trimEnd()}…` : sentence)
 }
 
 function StatusMark({ status }: { status: DisplayStatus }) {
@@ -667,7 +713,6 @@ function ArtifactList({ node }: { node: RunNode }) {
 function ExpandedDetails({ data }: { data: FlowNodeData }) {
   const node = data.runtimeNode
   const metrics = metricRows(node.output_summary?.metrics ?? {})
-  const finding = node.output_summary?.detail
   return (
     <div className="card-details" onClick={(event) => event.stopPropagation()}>
       {node.description && (
@@ -701,10 +746,11 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
         </section>
       )}
 
-      {(finding || node.input_summary) && (
+      {/* The finding lives on the card face as the title + bullets; repeating
+          it here made the click feel like it taught you nothing new. */}
+      {node.input_summary && (
         <section>
-          {finding && <><div className="section-label">Finding</div><p>{finding}</p></>}
-          {node.input_summary && <><div className="section-label secondary">Input</div><p>{node.input_summary}</p></>}
+          <div className="section-label secondary">Input</div><p>{node.input_summary}</p>
         </section>
       )}
 
@@ -814,7 +860,10 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   })
   const isEmail = isEmailNode({ nodeKey: node.node_key, label: node.label, toolName: node.tool_name })
   const emailArtifact = isEmail ? getLatestArtifact(node.artifacts) : null
-  const cardTitle = (data.displayStatus === 'DONE' && node.output_summary?.headline) || humanTitle.title
+  const doneHeadline = data.displayStatus === 'DONE' ? node.output_summary?.headline ?? null : null
+  const cardTitle = (doneHeadline && doneHeadline.length > 52
+    ? `${doneHeadline.slice(0, 49).trimEnd()}…`
+    : doneHeadline) || humanTitle.title
   const classes = [
     'flow-card',
     `action-${data.actionPresentation.id}`,
@@ -1300,7 +1349,19 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
               setExpandedKey(node.node_key)
             }
           },
-          onReadEmail: () => setEmailPopupKey(node.node_key),
+          onReadEmail: () => {
+            // Known paper types open their template; everything else opens
+            // the text viewer. The booking confirmation IS a document, not
+            // an email — it deserves the paper.
+            const artifactName = (getLatestArtifact(node.artifacts)?.name ?? '').toLowerCase()
+            if (/invoice/.test(artifactName)) {
+              setDocPopup({ name: 'Commercial Invoice — INV-2026-0841', url: '/docs/commercial-invoice.html' })
+            } else if (/booking/.test(artifactName) && !/email/.test(artifactName)) {
+              setDocPopup({ name: 'Booking Amendment Confirmation — BKG-4471-R2', url: '/docs/booking-confirmation.html' })
+            } else {
+              setEmailPopupKey(node.node_key)
+            }
+          },
           onViewMap: () => {
             const prefix = Object.keys(syntheticRoutesRef.current).find((candidate) => node.node_key.startsWith(candidate))
             setMapPopup(prefix
@@ -1349,6 +1410,12 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       bounds,
       height,
       receipt: getStageImpactReceipt(stage.id, Object.values(stageNodes)),
+      // One source of truth for time: the same manual_minutes the header sums.
+      // Two different "time saved" numbers on one screen killed both.
+      manualMinutes: Object.values(stageNodes).reduce((total, stageNode) =>
+        !stageNode.removed && stageNode.status === 'succeeded'
+          ? total + (stageNode.manual_minutes ?? 0)
+          : total, 0),
     }
   }), [expandedKey, graphPresentation.edges, graphPresentation.nodes, nodeSizes, stageLayouts, stageSummaries, state.edges, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKeySet])
 
@@ -1800,7 +1867,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         signal: controller.signal,
       })
       window.clearTimeout(timer)
-      if (response.ok) interpreted = await response.json() as InterpretResult
+      if (response.ok) interpreted = normalizeInterpreted(await response.json())
     } catch {
       // Fall through to the keyword heuristics.
     }
@@ -1819,6 +1886,21 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       else if (interpreted?.document?.body) {
         setDocPopup({ name: interpreted.document.name ?? 'Document', body: interpreted.document.body })
       }
+      // The interface works in cards: fetching a document is work too, so a
+      // small Theo card records it while the popup shows the paper.
+      const documentName = template?.name ?? interpreted?.document?.name ?? 'the document'
+      synthesizeSteeredTask(instruction, node.node_key, {
+        intent: 'task',
+        summary: interpreted?.summary,
+        task: {
+          label: `Pull ${documentName.split('—')[0].trim()}`,
+          doneHeadline: 'Document on screen',
+          finding: `${documentName} retrieved and displayed on request.`,
+          email: false,
+        },
+      })
+      setExpandedKey(null)
+      setViewportPinned(false)
       return
     }
 
@@ -1920,7 +2002,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         <div className="operational-stage-stack">
           {/* The Watch lives in the executive strip now; only the case lanes
               render as graph sections — one flow to read, less scrolling. */}
-          {stageGraphs.filter(({ stage }) => stage.id !== 'above').map(({ stage, nodes, edges, height, receipt }) => (
+          {stageGraphs.filter(({ stage }) => stage.id !== 'above').map(({ stage, nodes, edges, height, receipt, manualMinutes }) => (
             <div className="operational-stage-group" key={stage.id}>
                 {/* The narrative hinge: without it the two lanes read as two
                     unrelated boxes. It names the SPECIFIC thing the watch
@@ -1973,7 +2055,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
                       </ReactFlow>
                     </div>
                   )}
-                  {stage.id === 'below' && <ImpactReceipt receipt={receipt} />}
+                  {stage.id === 'below' && <ImpactReceipt manualMinutes={manualMinutes} receipt={receipt} />}
                 </OperationalStage>
             </div>
           ))}

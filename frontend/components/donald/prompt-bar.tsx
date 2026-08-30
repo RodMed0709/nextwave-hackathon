@@ -97,7 +97,7 @@ export function PromptBar({ targetLabel, paused, submitting, error, onSubmit }: 
     <div className="prompt-bar" role="group" aria-label="Instruct the run">
       {(paused || targetLabel || detail) && (
         <div className="prompt-bar-status">
-          {paused && <span className="prompt-bar-chip paused">Paused — the view is frozen, your instruction still queues</span>}
+          {paused && <span className="prompt-bar-chip paused">Paused</span>}
           {targetLabel && <span className="prompt-bar-chip">Steering: {targetLabel}</span>}
           {detail && <span className="prompt-bar-chip error">{detail}</span>}
         </div>

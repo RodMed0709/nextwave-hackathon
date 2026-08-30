@@ -812,6 +812,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   font-weight: 800;
   line-height: 1.1;
 }
+.start-case-operator { margin: -4px 0 0; color: #93a9b8; font-size: 12px; }
+.start-case-operator strong { color: var(--chartreuse); }
 .start-case-lede { margin: 0; color: #93a9b8; font-size: 13px; }
 .start-case-bridge { margin: 0; color: #b9cbd9; font-size: 13px; line-height: 1.5; }
 .start-case-bridge strong { color: var(--chartreuse); font-weight: 900; }
@@ -1583,9 +1585,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 
 /* The card's answer: what the step actually found, in reading-size text. */
 .card-answer { margin-top: 12px; display: grid; gap: 6px; }
-.card-answer strong { color: #182c42; font-size: 15px; font-weight: 800; line-height: 1.25; }
-.card-answer ul { margin: 0; padding: 0 0 0 16px; display: grid; gap: 3px; }
-.card-answer li { color: #45576a; font-size: 12px; line-height: 1.4; }
+.card-answer ul { margin: 0; padding: 0 0 0 18px; display: grid; gap: 6px; }
+.card-answer li { color: #2b3036; font-size: 14px; font-weight: 600; line-height: 1.35; }
 .card-answer li::marker { color: #a7ba39; }
 
 /* A card the operator's instruction created: unmistakably yours. */
