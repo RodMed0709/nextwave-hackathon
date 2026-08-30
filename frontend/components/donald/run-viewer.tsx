@@ -80,12 +80,29 @@ import {
   type PromptSuggestion,
 } from '@/lib/donald/source'
 import { RunControls } from '@/components/donald/run-controls'
+import { ClientArea } from '@/components/donald/client-area'
+import { DonaldNarration } from '@/components/donald/donald-narration'
+import { OperationalStageAccordion, stageDomId } from '@/components/donald/operational-stage'
+import { ActionAnimation } from '@/components/donald/animations/action-animation'
+import {
+  actionPresentationForNode,
+  type ActionPresentation,
+} from '@/lib/donald/action-presentation'
+import type { ActionAnimationState } from '@/components/donald/animations/action-animation-registry'
+import {
+  clientProjectMetadata,
+  operationalStageForNode,
+  summarizeOperationalStages,
+  type OperationalStageId,
+  type OperationalStageSummary,
+} from '@/lib/donald/operational-stages'
 import type {
   DonaldEvent,
   InterventionOption,
   InterventionRecord,
   OpenIntervention,
   RunArtifact,
+  RunEdge,
   RunNode,
   RunState,
   RunSubtask,
@@ -106,6 +123,7 @@ type ReadOutcome =
 type FlowNodeData = {
   runtimeNode: RunNode
   displayStatus: DisplayStatus
+  actionPresentation: ActionPresentation
   selected: boolean
   visiblyActive: boolean
   appearance: NodePresentation
@@ -142,6 +160,7 @@ const DRAWER_WIDTH = 430
 // not open magnified to fill the screen and then crawl back out as work arrives.
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
+const STAGE_GRAPH_MIN_HEIGHT = 360
 
 // The pitch demos are recordings and everything else is live. The named
 // recordings stay served from the bundle so the stage demo cannot depend on
@@ -221,6 +240,17 @@ function statusClass(status: DisplayStatus): string {
   return status.toLowerCase().replace(' ', '-')
 }
 
+function animationState(status: DisplayStatus): ActionAnimationState {
+  switch (status) {
+    case 'RUNNING': return 'running'
+    case 'DONE': return 'done'
+    case 'NEEDS HUMAN':
+    case 'BLOCKED': return 'blocked'
+    case 'FAILED': return 'failed'
+    default: return 'waiting'
+  }
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
   const date = new Date(iso)
@@ -239,14 +269,6 @@ function formatDuration(node: RunNode): string {
       ? Math.max(0, (Date.parse(node.finished_at) - Date.parse(node.started_at)) / 1_000)
       : null)
   return typeof seconds === 'number' ? `${seconds.toFixed(1)}s` : '—'
-}
-
-function payloadText(payload: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = payload[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return null
 }
 
 function declaredAgent(events: readonly DonaldEvent[], preferredLabel?: string): string | null {
@@ -273,29 +295,9 @@ function latestRunAgent(events: readonly DonaldEvent[]): string | null {
   return null
 }
 
-function runAgentName(events: readonly DonaldEvent[]): string | null {
-  const started = events.find((event) => event.event_type === 'run_started')
-  const explicit = started ? payloadText(started.payload, ['nauta_agent', 'agent_name', 'agent_label', 'owner_agent']) : null
-  if (explicit) return explicit
-  if (started?.payload.run_key === 'OP-4471') {
-    return declaredAgent(events, 'Marcus') ?? latestRunAgent(events)
-  }
+function currentAgentName(nodes: Record<string, RunNode>, activeNodeKey: string | null, events: readonly DonaldEvent[]): string | null {
+  if (activeNodeKey) return nodes[activeNodeKey]?.agent_label ?? null
   return latestRunAgent(events) ?? declaredAgent(events)
-}
-
-function runClientName(events: readonly DonaldEvent[]): string | null {
-  const started = events.find((event) => event.event_type === 'run_started')
-  if (!started) return null
-  return payloadText(started.payload, ['client_name', 'client', 'customer_name', 'customer', 'account_name', 'account'])
-}
-
-function OperationalField({ label, value, className }: { label: string; value: string; className?: string }) {
-  return (
-    <div className={`context-field${className ? ` ${className}` : ''}`}>
-      <span>{label}:</span>
-      <strong>{value}</strong>
-    </div>
-  )
 }
 
 function eventDescription(event: DonaldEvent): string {
@@ -729,6 +731,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
   const title = node.output_summary?.headline ?? node.label
   const classes = [
     'flow-card',
+    `action-${data.actionPresentation.id}`,
     statusClass(data.displayStatus),
     data.selected ? 'selected' : '',
     data.visiblyActive ? 'visibly-active' : '',
@@ -755,6 +758,10 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         <span className="status"><StatusMark status={data.displayStatus} /> {data.displayStatus}</span>
       </div>
       <h2>{title}</h2>
+      <ActionAnimation
+        presentation={data.actionPresentation}
+        state={animationState(data.displayStatus)}
+      />
       {primaryMetric && <div className="primary-metric"><span>{primaryMetric.label}</span><strong>{primaryMetric.value}</strong></div>}
       {saving && (
         <div className="card-saving" title={saving.basis}>
@@ -850,6 +857,47 @@ function FlowNodeRenderer(props: NodeProps) {
   )
 }
 
+function nodesForStage(stage: OperationalStageSummary, nodes: Record<string, RunNode>): Record<string, RunNode> {
+  return Object.fromEntries(stage.nodeKeys.flatMap((nodeKey) => {
+    const node = nodes[nodeKey]
+    return node ? [[nodeKey, node]] : []
+  }))
+}
+
+function edgesForStage(
+  stage: OperationalStageSummary,
+  nodes: Record<string, RunNode>,
+  edges: Record<string, RunEdge>,
+): Record<string, RunEdge> {
+  const stageKeys = new Set(stage.nodeKeys)
+  return Object.fromEntries(Object.entries(edges).filter(([, edge]) =>
+    stageKeys.has(edge.source_node_key) &&
+    stageKeys.has(edge.target_node_key) &&
+    nodes[edge.source_node_key] &&
+    nodes[edge.target_node_key],
+  ))
+}
+
+function crossStageTransitions(
+  stage: OperationalStageSummary,
+  stages: OperationalStageSummary[],
+  nodes: Record<string, RunNode>,
+  edges: Record<string, RunEdge>,
+): string[] {
+  const stageByNode = new Map(stages.flatMap((candidate) =>
+    candidate.nodeKeys.map((nodeKey) => [nodeKey, candidate] as const),
+  ))
+  const labels = new Set<string>()
+  for (const edge of Object.values(edges)) {
+    if (!stage.nodeKeys.includes(edge.source_node_key)) continue
+    const targetStage = stageByNode.get(edge.target_node_key)
+    if (!targetStage || targetStage.id === stage.id) continue
+    if (!nodes[edge.source_node_key] || !nodes[edge.target_node_key]) continue
+    labels.add(targetStage.id === 'below' ? 'Signal / trigger below the line' : `Continues to ${targetStage.eyebrow}`)
+  }
+  return [...labels]
+}
+
 export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null }) {
   const initialKey = requestedRunKey ?? 'latest'
   const [state, setState] = useState(() => createInitialRunState(initialKey))
@@ -858,7 +906,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [sourceError, setSourceError] = useState<string | null>(null)
   const [instructionError, setInstructionError] = useState<string | null>(null)
   const [submittingNodeKey, setSubmittingNodeKey] = useState<string | null>(null)
-  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
+  const [flowInstances, setFlowInstances] = useState<Partial<Record<OperationalStageId, ReactFlowInstance>>>({})
   // Set the moment the person pans or zooms by hand. From then on the canvas is
   // theirs: an agent adding a node must not move a camera someone is holding.
   const [viewportPinned, setViewportPinned] = useState(false)
@@ -866,13 +914,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const [measuredSizes, setMeasuredSizes] = useState<Record<string, NodeSize>>({})
   const [suggestions, setSuggestions] = useState<Record<string, PromptSuggestion[]>>({})
   const [replaying, setReplaying] = useState(false)
+  const [stageExpansionOverrides, setStageExpansionOverrides] = useState<Partial<Record<OperationalStageId, boolean>>>({})
   const replayingRef = useRef(false)
   const replayTimerRef = useRef<number | null>(null)
   const sourceRef = useRef<DonaldEventSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const readPromiseRef = useRef<Promise<ReadOutcome> | null>(null)
-  const layoutRef = useRef<Record<string, LayoutPosition>>({})
-  const canvasRef = useRef<HTMLElement | null>(null)
+  const layoutRef = useRef<Partial<Record<OperationalStageId, Record<string, LayoutPosition>>>>({})
+  const stageCanvasRefs = useRef<Partial<Record<OperationalStageId, HTMLElement | null>>>({})
   if (!sourceRef.current) sourceRef.current = createSource(requestedRunKey)
 
   /**
@@ -960,17 +1009,44 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     ...Object.entries(nodeSizes).map(([key, size]) => `${key}:${size.width}:${size.height}`).sort(),
   ].join('|'), [nodeSizes, state.edges, state.nodes])
 
-  const layout = useMemo(() => {
-    const next = layoutGraph(state.nodes, state.edges, layoutRef.current, nodeSizes)
-    layoutRef.current = next
-    return next
-  }, [structuralSignature])
-
   const graphPresentation = useMemo(() => getGraphPresentation(state.event_log), [state.event_log])
   const visiblyActiveKey = useMemo(
     () => getVisiblyActiveNodeKey(state.nodes, state.event_log),
     [state.event_log, state.nodes],
   )
+  const stageSummaries = useMemo(() => summarizeOperationalStages(state.nodes), [state.nodes])
+  const stageLayouts = useMemo(() => {
+    const next: Partial<Record<OperationalStageId, Record<string, LayoutPosition>>> = {}
+    for (const stage of stageSummaries) {
+      const stageNodes = nodesForStage(stage, state.nodes)
+      const stageEdges = edgesForStage(stage, state.nodes, state.edges)
+      next[stage.id] = layoutGraph(stageNodes, stageEdges, layoutRef.current[stage.id] ?? {}, nodeSizes)
+    }
+    layoutRef.current = next
+    return next
+  }, [nodeSizes, stageSummaries, state.edges, state.nodes, structuralSignature])
+  const activeStageId = useMemo(() => {
+    if (visiblyActiveKey && state.nodes[visiblyActiveKey]) return operationalStageForNode(state.nodes[visiblyActiveKey])
+    return stageSummaries.find((stage) => stage.state === 'needs-human')?.id ??
+      stageSummaries.find((stage) => stage.id === 'below' && stage.state === 'in-progress')?.id ??
+      stageSummaries.find((stage) => stage.state === 'in-progress')?.id ??
+      null
+  }, [stageSummaries, state.nodes, visiblyActiveKey])
+  const expandedStageIds = useMemo(() => new Set(stageSummaries.flatMap((stage) => {
+    const override = stageExpansionOverrides[stage.id]
+    const expanded = override ?? (
+      stage.id === activeStageId ||
+      stage.state === 'needs-human' ||
+      (stage.id === 'below' && stage.state === 'in-progress')
+    )
+    return expanded ? [stage.id] : []
+  })), [activeStageId, stageExpansionOverrides, stageSummaries])
+  const toggleStage = useCallback((stageId: OperationalStageId) => {
+    setStageExpansionOverrides((current) => ({
+      ...current,
+      [stageId]: !expandedStageIds.has(stageId),
+    }))
+  }, [expandedStageIds])
 
   const updateMeasurement = useCallback((nodeKey: string, size: NodeSize) => {
     setMeasuredSizes((current) => {
@@ -1027,55 +1103,49 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     return () => controller.abort()
   }, [expandedKey, state.nodes, state.run.graph_revision, state.run.key, suggestions])
 
-  const visualNodes: Node[] = useMemo(() => Object.values(state.nodes).map((node) => {
-    const selected = expandedKey === node.node_key
-    const intervention = state.open_intervention?.node_key === node.node_key ? state.open_intervention : null
-    const size = nodeSizes[node.node_key]
-    return {
-      id: node.node_key,
-      type: 'flow',
-      position: { x: layout[node.node_key].x, y: layout[node.node_key].y },
-      width: size.width,
-      height: size.height,
-      style: { width: size.width },
-      data: {
-        runtimeNode: node,
-        displayStatus: displayStatus(node),
-        selected,
-        visiblyActive: visiblyActiveKey === node.node_key,
-        appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
-        liveStatus: visiblyActiveKey === node.node_key ? getLatestNodeStatus(node, state.event_log) : null,
-        intervention,
-        interventions: getNodeInterventions(state.interventions, node.node_key),
-        // Every step that has not finished can be steered, not just a blocked
-        // one. Waiting until a step blocks means the only work you can influence
-        // is work that has already stalled - the opposite of supervision.
-        steerable: canIntervene(node),
-        instructionError: selected ? instructionError : null,
-        submitting: submittingNodeKey === node.node_key,
-        suggestions: suggestions[`${node.node_key}:${state.run.graph_revision}`] ?? [],
-        onToggle: () => setExpandedKey((current) => current === node.node_key ? null : node.node_key),
-        onResize: (measured) => updateMeasurement(node.node_key, measured),
-        onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
-      } satisfies FlowNodeData,
-    }
-  }), [expandedKey, graphPresentation.nodes, instructionError, layout, nodeSizes, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKey])
-
-  const selectedNodeData = useMemo(
-    () => (visualNodes.find((node) => node.id === expandedKey)?.data as FlowNodeData | undefined) ?? null,
-    [expandedKey, visualNodes],
-  )
-
-  useEffect(() => {
-    if (!expandedKey) return
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setExpandedKey(null) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [expandedKey])
-
-  const visualEdges: Edge[] = useMemo(() => Object.values(state.edges)
-    .filter((edge) => state.nodes[edge.source_node_key] && state.nodes[edge.target_node_key])
-    .map((edge) => {
+  const stageGraphs = useMemo(() => stageSummaries.map((stage) => {
+    const stageLayout = stageLayouts[stage.id] ?? {}
+    const stageNodes = nodesForStage(stage, state.nodes)
+    const stageEdges = edgesForStage(stage, state.nodes, state.edges)
+    const nodes: Node[] = Object.values(stageNodes).flatMap((node) => {
+      const position = stageLayout[node.node_key]
+      if (!position) return []
+      const selected = expandedKey === node.node_key
+      const intervention = state.open_intervention?.node_key === node.node_key ? state.open_intervention : null
+      const size = nodeSizes[node.node_key]
+      const display = displayStatus(node)
+      return [{
+        id: node.node_key,
+        type: 'flow',
+        position: { x: position.x, y: position.y },
+        width: size.width,
+        height: size.height,
+        style: { width: size.width },
+        data: {
+          runtimeNode: node,
+          displayStatus: display,
+          actionPresentation: actionPresentationForNode({
+            nodeKey: node.node_key,
+            label: node.label,
+            nodeType: node.node_type,
+          }),
+          selected,
+          visiblyActive: visiblyActiveKey === node.node_key,
+          appearance: graphPresentation.nodes[node.node_key] ?? { delayMs: 0, discovered: false, batch: 0 },
+          liveStatus: visiblyActiveKey === node.node_key ? getLatestNodeStatus(node, state.event_log) : null,
+          intervention,
+          interventions: getNodeInterventions(state.interventions, node.node_key),
+          steerable: canIntervene(node),
+          instructionError: selected ? instructionError : null,
+          submitting: submittingNodeKey === node.node_key,
+          suggestions: suggestions[`${node.node_key}:${state.run.graph_revision}`] ?? [],
+          onToggle: () => setExpandedKey((current) => current === node.node_key ? null : node.node_key),
+          onResize: (measured) => updateMeasurement(node.node_key, measured),
+          onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
+        } satisfies FlowNodeData,
+      }]
+    })
+    const edges: Edge[] = Object.values(stageEdges).map((edge) => {
       const source = state.nodes[edge.source_node_key]
       const target = state.nodes[edge.target_node_key]
       const exiting = edge.status === 'removed' || source.removed || target.removed
@@ -1086,22 +1156,45 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         edge.status === 'traversed' ? 'DONE' :
         edge.status === 'skipped' ? 'SKIPPED' :
         'WAITING'
-      const data: RuntimeEdgeData = {
-        status,
-        enterDelayMs: graphPresentation.edges[edge.edge_key]?.delayMs ?? 0,
-        exiting,
-      }
       return {
         id: edge.edge_key,
         source: edge.source_node_key,
         target: edge.target_node_key,
         type: 'signal',
-        data,
+        data: {
+          status,
+          enterDelayMs: graphPresentation.edges[edge.edge_key]?.delayMs ?? 0,
+          exiting,
+        } satisfies RuntimeEdgeData,
       }
-    }), [graphPresentation.edges, state.edges, state.nodes, visiblyActiveKey])
+    })
+    const bounds = getLayoutBounds(stageLayout, nodeSizes)
+    const height = bounds ? Math.max(STAGE_GRAPH_MIN_HEIGHT, bounds.y + bounds.height + 72) : STAGE_GRAPH_MIN_HEIGHT
+    return {
+      stage,
+      nodes,
+      edges,
+      height,
+      transitions: crossStageTransitions(stage, stageSummaries, state.nodes, state.edges),
+    }
+  }), [expandedKey, graphPresentation.edges, graphPresentation.nodes, nodeSizes, stageLayouts, stageSummaries, state.edges, state.event_log, state.interventions, state.nodes, state.open_intervention, state.run.graph_revision, submitInstruction, submittingNodeKey, suggestions, updateMeasurement, visiblyActiveKey])
+
+  const allVisualNodes = useMemo(() => stageGraphs.flatMap((stage) => stage.nodes), [stageGraphs])
+
+  const selectedNodeData = useMemo(
+    () => (allVisualNodes.find((node) => node.id === expandedKey)?.data as FlowNodeData | undefined) ?? null,
+    [allVisualNodes, expandedKey],
+  )
+
+  useEffect(() => {
+    if (!expandedKey) return
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setExpandedKey(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expandedKey])
 
   /**
-   * Frame the graph using OUR layout, not React Flow's.
+   * Frame a stage graph using OUR layout, not React Flow's.
    *
    * Both fitView and fitBounds silently did nothing here: they size the graph
    * from each node's `measured` field, which React Flow populates from its own
@@ -1112,15 +1205,28 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
    * from the library's measurement lifecycle. It also lets the zoom ceiling
    * actually apply, which fitBounds does not support at all.
    */
-  const zoomToFit = useCallback(() => {
-    const bounds = getLayoutBounds(layout, nodeSizes)
-    const container = canvasRef.current
-    if (!bounds || !flowInstance || !container) return
+  const zoomStageToFit = useCallback((stageId: OperationalStageId) => {
+    const bounds = getLayoutBounds(stageLayouts[stageId] ?? {}, nodeSizes)
+    const instance = flowInstances[stageId]
+    const container = stageCanvasRefs.current[stageId]
+    if (!bounds || !instance || !container) return
     const { width, height } = container.getBoundingClientRect()
     if (width === 0 || height === 0) return
 
-    moveCamera(flowInstance, container, getFitViewport(bounds, { width, height }))
-  }, [flowInstance, layout, nodeSizes])
+    moveCamera(instance, container, getFitViewport(bounds, { width, height }))
+  }, [flowInstances, nodeSizes, stageLayouts])
+
+  const zoomToFit = useCallback(() => {
+    const expandedStages = stageSummaries.filter((stage) => expandedStageIds.has(stage.id) && stage.totalActions > 0)
+    const orderedStages = [
+      ...expandedStages.filter((stage) => stage.id === activeStageId),
+      ...expandedStages.filter((stage) => stage.id !== activeStageId),
+    ]
+    for (const stage of orderedStages) zoomStageToFit(stage.id)
+    if (activeStageId) {
+      document.getElementById(stageDomId(activeStageId))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [activeStageId, expandedStageIds, stageSummaries, zoomStageToFit])
 
   /**
    * The camera follows the EXTENT of the graph, quantised.
@@ -1137,11 +1243,12 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
    * status line rewrapping does not move the camera, a column of new work does.
    */
   const viewportKey = useMemo(() => {
-    const bounds = getLayoutBounds(layout, nodeSizes)
-    if (!bounds) return 'empty'
     const q = (value: number) => Math.round(value / VIEWPORT_QUANTUM)
-    return `${q(bounds.x)}:${q(bounds.y)}:${q(bounds.width)}:${q(bounds.height)}`
-  }, [layout, nodeSizes])
+    return stageSummaries.map((stage) => {
+      const bounds = getLayoutBounds(stageLayouts[stage.id] ?? {}, nodeSizes)
+      return bounds ? `${stage.id}:${q(bounds.x)}:${q(bounds.y)}:${q(bounds.width)}:${q(bounds.height)}` : `${stage.id}:empty`
+    }).join('|')
+  }, [nodeSizes, stageLayouts, stageSummaries])
 
   const zoomToFitRef = useRef(zoomToFit)
   zoomToFitRef.current = zoomToFit
@@ -1149,7 +1256,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   useEffect(() => {
     if (viewportPinned || expandedKey) return
     zoomToFitRef.current()
-  }, [expandedKey, flowInstance, viewportKey, viewportPinned])
+  }, [expandedKey, flowInstances, viewportKey, viewportPinned])
 
   /**
    * A person taking hold of the canvas pins it.
@@ -1165,43 +1272,44 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
    * it does not count as taking over the camera.
    */
   useEffect(() => {
-    const container = canvasRef.current
-    if (!container) return
-    const pane = container.querySelector('.react-flow__pane')
-    if (!pane) return
-    const pin = () => setViewportPinned(true)
-    // React Flow nests the node layer INSIDE the pane, so a pointerdown on a
-    // card bubbles here too. Without the target check, clicking a card to read
-    // it pinned the camera, and the graph then grew off the right of the screen
-    // with no fit ever running again. Wheel needs no such check: React Flow
-    // zooms on a wheel anywhere over the canvas, including over a card.
-    const pinIfPane = (event: Event) => { if (event.target === pane) pin() }
-    pane.addEventListener('wheel', pin, { passive: true })
-    pane.addEventListener('pointerdown', pinIfPane)
-    return () => {
-      pane.removeEventListener('wheel', pin)
-      pane.removeEventListener('pointerdown', pinIfPane)
-    }
-  }, [flowInstance])
+    const cleanups = stageSummaries.flatMap((stage) => {
+      const container = stageCanvasRefs.current[stage.id]
+      if (!container) return []
+      const pane = container.querySelector('.react-flow__pane')
+      if (!pane) return []
+      const pin = () => setViewportPinned(true)
+      const pinIfPane = (event: Event) => { if (event.target === pane) pin() }
+      pane.addEventListener('wheel', pin, { passive: true })
+      pane.addEventListener('pointerdown', pinIfPane)
+      return [() => {
+        pane.removeEventListener('wheel', pin)
+        pane.removeEventListener('pointerdown', pinIfPane)
+      }]
+    })
+    return () => { for (const cleanup of cleanups) cleanup() }
+  }, [flowInstances, stageSummaries])
 
   /**
    * Keep the selected card clear of the drawer.
    *
-   * The drawer covers the right-hand strip of the canvas, so selecting a card
-   * that sits under it would hide the very thing being described. This pans by
-   * the minimum needed, treating the drawer as part of the right margin. It
-   * preserves the person's zoom unless the card is physically wider or taller
+   * The drawer covers the right-hand strip of the stage workspace, so selecting
+   * a card that sits under it would hide the very thing being described. This
+   * pans by the minimum needed, treating the drawer as part of the right margin.
+   * It preserves the person's zoom unless the card is physically wider or taller
    * than the available area; only then does it zoom out enough to fit. A card
    * already fully visible causes no movement at all.
    */
   useEffect(() => {
-    if (!flowInstance || !expandedKey) return
-    const position = layout[expandedKey]
+    if (!expandedKey) return
+    const stage = stageSummaries.find((candidate) => candidate.nodeKeys.includes(expandedKey))
+    if (!stage) return
+    const instance = flowInstances[stage.id]
+    const position = stageLayouts[stage.id]?.[expandedKey]
     const size = nodeSizes[expandedKey]
-    const container = canvasRef.current
-    if (!position || !size || !container) return
+    const container = stageCanvasRefs.current[stage.id]
+    if (!instance || !position || !size || !container) return
 
-    const viewport = flowInstance.getViewport()
+    const viewport = instance.getViewport()
     const { width, height } = container.getBoundingClientRect()
     const drawerWidth = container.querySelector<HTMLElement>('.node-drawer')
       ?.getBoundingClientRect().width ?? DRAWER_WIDTH
@@ -1218,8 +1326,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       Math.abs(next.y - viewport.y) < 1 &&
       Math.abs(next.zoom - viewport.zoom) < 0.001
     ) return
-    moveCamera(flowInstance, container, next)
-  }, [expandedKey, flowInstance, layout, nodeSizes])
+    moveCamera(instance, container, next)
+  }, [expandedKey, flowInstances, nodeSizes, stageLayouts, stageSummaries])
 
   /**
    * Replay the run from its first event, at the pace it actually happened.
@@ -1301,17 +1409,13 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const latestRecalculation = getLatestRecalculation(state.event_log)
   const request = getRunRequest(state.run)
   const runSavings = getRunSavings(state.nodes)
-  const nautaAgent = runAgentName(state.event_log)
-  const clientName = runClientName(state.event_log)
+  const activeAgent = currentAgentName(state.nodes, visiblyActiveKey, state.event_log)
+  const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
 
   return (
     <main className="donald">
       <header className="header">
-        <div className="operations-heading" aria-label="Operational context">
-          <OperationalField className="client-context" label="Client" value={clientName ?? 'Unavailable'} />
-          <OperationalField className="task-context" label="Task" value={request} />
-          <OperationalField className="agent-context" label="Nauta agent" value={nautaAgent ?? 'Unavailable'} />
-        </div>
+        <ClientArea metadata={clientMetadata} activeAgent={activeAgent} currentTask={request} />
         <div className="run-status-pill" aria-label={`Run status: ${replaying ? 'Replaying' : runStatusLabel(state)}`}>
           <i className="live-dot" />
           {replaying ? 'REPLAY' : runStatusLabel(state)}
@@ -1335,7 +1439,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         />
       </header>
 
-      <section className="canvas-panel" ref={canvasRef}>
+      <DonaldNarration
+        stages={stageSummaries}
+      />
+
+      <section className="canvas-panel">
         {latestRecalculation && (
           <div className={`replan-overlay ${latestRecalculation.kind}`} key={latestRecalculation.key}>
             <div className="recalculating">Recalculating…</div>
@@ -1349,25 +1457,57 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
         {selectedNodeData && <NodeDrawer data={selectedNodeData} onClose={() => setExpandedKey(null)} />}
-        <ReactFlow
-          edges={visualEdges}
-          edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={{ padding: FIT_PADDING, maxZoom: MAX_FIT_ZOOM }}
-          minZoom={MIN_FIT_ZOOM}
-          nodeTypes={nodeTypes}
-          nodes={visualNodes}
-          nodesConnectable={false}
-          nodesDraggable={false}
-          onInit={setFlowInstance}
-          onPaneClick={() => setExpandedKey(null)}
-          onlyRenderVisibleElements={false}
-          panOnDrag
-          style={{ width: '100%', height: '100%' }}
-          zoomOnDoubleClick={false}
-        >
-          <Background color="#6990b3" gap={42} variant={BackgroundVariant.Lines} />
-        </ReactFlow>
+        <div className="operational-stage-stack">
+          {stageGraphs.map(({ stage, nodes, edges, height, transitions }, index) => {
+            const expanded = expandedStageIds.has(stage.id)
+            return (
+              <div className="operational-stage-group" key={stage.id}>
+                {index === 1 && (
+                  <div className="stage-line-divider" aria-label="Signal or trigger boundary">
+                    <span>Signal / Trigger</span>
+                  </div>
+                )}
+                <OperationalStageAccordion
+                  expanded={expanded}
+                  onToggle={() => toggleStage(stage.id)}
+                  stage={stage}
+                  transitions={transitions}
+                >
+                  {nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
+                  {expanded && nodes.length > 0 && (
+                    <div
+                      className="stage-flow"
+                      ref={(element) => { stageCanvasRefs.current[stage.id] = element }}
+                      style={{ height }}
+                    >
+                      <ReactFlow
+                        edges={edges}
+                        edgeTypes={edgeTypes}
+                        fitView
+                        fitViewOptions={{ padding: FIT_PADDING, maxZoom: MAX_FIT_ZOOM }}
+                        minZoom={MIN_FIT_ZOOM}
+                        nodeTypes={nodeTypes}
+                        nodes={nodes}
+                        nodesConnectable={false}
+                        nodesDraggable={false}
+                        onInit={(instance) => {
+                          setFlowInstances((current) => ({ ...current, [stage.id]: instance }))
+                        }}
+                        onPaneClick={() => setExpandedKey(null)}
+                        onlyRenderVisibleElements={false}
+                        panOnDrag
+                        style={{ width: '100%', height: '100%' }}
+                        zoomOnDoubleClick={false}
+                      >
+                        <Background color="#6990b3" gap={42} variant={BackgroundVariant.Lines} />
+                      </ReactFlow>
+                    </div>
+                  )}
+                </OperationalStageAccordion>
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       <footer className={`event-stream ${streamOpen ? 'open' : ''}`}>
