@@ -8,8 +8,10 @@ Demo en local, desde grabaciones. Tres pestañas abiertas ANTES de empezar, en e
 2. `localhost:3000/runs/replan`
 3. `localhost:3000/runs/land-pickup`
 
-Nunca dependas de red. Cada pestaña se recarga justo antes de su turno: recargar reinicia la
-reproducción desde el principio.
+Nunca dependas de red. MECÁNICA CRÍTICA: recargar reproduce a velocidad REAL (~2 min por demo
+— no cabe en 4:00). ANTES del pitch, deja las TRES pestañas reproducirse enteras hasta DONE.
+Durante el pitch usa el botón **Replay** del header: comprime cada corrida a ~45 s (136 s las
+tres) respetando el ritmo relativo. Recargar es solo el plan B si una pestaña se rompió.
 
 ---
 
@@ -23,7 +25,7 @@ reproducción desde el principio.
 | 0:45–1:05 | Los primeros pasos se encienden y narran: PO-44190, packing list | Cada paso cuenta qué buscó y qué encontró, con identificadores reales. |
 | 1:05–1:20 | La factura no aparece. **Nace una tarjeta nueva hacia abajo**: contactar al proveedor | Nadie programó esa tarjeta. El agente la generó porque la necesitó. |
 | 1:20–1:35 | Click en la tarjeta: el email al proveedor, visible entero. El nodo en ámbar | El email se lee ANTES de confiar en él. Ámbar = esperando, no colgado. |
-| 1:35–1:50 | Compuerta humana: opciones con precio. El operador elige *"file with provisional value"*. **Tres pasos corren en paralelo** mientras el nodo del email sigue ámbar | La decisión no detiene el run: se declara el valor provisional y el trabajo sigue. Ámbar convive con progreso. |
+| 1:35–1:50 | Compuerta humana: opciones con precio. El operador elige *"file with provisional value"*. **El trabajo sigue: tres pasos completan** mientras el nodo del email sigue ámbar | La decisión no detiene el run: se declara el valor provisional y el trabajo sigue. Ámbar convive con progreso. |
 | 1:50–2:00 | La factura llega al final; **el mismo nodo** se reanuda; las cifras se confirman; el run cierra en verde | La factura confirma las cifras: $180 de enmienda evitados. El mismo nodo, donde se quedó. Sin adivinar ningún valor. |
 | 2:00–2:10 | Pestaña 2 recargada. Seis pasos en línea recta | Chequeo de llegada rutinario. Un plan aburrido, a propósito. |
 | 2:10–2:35 | El BL revela el transbordo. **La línea se convierte en diamante en vivo**; un nodo queda gris con motivo | El plan cambiando no es un error: el agente aprendió algo. |
@@ -61,7 +63,7 @@ en inglés.
 *Nota para el presentador: las cien horas salen de `PROBLEM.md` — 3–4 llamadas por semana
 × 30 minutos × 52 semanas ≈ 91–104 h/año. Redondeado a "cien horas".*
 
-*(Recargar pestaña 1.)*
+*(Pestaña 1: pulsar **Replay** — la corrida completa ya quedó cargada antes del pitch.)*
 
 ### 2 · Demo 1 — Missing invoice (0:30–2:00)
 
@@ -103,8 +105,8 @@ en inglés.
 *(Leer las opciones tal cual aparecen en pantalla, con sus números.)*
 
 > El operador elige *"file with provisional value"*. Y fíjense en lo que NO pasa:
-> el run no se detiene a esperar al proveedor. Tres pasos arrancan en paralelo
-> mientras el nodo del email sigue en ámbar. Ámbar no bloquea el trabajo que sí puede avanzar.
+> el run no se detiene a esperar al proveedor. El trabajo sigue avanzando — tres pasos
+> completan mientras el nodo del email sigue en ámbar. Ámbar no bloquea lo que sí puede avanzar.
 
 > En la corrida real esto tardó lo que tardó. La reproducción respeta los tiempos originales.
 
@@ -115,7 +117,7 @@ en inglés.
 > La factura confirma las cifras: $180 de enmienda evitados.
 > El run termina en verde sin haber adivinado un solo valor. Eso es el freno funcionando.
 
-*(Recargar pestaña 2.)*
+*(Pestaña 2: pulsar **Replay**.)*
 
 ### 3 · Demo 2 — Replan (2:00–2:50)
 
@@ -134,7 +136,7 @@ en inglés.
 
 > El plan cambiando no es un error. Significa que el agente aprendió algo.
 > Un paso se retira — en gris, con su motivo escrito, no desaparece en silencio.
-> Entran cuatro pasos nuevos y las dependencias se recablean. Una línea se volvió un diamante.
+> Entran dos pasos nuevos y se recablean cuatro dependencias. Una línea se volvió un diamante.
 
 **[2:35 — la causa citada]**
 
@@ -145,7 +147,10 @@ en inglés.
 > Este es el momento clave de todo el pitch: **nadie programó ese grafo.**
 > No existe un archivo con esa forma. Salió del trabajo.
 
-*(Recargar pestaña 3.)*
+> Y el aprendizaje tiene precio en pantalla: cinco días tarde al benchmark de demurrage
+> son **$690–750 de exposición** — y el pickup ya quedó reagendado, exposición evitada.
+
+*(Pestaña 3: pulsar **Replay**.)*
 
 ### 4 · Demo 3 — Berríos (2:50–3:30)
 
@@ -164,10 +169,10 @@ en inglés.
 
 *(Señalar la subtarea nueva, en rojo.)*
 
-> Ese cuarto ítem no existía hace treinta segundos. El agente descubrió un feriado
-> local en San Juan y añadió la verificación a media faena. La tarjeta creció para contarlo.
-> Y el ítem rojo no es un fallo. Es el agente diciendo: es la primera vez que esto
-> pasa en esta ruta en noventa días.
+> El segundo ítem — el feriado de San Juan — no existía hace treinta segundos: el agente
+> lo descubrió y añadió la verificación a media faena. La tarjeta creció para contarlo.
+> Y el último ítem, el rojo, no es un fallo. Es el agente diciendo: es la primera vez
+> que esto pasa en esta ruta en noventa días.
 
 **[3:15 — la compuerta y el dinero]**
 
@@ -221,7 +226,7 @@ en inglés.
 | "¿Por qué Nauta no lo hace en un sprint?" | Pueden — para SU agente. Esto son cinco verbos sobre MCP: cualquier agente los habla. Con tres proveedores, Jorge no quiere tres ventanas. Y Nauta vende más con nuestra ventana que construyendo la suya. |
 | "¿Quién paga y cuánto?" | El proveedor de agentes, por asiento supervisado. Somos la respuesta a su objeción de compra más cara: "¿cómo confío en algo que ya actuó?". |
 | "El freno es advisory. No frena nada." | Correcto, y lo decimos así: el freno se escribe como evento y el agente lo honra en su siguiente `check_instructions`. Lo garantizado es otra cosa: cuando falta un dato, no adivina — se pone en ámbar, dice qué falta, y reanuda el mismo nodo. |
-| "¿$78 de ahorro? Eso es un café." | $78 es solo el trabajo de oficina. El número de negocio es $414 de exposición evitados por $0, decidido en 90 segundos. Y corre 4,812 veces en este cliente. |
+| "¿Ahorros de dos dígitos? Eso es un café." | El contador de horas es solo el trabajo de oficina. El número de negocio es $414 de exposición evitados por $0 y $180 de enmienda evitados, decididos en 90 segundos. Y corre 4,812 veces en este cliente. |
 
 ## NO decir
 
