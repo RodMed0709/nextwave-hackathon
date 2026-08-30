@@ -26,6 +26,7 @@ import {
   UserRound,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react'
 import {
   Background,
@@ -1506,7 +1507,21 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         <div className="operational-stage-stack">
           {stageGraphs.map(({ stage, nodes, edges, height, receipt }) => (
             <div className="operational-stage-group" key={stage.id}>
-                <OperationalStage stage={stage}>
+                {/* The narrative hinge: without it the two lanes read as two
+                    unrelated boxes. This is the one sentence that explains
+                    why the case below exists at all. */}
+                {stage.id === 'below' && stage.totalActions > 0 && (
+                  <div className="lane-handoff" aria-label="How this case started">
+                    <Zap aria-hidden="true" size={14} />
+                    <span>The watch caught something — it opened this case</span>
+                  </div>
+                )}
+                <OperationalStage
+                  liveNote={stage.id === 'above' && state.event_log.length > 0
+                    ? `${state.event_log.length} events processed · last activity ${formatTime(state.event_log[state.event_log.length - 1].occurred_at)}`
+                    : null}
+                  stage={stage}
+                >
                   {nodes.length === 0 && <p className="stage-empty-state">No active actions</p>}
                   {nodes.length > 0 && (
                     <div

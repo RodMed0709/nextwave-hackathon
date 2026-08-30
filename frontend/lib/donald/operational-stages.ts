@@ -36,16 +36,16 @@ export type ClientProjectMetadata = {
 export const OPERATIONAL_STAGES: OperationalStageDefinition[] = [
   {
     id: 'above',
-    eyebrow: 'Always On',
-    title: 'Ambient Watch',
-    description: 'Nina reads every carrier feed and document, matches each update to its operation, and keeps a live picture of the whole book — around the clock, not just this case.',
+    eyebrow: 'Running 24/7',
+    title: 'The Watch',
+    description: 'Donald reads every carrier feed and document and keeps a live picture of every operation. It never stops — this is what catches problems before you do.',
     capabilities: ['Ingest', 'Identify', 'Monitor'],
   },
   {
     id: 'below',
-    eyebrow: 'This Case',
-    title: 'Active Response',
-    description: 'Triggered the moment the watch caught something: diagnose it, size it, put the call in your hands, then act on it.',
+    eyebrow: 'Triggered by the Watch',
+    title: 'The Response',
+    description: 'The watch caught something, so Donald opened this case: find the cause, size the damage, bring you the decision, act on it.',
     capabilities: ['Predict', 'Detect', 'Extract', 'Reconcile', 'Explain', 'Impact', 'Plan', 'Decide', 'Act'],
   },
   {

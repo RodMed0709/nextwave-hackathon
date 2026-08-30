@@ -5,6 +5,8 @@ import type { OperationalStageId, OperationalStageSummary } from '@/lib/donald/o
 
 type OperationalStageProps = {
   stage: OperationalStageSummary
+  /** One live line under the title — e.g. "62 events · last activity 05:21:14". */
+  liveNote?: string | null
   children: ReactNode
 }
 
@@ -24,6 +26,7 @@ export function stageDomId(stageId: OperationalStageId): string {
 
 export function OperationalStage({
   stage,
+  liveNote = null,
   children,
 }: OperationalStageProps) {
   const count = stage.totalActions === 0 ? 'Idle' : `${stage.completeActions}/${stage.totalActions}`
@@ -33,11 +36,17 @@ export function OperationalStage({
       className={`operational-stage-accordion expanded stage-${stage.id} stage-${stage.state}`}
       id={stageDomId(stage.id)}
     >
+      {/* The lane must explain itself: what this section IS, in plain words,
+          without the viewer having heard the pitch. */}
       <header className="operational-stage-header">
         <div className="operational-stage-title">
-          {stage.id === 'above'
-            ? <span className="stage-live"><i className="live-dot" /> LIVE</span>
-            : stage.id === 'below' ? <h2>Below the line</h2> : null}
+          <span className="stage-eyebrow">
+            {stage.id === 'above' && <i className="live-dot" />}
+            {stage.eyebrow}
+          </span>
+          <h2>{stage.title}</h2>
+          <p>{stage.description}</p>
+          {liveNote && <small className="stage-live-note">{liveNote}</small>}
         </div>
         <div className="operational-stage-status">
           <strong>{stageStateLabel(stage.state)}</strong>
