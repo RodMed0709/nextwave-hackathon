@@ -1058,15 +1058,17 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         if (outcome.event.event_type === 'intervention_requested') break
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Abort atomically with cancellation: aborting from togglePause let the
+      // still-live loop open one more read that landed an event mid-pause.
+      abortRef.current?.abort()
+    }
   }, [paused, readNext, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
   const togglePause = useCallback(() => {
-    // Abort the in-flight read so a recorded run's timestamp wait does not
-    // land one more event after the person asked the screen to hold still.
-    if (!paused) abortRef.current?.abort()
     setPaused(!paused)
   }, [paused])
 
@@ -1119,6 +1121,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     })
   }, [])
 
+  const synthesizeTaskRef = useRef<(instruction: string, parentKey: string) => void>(() => {})
+  const drainingRef = useRef(false)
+
   const submitInstruction = useCallback(async (
     node: RunNode,
     instruction: string,
@@ -1147,17 +1152,29 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         currentSequence: state.last_sequence,
       })
       setState((current) => applyEvent(current, event))
-      if (recorded && options.optionId) {
+      const gateOpenHere = state.open_intervention?.node_key === node.node_key
+      if (recorded && (options.optionId || gateOpenHere) && !drainingRef.current) {
         // A recording already contains the gate's resolution and the path the
         // choice opens; play it forward immediately so the choice registers and
-        // the UI advances without waiting out the recorded timestamps.
-        const source = sourceRef.current
-        while (source) {
-          const result = await source.next({ immediate: true })
-          if (result.done) break
-          setState((current) => applyEvent(current, result.value))
-          if (result.value.event_type === 'intervention_resolved') break
+        // the UI advances without waiting out the recorded timestamps. Custom
+        // instructions and stops on the open gate drain too - otherwise the
+        // reader loop waits on an intervention nothing will ever resolve.
+        drainingRef.current = true
+        try {
+          const source = sourceRef.current
+          while (source) {
+            const result = await source.next({ immediate: true })
+            if (result.done) break
+            setState((current) => applyEvent(current, result.value))
+            if (result.value.event_type === 'intervention_resolved') break
+          }
+        } finally {
+          drainingRef.current = false
         }
+      } else if (recorded && !options.optionId && !gateOpenHere) {
+        // A plain steer on a card in a recording has no agent to answer it;
+        // grow a visible task so the button is never dead.
+        synthesizeTaskRef.current(instruction, node.node_key)
       }
     } catch (error: unknown) {
       setInstructionError(error instanceof Error ? error.message : 'Instruction could not be queued')
@@ -1683,6 +1700,8 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }))
     }, 12_000)
   }, [emitLocal])
+
+  synthesizeTaskRef.current = synthesizeSteeredTask
 
   const submitFromBar = useCallback(async (instruction: string) => {
     if (!steerTargetKey) return

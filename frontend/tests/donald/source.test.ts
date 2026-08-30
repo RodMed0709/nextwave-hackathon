@@ -193,6 +193,6 @@ test('postOperatorInstruction routes recorded runs to the local mock, live runs 
   })
   // Renumbered to a half-step so applying the echo cannot swallow the next
   // recorded event, which the mock numbers with the same integer.
-  assert.equal(event.sequence, 12.5)
+  assert.equal(event.sequence, 12.001)
   assert.equal(event.node_key, 'decide_response')
 })

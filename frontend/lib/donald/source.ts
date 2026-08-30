@@ -67,6 +67,11 @@ export function recordedSource(options: SourceOptions = {}): DonaldEventSource {
     eventsPromise ??= fetcher(`/api/donald-recording${query}`).then(async (response) => {
       if (!response.ok) throw new Error(`Recording request failed with ${response.status}`)
       return parseEventStream(await response.text())
+    }).catch((error: unknown) => {
+      // Never cache a rejection: one failed first fetch would otherwise leave
+      // the page dead until a full reload.
+      eventsPromise = null
+      throw error
     })
     return eventsPromise
   }
@@ -306,7 +311,7 @@ export async function postOperatorInstruction(
     // Renumbered to a half-step so applying the echo cannot swallow the next
     // recorded event: the reducer drops anything at or below last_sequence, and
     // the mock numbers its echo with the integer the recording will use next.
-    return { ...value, sequence: input.currentSequence + 0.5 }
+    return { ...value, sequence: input.currentSequence + 0.001 }
   }
 
   const instruction = input.optionId
@@ -337,7 +342,7 @@ export async function postOperatorInstruction(
   // carrying the server's id as the dedupe key so the streamed copy replaces it
   // rather than duplicating it.
   return {
-    sequence: input.currentSequence + 0.5,
+    sequence: input.currentSequence + 0.001,
     event_type: 'intervention_requested',
     occurred_at: new Date().toISOString(),
     agent_label: null,

@@ -365,6 +365,10 @@ export function applyEvent(state: RunState, event: DonaldEvent): RunState {
         ...node,
         ...nodeFactsFromPayload(event.payload, node),
         status,
+        // Terminal events are where the recording puts the step's ANSWER
+        // (headline/finding/metrics); dropping it here left every DONE card
+        // with output_summary: null and nothing to say.
+        output_summary: summaryFromPayload(event.payload, node.output_summary),
         estimated_seconds: numberValue(event.payload.estimated_seconds) ?? node.estimated_seconds,
         manual_minutes: numberValue(event.payload.manual_minutes) ?? node.manual_minutes,
         actual_seconds: numberValue(event.payload.actual_seconds) ?? node.actual_seconds,

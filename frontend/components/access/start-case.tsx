@@ -43,16 +43,8 @@ export function StartCase() {
           value={prompt}
         />
         <p className="start-case-bridge">
-          Nauta&apos;s agents do the work. <strong>Donald</strong> executes the Mueblerías Berríos flow
-          and renders its own live interface — it builds itself from what the agents report.
+          <strong>Donald</strong> reads Nauta&apos;s agents and renders its own live interface.
         </p>
-        <ul className="start-case-flows">
-          <li>Several flows can run at once — each draws its own interface</li>
-          <li>Booking confirmed → the interface is born: route, booking, containers</li>
-          <li>The vessel departs → the front updates itself, live</li>
-          <li>Unplanned transshipment, ETA +9 days → a human-in-the-loop decision panel appears</li>
-          <li>Ask for a new step mid-flight from the prompt bar — the interface reflects it on its own</li>
-        </ul>
         <button disabled={leaving} onClick={launch} type="button">
           See Donald run it <ArrowRight aria-hidden="true" size={16} />
         </button>
