@@ -405,7 +405,7 @@ progress("act_pay_record", "Paying Bestway and writing the audit trail…", 50, 
 emit("artifact_added", {
     "artifact_type": "text",
     "message_id": "MSG-BERU-3304",
-    "name": "Receipt — Carrier A payment",
+    "name": "Receipt — Bestway payment",
     "text_content": (
         "PAYMENT RECORD\n\n"
         "Payee:        Bestway Transport, Inc. (San Juan drayage)\n"

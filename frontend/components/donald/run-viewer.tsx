@@ -1400,9 +1400,9 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             // the text viewer. The booking confirmation IS a document, not
             // an email — it deserves the paper.
             const artifactName = (getLatestArtifact(node.artifacts)?.name ?? '').toLowerCase()
-            if (/invoice/.test(artifactName)) {
+            if (!isPickupCase && /invoice/.test(artifactName)) {
               setDocPopup({ name: 'Commercial Invoice — INV-2026-0841', url: '/docs/commercial-invoice.html' })
-            } else if (/booking/.test(artifactName) && !/email/.test(artifactName)) {
+            } else if (!isPickupCase && /booking/.test(artifactName) && !/email/.test(artifactName)) {
               setDocPopup({ name: 'Booking Amendment Confirmation — BKG-4471-R2', url: '/docs/booking-confirmation.html' })
             } else {
               setEmailPopupKey(node.node_key)
@@ -1412,12 +1412,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
             const prefix = Object.keys(syntheticRoutesRef.current).find((candidate) => node.node_key.startsWith(candidate))
             setMapPopup(prefix
               ? syntheticRoutesRef.current[prefix]
-              : {
-                title: 'OP-4471 — live route',
-                origin: 'Xiamen, CN',
-                destination: 'San Juan, PR',
-                note: 'Re-booked onto MSC ILONA FE2440, direct — new ETA Oct 3, the committed Oct 10 delivery holds.',
-              })
+              : defaultRoute)
           },
           onResize: (measured) => updateMeasurement(node.node_key, measured),
           onInstruction: (instruction, instructionOptions) => submitInstruction(node, instruction, instructionOptions),
@@ -1651,6 +1646,22 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   const clientMetadata = clientProjectMetadata(state.event_log, state.run.plan_summary ?? state.run.name)
   const nextTask = getNextTaskSummary(state)
   const steerTargetKey = pickSteerTargetKey(state, nextTask.nodeKeys, visiblyActiveKeys)
+  // Popups must tell THIS run's story: the v2 pickup case gets a land route
+  // and no ocean-paper templates.
+  const isPickupCase = requestedRunKey === 'berrios-op4471-v2'
+  const defaultRoute: MapPopupData = isPickupCase
+    ? {
+      title: 'BERU-40022 — pickup route',
+      origin: 'San Juan Port, PR',
+      destination: 'Manatí, PR',
+      note: 'Pickup re-booked with Bestway Transport — Sep 3, before the demurrage clock does damage.',
+    }
+    : {
+      title: 'OP-4471 — live route',
+      origin: 'Xiamen, CN',
+      destination: 'San Juan, PR',
+      note: 'Re-booked onto MSC ILONA FE2440, direct — new ETA Oct 3, the committed Oct 10 delivery holds.',
+    }
   // Live content for the executive strip: the watch ticker's nodes, the step
   // running right now, and the last thing that went out.
   const ambientNodes = useMemo(() => {
@@ -1940,7 +1951,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
           'To: imports@muebleriasberrios.pr\n' +
           'From: lex@ops.nauta.ai\n' +
           `Date: ${new Date().toUTCString()}\n` +
-          `Subject: ${state.run.key.toUpperCase()} — decision confirmed\n\n` +
+          `Subject: Decision confirmed — ${short}\n\n` +
           'Dear Berríos Imports Team,\n\n' +
           `Following the disruption on this operation, the approved course of action is: ${option.label}.\n\n` +
           `${option.rationale ?? 'The carrier has been instructed accordingly and all references will follow.'}\n\n` +
@@ -2004,7 +2015,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       // queue nothing. Known types open their paper template; anything else
       // shows the director's freshly written text.
       const wanted = `${interpreted?.document?.name ?? ''} ${instruction}`.toLowerCase()
-      const template = /invoice/.test(wanted)
+      const template = isPickupCase ? null : /invoice/.test(wanted)
         ? { name: 'Commercial Invoice — INV-2026-0841', url: '/docs/commercial-invoice.html' }
         : /booking|confirmation/.test(wanted)
           ? { name: 'Booking Amendment Confirmation — BKG-4471-R2', url: '/docs/booking-confirmation.html' }
@@ -2035,12 +2046,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       // "Show me the map" is a question, not work: answer it, queue nothing.
       const prefixes = Object.keys(syntheticRoutesRef.current)
       const latest = prefixes[prefixes.length - 1]
-      setMapPopup(latest ? syntheticRoutesRef.current[latest] : {
-        title: 'OP-4471 — live route',
-        origin: 'Xiamen, CN',
-        destination: 'San Juan, PR',
-        note: 'Re-booked onto MSC ILONA FE2440, direct — new ETA Oct 3, the committed Oct 10 delivery holds.',
-      })
+      setMapPopup(latest ? syntheticRoutesRef.current[latest] : defaultRoute)
       return
     }
 
