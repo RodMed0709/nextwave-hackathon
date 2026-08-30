@@ -154,3 +154,45 @@ test('postOperatorInstruction posts a steer and echoes it for immediate display'
   assert.equal(event.node_key, 'reconcile')
   assert.equal(event.idempotency_key, 'intervention_requested:iv-77')
 })
+
+test('postOperatorInstruction routes recorded runs to the local mock, live runs to the API', async () => {
+  type Seen = { url: string; body: unknown }
+  let seen: Seen | null = null
+  const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    seen = { url: String(input), body: JSON.parse(String(init?.body)) } as Seen
+    return new Response(JSON.stringify({
+      sequence: 13,
+      event_type: 'operator_instruction_queued',
+      occurred_at: '2026-08-29T11:20:00Z',
+      agent_label: null,
+      node_key: 'decide_response',
+      idempotency_key: 'operator-instruction-berrios-op4471-13',
+      payload: { instruction: 'Re-book MSC ILONA', option_id: 'alternative-routing' },
+    }), { status: 200 })
+  }) as unknown as typeof fetch
+
+  // A null base URL means the run only exists in a bundled recording: the write
+  // must go to the local mock, never to the real API, where the run was never
+  // started ("call start_run first").
+  const event = await postOperatorInstruction(null, 'berrios-op4471', {
+    nodeKey: 'decide_response',
+    instruction: 'Re-book MSC ILONA',
+    optionId: 'alternative-routing',
+    currentSequence: 12,
+  }, { fetch: fetchStub })
+
+  const captured = seen as Seen | null
+  assert.ok(captured)
+  assert.equal(captured!.url, '/api/donald-recording')
+  assert.deepEqual(captured!.body, {
+    run_uuid: 'berrios-op4471',
+    node_key: 'decide_response',
+    instruction: 'Re-book MSC ILONA',
+    option_id: 'alternative-routing',
+    current_sequence: 12,
+  })
+  // Renumbered to a half-step so applying the echo cannot swallow the next
+  // recorded event, which the mock numbers with the same integer.
+  assert.equal(event.sequence, 12.5)
+  assert.equal(event.node_key, 'decide_response')
+})

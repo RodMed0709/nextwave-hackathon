@@ -1,5 +1,5 @@
 import { donaldActionIdForNode, type DonaldActionId } from './action-presentation'
-import type { DonaldEvent, RunNode } from './types'
+import type { DonaldEvent, RunEdge, RunNode } from './types'
 
 export type OperationalStageId = 'above' | 'below' | 'unclassified'
 
@@ -89,17 +89,47 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-export function operationalStageForNode(node: RunNode): OperationalStageId {
+export type StageGraph = {
+  nodes: Record<string, RunNode>
+  edges: Record<string, RunEdge>
+}
+
+function mappedStageForNode(node: RunNode): OperationalStageId | null {
   const actionId = donaldActionIdForNode({
     nodeKey: node.node_key,
     label: node.label,
     nodeType: node.node_type,
   })
 
-  if (!actionId) return 'unclassified'
+  if (!actionId) return null
   if (AMBIENT_ACTIONS.has(actionId)) return 'above'
   if (TARGETED_ACTIONS.has(actionId)) return 'below'
-  return 'unclassified'
+  return null
+}
+
+/**
+ * A discovered node (planned: false) is work the agent invented mid-run — an
+ * email to the boss, a side errand. It belongs where it happened: hanging off
+ * its parent inside the flow, never in a separate "other work" bucket with its
+ * own heading. So discovered nodes inherit the stage of the source of their
+ * incoming edge, walking up until a planned ancestor (or a node with no parent)
+ * anchors the lane. Cycles cannot recurse: each key is visited once.
+ */
+function resolveStage(node: RunNode, graph: StageGraph | undefined, seen: Set<string>): OperationalStageId {
+  if (!node.planned && graph && !seen.has(node.node_key)) {
+    seen.add(node.node_key)
+    const incoming = Object.values(graph.edges).find((edge) =>
+      edge.target_node_key === node.node_key &&
+      edge.status !== 'removed' &&
+      graph.nodes[edge.source_node_key] !== undefined,
+    )
+    if (incoming) return resolveStage(graph.nodes[incoming.source_node_key], graph, seen)
+  }
+  return mappedStageForNode(node) ?? 'unclassified'
+}
+
+export function operationalStageForNode(node: RunNode, graph?: StageGraph): OperationalStageId {
+  return resolveStage(node, graph, new Set())
 }
 
 export function operationalStageState(nodes: RunNode[], stageId: OperationalStageId): OperationalStageState {
@@ -113,10 +143,14 @@ export function operationalStageState(nodes: RunNode[], stageId: OperationalStag
   return stageId === 'above' ? 'healthy' : 'in-progress'
 }
 
-export function summarizeOperationalStages(nodes: Record<string, RunNode>): OperationalStageSummary[] {
+export function summarizeOperationalStages(
+  nodes: Record<string, RunNode>,
+  edges: Record<string, RunEdge> = {},
+): OperationalStageSummary[] {
+  const graph: StageGraph = { nodes, edges }
   const grouped = new Map<OperationalStageId, RunNode[]>(OPERATIONAL_STAGES.map((stage) => [stage.id, []]))
   for (const node of Object.values(nodes)) {
-    grouped.get(operationalStageForNode(node))?.push(node)
+    grouped.get(operationalStageForNode(node, graph))?.push(node)
   }
 
   return OPERATIONAL_STAGES.flatMap((stage) => {

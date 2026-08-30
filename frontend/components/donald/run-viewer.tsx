@@ -354,14 +354,16 @@ function InstructionTrail({ record }: { record: InterventionRecord }) {
 
 function OptionButton({
   option,
+  siblings,
   disabled,
   onChoose,
 }: {
   option: InterventionOption
+  siblings: InterventionOption[]
   disabled: boolean
   onChoose: (option: InterventionOption) => void
 }) {
-  const presentation = decisionOptionPresentation(option)
+  const presentation = decisionOptionPresentation(option, siblings)
   return (
     <button
       className={`decision-option ${option.rank === 1 ? 'recommended' : ''}`}
@@ -417,6 +419,7 @@ function InstructionBox({ data }: { data: FlowNodeData }) {
                 key={option.id}
                 onChoose={(selected) => void data.onInstruction(selected.label, { optionId: selected.id })}
                 option={option}
+                siblings={options}
               />
             ))}
             {options.length === 0 && (
@@ -926,7 +929,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
     [state.event_log, state.nodes],
   )
   const visiblyActiveKeySet = useMemo(() => new Set(visiblyActiveKeys), [visiblyActiveKeys])
-  const stageSummaries = useMemo(() => summarizeOperationalStages(state.nodes), [state.nodes])
+  const stageSummaries = useMemo(() => summarizeOperationalStages(state.nodes, state.edges), [state.edges, state.nodes])
   const stageLayouts = useMemo(() => {
     const next: Partial<Record<OperationalStageId, Record<string, LayoutPosition>>> = {}
     for (const stage of stageSummaries) {
@@ -939,12 +942,14 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [nodeSizes, stageSummaries, state.edges, state.nodes, structuralSignature])
   const activeStageId = useMemo(() => {
     const latestActiveKey = visiblyActiveKeys[0]
-    if (latestActiveKey && state.nodes[latestActiveKey]) return operationalStageForNode(state.nodes[latestActiveKey])
+    if (latestActiveKey && state.nodes[latestActiveKey]) {
+      return operationalStageForNode(state.nodes[latestActiveKey], { nodes: state.nodes, edges: state.edges })
+    }
     return stageSummaries.find((stage) => stage.state === 'needs-human')?.id ??
       stageSummaries.find((stage) => stage.id === 'below' && stage.state === 'in-progress')?.id ??
       stageSummaries.find((stage) => stage.state === 'in-progress')?.id ??
       null
-  }, [stageSummaries, state.nodes, visiblyActiveKeys])
+  }, [stageSummaries, state.edges, state.nodes, visiblyActiveKeys])
 
   const updateMeasurement = useCallback((nodeKey: string, size: NodeSize) => {
     setMeasuredSizes((current) => {
@@ -970,17 +975,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       }, 2_200)
     }
     try {
-      if (options.optionId && (!API_BASE_URL || isRecordedRunKey(requestedRunKey))) {
-        const source = sourceRef.current
-        while (source) {
-          const result = await source.next({ immediate: true })
-          if (result.done) break
-          setState((current) => applyEvent(current, result.value))
-          if (result.value.event_type === 'intervention_resolved') break
-        }
-        return
-      }
-      const event = await postOperatorInstruction(API_BASE_URL, state.run.key, {
+      // The write path follows the same recorded/live split as createSource: a
+      // recorded run does not exist on the real API, so its POST goes to the
+      // local mock (postOperatorInstruction with a null base URL).
+      const recorded = !API_BASE_URL || isRecordedRunKey(requestedRunKey)
+      const event = await postOperatorInstruction(recorded ? null : API_BASE_URL, state.run.key, {
         nodeKey: node.node_key,
         instruction,
         optionId: options.optionId,
@@ -988,6 +987,18 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         currentSequence: state.last_sequence,
       })
       setState((current) => applyEvent(current, event))
+      if (recorded && options.optionId) {
+        // A recording already contains the gate's resolution and the path the
+        // choice opens; play it forward immediately so the choice registers and
+        // the UI advances without waiting out the recorded timestamps.
+        const source = sourceRef.current
+        while (source) {
+          const result = await source.next({ immediate: true })
+          if (result.done) break
+          setState((current) => applyEvent(current, result.value))
+          if (result.value.event_type === 'intervention_resolved') break
+        }
+      }
     } catch (error: unknown) {
       setInstructionError(error instanceof Error ? error.message : 'Instruction could not be queued')
     } finally {

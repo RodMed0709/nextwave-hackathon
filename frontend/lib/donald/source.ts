@@ -283,7 +283,31 @@ export async function postOperatorInstruction(
   options: Pick<SourceOptions, 'fetch'> = {},
 ): Promise<DonaldEvent> {
   const fetcher = options.fetch ?? fetch
-  if (!baseUrl) throw new Error('Operator instructions need a Donald API base URL')
+
+  // Recorded demos mirror createSource's recorded/live split: a null baseUrl
+  // means the run only exists in a bundled recording, so the write goes to the
+  // local mock route — the pre-hybrid flow. Posting a recorded run to the real
+  // API asks it about a run it never started ("call start_run first").
+  if (!baseUrl) {
+    const response = await fetcher('/api/donald-recording', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        run_uuid: runKey,
+        node_key: input.nodeKey,
+        instruction: input.instruction,
+        option_id: input.optionId ?? null,
+        current_sequence: input.currentSequence,
+      }),
+    })
+    if (!response.ok) throw new Error(`Operator instruction failed with ${response.status}`)
+    const value: unknown = await response.json()
+    if (!isDonaldEvent(value)) throw new Error('Invalid operator instruction response')
+    // Renumbered to a half-step so applying the echo cannot swallow the next
+    // recorded event: the reducer drops anything at or below last_sequence, and
+    // the mock numbers its echo with the integer the recording will use next.
+    return { ...value, sequence: input.currentSequence + 0.5 }
+  }
 
   const instruction = input.optionId
     ? `${input.instruction} (chose: ${input.optionId})`
