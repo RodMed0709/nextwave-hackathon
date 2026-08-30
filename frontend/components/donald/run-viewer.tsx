@@ -143,10 +143,16 @@ const DRAWER_WIDTH = 430
 const edgeTypes = { signal: RuntimeEdge }
 const nodeTypes = { flow: FlowNodeRenderer }
 
+// The pitch demos are recordings and everything else is live. The named
+// recordings stay served from the bundle so the stage demo cannot depend on
+// the backend, while any other run key - an agent working right now, a run a
+// judge just asked for - streams from the real API and accepts interventions.
+const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup'])
+
 function createSource(runKey: string | null): DonaldEventSource {
-  // With no API configured the run key names a recorded run instead, so
-  // /runs/<name> plays that recording rather than the default one.
-  return API_BASE_URL ? liveSource(API_BASE_URL, runKey) : recordedSource({ recording: runKey })
+  const recorded = runKey === null || RECORDED_RUNS.has(runKey)
+  if (!API_BASE_URL || recorded) return recordedSource({ recording: runKey })
+  return liveSource(API_BASE_URL, runKey)
 }
 
 function displayStatus(node: RunNode): DisplayStatus {
