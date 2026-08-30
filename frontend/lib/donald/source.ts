@@ -64,7 +64,10 @@ export function recordedSource(options: SourceOptions = {}): DonaldEventSource {
 
   const load = () => {
     const query = options.recording ? `?recording=${encodeURIComponent(options.recording)}` : ''
-    eventsPromise ??= fetcher(`/api/donald-recording${query}`).then(async (response) => {
+    // cache: 'no-store' beats any stale browser copy left over from when the
+    // route sent max-age=3600 — a judge's browser must never replay an old
+    // fixture (that is exactly the "eight cards at once" ghost).
+    eventsPromise ??= fetcher(`/api/donald-recording${query}`, { cache: 'no-store' }).then(async (response) => {
       if (!response.ok) throw new Error(`Recording request failed with ${response.status}`)
       return parseEventStream(await response.text())
     }).catch((error: unknown) => {
