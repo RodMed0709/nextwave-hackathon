@@ -56,7 +56,8 @@ AGENT = {
     "quantify_impact": "Rex",
     "plan_options": "Rex",
     "decide_response": "Rex",
-    "act_notify_client": "Lex",
+    "update_client_email": "Lex",
+    "confirm_booking": "Lex",
 }
 
 # ── Above the Line · ambient, running the whole time ────────────────────────
@@ -74,7 +75,10 @@ STEPS = [
     ("quantify_impact", "Quantify the impact", 24),
     ("plan_options", "Generate and rank response options", 20),
     ("decide_response", "Decide the response", 12),
-    ("act_notify_client", "Send the client update", 24),
+    # ACT is two messages to two audiences, so it is two parallel cards: an
+    # observer opens each and reads exactly the one thing that went out.
+    ("update_client_email", "Update the client", 14),
+    ("confirm_booking", "Confirm the new booking", 10),
 ]
 
 EDGES = [
@@ -83,7 +87,8 @@ EDGES = [
     ("explain_change", "quantify_impact"),
     ("quantify_impact", "plan_options"),
     ("plan_options", "decide_response"),
-    ("decide_response", "act_notify_client"),
+    ("decide_response", "update_client_email"),
+    ("decide_response", "confirm_booking"),
 ]
 
 emit("run_started", {
@@ -390,18 +395,28 @@ done("decide_response",
      "fallback. The committed Oct 10 delivery on PO-7731 holds.",
      manual_minutes=8, advance=2.0)
 
-# ── 7 · ACT · Lex — the client hears about it once, already solved ──────────
-AC = [
+# ── 7 · ACT · Lex — two messages, two audiences, two parallel cards ─────────
+UC = [
     sub("draft", "Draft the client update"),
     sub("send", "Send it to Berrios imports"),
     sub("confirm", "Record the acknowledgement"),
 ]
-def ac(states):
-    return [dict(s, status=st) for s, st in zip(AC, states)]
+def uc(states):
+    return [dict(s, status=st) for s, st in zip(UC, states)]
 
-start("act_notify_client", ac(["running", "pending", "pending"]), advance=1.4)
-progress("act_notify_client", "Update drafted - what changed, your orders, what we did", 30,
-         ac(["done", "running", "pending"]), advance=3.0)
+CB = [
+    sub("request", "Request the amendment from MSC"),
+    sub("confirm", "Receive the confirmed booking"),
+]
+def cb(states):
+    return [dict(s, status=st) for s, st in zip(CB, states)]
+
+start("update_client_email", uc(["running", "pending", "pending"]), advance=1.4)
+start("confirm_booking", cb(["running", "pending"]), advance=0.6)
+progress("confirm_booking", "Amendment requested - MSC ILONA FE2440, direct San Juan", 40,
+         cb(["done", "running"]), advance=1.4)
+progress("update_client_email", "Update drafted - the change, the new ETA, what it means for the orders", 30,
+         uc(["done", "running", "pending"]), advance=1.8)
 
 emit("artifact_added", {
     "artifact_type": "text",
@@ -409,30 +424,22 @@ emit("artifact_added", {
     "name": "Client update — OP-4471 re-routed",
     "text_content": (
         "To: imports@muebleriasberrios.pr\n"
-        "From: ops-automation@berrios-nauta.pr\n"
+        "From: lex@ops.nauta.ai\n"
         "Date: 29 Aug 2026 05:21 UTC\n"
-        "Subject: OP-4471 — vessel change resolved: new routing confirmed, "
-        "ETA Oct 3 (no action needed)\n\n"
-        "MSC reassigned the vessel on OP-4471; we secured direct alternative "
-        "routing at no cost. New ETA San Juan: Oct 3.\n\n"
-        "WHAT CHANGED\n"
-        "  Original: MSC AURORA FE2431 · via Caucedo (transshipment) · ETA Sep 27\n"
-        "  New:      MSC ILONA FE2440  · direct San Juan             · ETA Oct 3\n"
-        "            (+6 days vs original booking, -4 vs carrier's fallback)\n\n"
-        "YOUR ORDERS\n"
-        "  PO-7731  committed delivery Oct 10 — holds\n"
-        "  PO-7745  no committed date — unaffected\n"
-        "  PO-7752  no committed date — unaffected\n\n"
-        "WHAT WE DID\n"
-        "  - Caught the change within minutes via continuous watch\n"
-        "  - Evaluated 3 routing options; kept the one at $0 additional cost\n"
-        "  - New BL and booking confirmation attached\n\n"
-        "No action needed on your side. Reply to this thread if you want the "
-        "alternative options we rejected.\n\n"
-        "Lex — Expedite Communication, Nauta (for Mueblerías Berríos)\n"
-        "Ref: booking BKG-4471-R2 · case CS-0830"
+        "Subject: OP-4471 re-routed — new ETA San Juan Oct 3, no action needed\n\n"
+        "Hi team,\n\n"
+        "MSC pulled the vessel assigned to OP-4471. We already re-booked the "
+        "container onto MSC ILONA FE2440, sailing direct to San Juan, at no "
+        "extra cost. The new ETA is Oct 3.\n\n"
+        "Your committed Oct 10 delivery on PO-7731 still holds, and PO-7745 "
+        "and PO-7752 are unaffected. The confirmed booking BKG-4471-R2 and "
+        "the draft BL are attached.\n\n"
+        "Nothing is needed from your side — just reply if you would like to "
+        "see the alternatives we considered.\n\n"
+        "Lex — Expedite Communication, Nauta\n"
+        "Ref: BKG-4471-R2 · case CS-0830"
     ),
-}, node_key="act_notify_client", agent="Lex", advance=3.2)
+}, node_key="update_client_email", agent="Lex", advance=3.2)
 
 emit("artifact_added", {
     "artifact_type": "text",
@@ -451,22 +458,28 @@ emit("artifact_added", {
         "B/L:            MSCUXM4471R2 — draft issued with this confirmation\n\n"
         "Space and equipment confirmed. Ref case CS-0830."
     ),
-}, node_key="act_notify_client", agent="Lex", advance=2.4)
+}, node_key="confirm_booking", agent="Lex", advance=2.4)
 
-progress("act_notify_client", "Sent with BL and booking confirmation - awaiting acknowledgement", 65,
-         ac(["done", "done", "running"]), advance=2.8)
+done("confirm_booking",
+     "Booking confirmed at $0",
+     "MSC confirmed BKG-4471-R2 on MSC ILONA FE2440, direct San Juan, ETA "
+     "Oct 3, amendment fee $0. Draft BL MSCUXM4471R2 issued with the "
+     "confirmation.",
+     manual_minutes=12, subtasks=cb(["done"] * 2), advance=1.6)
+
+progress("update_client_email", "Sent to Berrios imports - awaiting acknowledgement", 65,
+         uc(["done", "done", "running"]), advance=2.0)
 
 emit("agent_message", {
     "message": "Waiting on Berrios imports to acknowledge the new routing.",
-}, node_key="act_notify_client", agent="Lex", advance=7.0)
+}, node_key="update_client_email", agent="Lex", advance=7.0)
 
-done("act_notify_client",
-     "Client notified - new ETA Oct 3 acknowledged",
-     "Berrios imports acknowledged the re-route. Booking BKG-4471-R2 "
-     "confirmed by MSC at $0 with the new BL attached; OP-4471 drops back to "
-     "the ambient watch under the new schedule, with Nina's monitor "
-     "confirming the Oct 3 ETA holds.",
-     manual_minutes=20, subtasks=ac(["done"] * 3), advance=5.2)
+done("update_client_email",
+     "Client updated - new ETA Oct 3 acknowledged",
+     "Berrios imports acknowledged the re-route. OP-4471 drops back to the "
+     "ambient watch under the new schedule, with Nina's monitor confirming "
+     "the Oct 3 ETA holds.",
+     manual_minutes=20, subtasks=uc(["done"] * 3), advance=5.2)
 
 emit("run_finished", {
     "summary": {
@@ -505,10 +518,28 @@ for token in ("director@berriosdist.pr", "rex@ops.nauta.ai",
               "why MSC changed the vessel", "MSC AURORA", "Oct 3"):
     assert token in boss, f"boss email missing {token}"
 email = artifacts[1]["payload"]["text_content"]
-for token in ("ETA Oct 3", "PO-7731", "PO-7745", "PO-7752", "BKG-4471-R2",
-              "CS-0830", "MSC AURORA FE2431", "MSC ILONA FE2440", "+6 days"):
+for token in ("Oct 3", "PO-7731", "PO-7745", "PO-7752", "BKG-4471-R2",
+              "CS-0830", "MSC ILONA FE2440"):
     assert token in email, f"email missing {token}"
+assert artifacts[1]["node_key"] == "update_client_email", "client email on the wrong card"
+assert artifacts[2]["node_key"] == "confirm_booking", "confirmation on the wrong card"
 assert "BKG-4471-R2" in artifacts[2]["payload"]["text_content"], "confirmation missing booking ref"
+
+# ACT is two parallel cards: both start before either finishes, and both
+# finish before the run does.
+uc_start = next(e for e in lines if e["node_key"] == "update_client_email"
+                and e["payload"].get("status") == "in_progress")
+cb_start = next(e for e in lines if e["node_key"] == "confirm_booking"
+                and e["payload"].get("status") == "in_progress")
+uc_done = next(e for e in lines if e["node_key"] == "update_client_email"
+               and e["payload"].get("status") == "succeeded")
+cb_done = next(e for e in lines if e["node_key"] == "confirm_booking"
+               and e["payload"].get("status") == "succeeded")
+assert max(uc_start["sequence"], cb_start["sequence"]) < min(uc_done["sequence"], cb_done["sequence"]), \
+    "ACT cards must overlap"
+run_end = next(e for e in lines if e["event_type"] == "run_finished")
+assert max(uc_done["sequence"], cb_done["sequence"]) < run_end["sequence"], \
+    "ACT cards must finish before the run"
 
 # The discovered card must actually run in parallel: born while EXPLAIN is
 # still open, overlapping IMPACT/PLAN, finished before the DECIDE gate.
