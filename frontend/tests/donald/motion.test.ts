@@ -44,6 +44,12 @@ function node(nodeKey: string, status: RunNode['status'], planOrder: number): Ru
     input_summary: null,
     output_summary: null,
     artifacts: [],
+    description: null,
+    node_type: null,
+    tool_name: null,
+    status_message: null,
+    error_message: null,
+    manual_minutes: null,
     removed: false,
   }
 }
