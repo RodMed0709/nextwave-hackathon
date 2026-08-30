@@ -19,8 +19,8 @@ tres) respetando el ritmo relativo. Recargar es solo el plan B si una pestaña s
 
 | Tiempo | En pantalla | Qué se dice (idea central) |
 |---|---|---|
-| 0:00–0:15 | La landing: usedonald.com | Jorge paga un agente que actúa solo, 24/7 — y se entera por su cliente. Tres o cuatro llamadas de media hora por semana: cien horas al año entendiendo a su propio software. |
-| 0:15–0:30 | La landing / primera pestaña | Un agente que solo alerta se audita leyendo la alerta. Uno que actúa necesita una ventana y un freno. Donald es las dos cosas. **"Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma."** |
+| 0:00–0:15 | Nada aún, o portada | Jorge paga un agente que actúa solo, 24/7 — y se entera por su cliente. Tres o cuatro llamadas de media hora por semana: cien horas al año entendiendo a su propio software. |
+| 0:15–0:30 | Portada / primera pestaña | Un agente que solo alerta se audita leyendo la alerta. Uno que actúa necesita una ventana y un freno. Donald es las dos cosas. **"Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma."** |
 | 0:30–0:45 | Pestaña 1 recién recargada. El pedido del operador en lenguaje natural; el plan aparece en gris | El operador escribe lo que quiere. El agente propone su plan. Gris = intención, todavía no hechos. |
 | 0:45–1:05 | Los primeros pasos se encienden y narran: PO-44190, packing list | Cada paso cuenta qué buscó y qué encontró, con identificadores reales. |
 | 1:05–1:20 | La factura no aparece. **Nace una tarjeta nueva hacia abajo**: contactar al proveedor | Nadie programó esa tarjeta. El agente la generó porque la necesitó. |
