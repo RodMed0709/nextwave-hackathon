@@ -252,9 +252,13 @@ progress("recompute_eta", "Chaining both legs: Shanghai–Busan dwell plus Busan
          advance=3.2)
 done("recompute_eta",
      "Revised ETA 12-SEP, five days later than booked",
-     "MSC IRINA departs Busan 30-AUG. The booked direct ETA of 07-SEP no longer applies.",
+     "MSC IRINA departs Busan 30-AUG. The booked direct ETA of 07-SEP no longer "
+     "applies — and the land pickup is still booked against it. Five days late "
+     "at the North American demurrage benchmark of $138-150/day is $690-750 of "
+     "demurrage exposure if the pickup is not rescheduled.",
      manual_minutes=16,
-     metrics={"revised_eta": "2026-09-12", "delay_days": 5},
+     metrics={"revised_eta": "2026-09-12", "delay_days": 5,
+              "demurrage_exposure_usd": 750},
      advance=3.2)
 
 # ── 7 · CONFIRM · joins both new branches and closes the run ────────────────
@@ -267,7 +271,7 @@ def ac(states):
     return [dict(s, status=st) for s, st in zip(AC, states)]
 
 start("act_confirm_arrival", ac(["running", "pending", "pending"]), advance=1.4)
-progress("act_confirm_arrival", "Drafting the revised delivery confirmation", 30,
+progress("act_confirm_arrival", "Drafting the revised confirmation and rescheduling the pickup to 12-SEP", 30,
          ac(["done", "running", "pending"]), advance=2.8)
 
 emit("artifact_added", {
@@ -285,6 +289,8 @@ emit("artifact_added", {
         "originally booked.\n\n"
         "Both bills of lading are attached: MSCUXM2213 (Shanghai-Busan) and\n"
         "MSCUBS4419 (Busan-Manzanillo).\n\n"
+        "Your land pickup has been rescheduled to the revised ETA of 12-SEP,\n"
+        "so no demurrage accrues against the original 07-SEP date.\n\n"
         "Nauta Operations"
     ),
 }, node_key="act_confirm_arrival", advance=2.6)
@@ -293,18 +299,24 @@ progress("act_confirm_arrival", "Both BLs attached - sending", 70,
          ac(["done", "done", "running"]), advance=2.6)
 
 done("act_confirm_arrival",
-     "Client notified: ETA 12-SEP via Busan, both BLs attached",
-     "Muebles del Sur has the revised delivery date and the complete two-leg document set.",
-     manual_minutes=12, subtasks=ac(["done"] * 3), advance=3.0)
+     "Pickup rescheduled to 12-SEP — $690-750 demurrage exposure avoided",
+     "Muebles del Sur has the revised delivery date, both bills of lading, and "
+     "a pickup moved to the new ETA — no demurrage days accrue against the "
+     "booked 07-SEP date.",
+     manual_minutes=12,
+     metrics={"exposure_avoided_usd": 750},
+     subtasks=ac(["done"] * 3), advance=3.0)
 
 emit("run_finished", {
     "summary": {
-        "headline": "Arrival confirmed on a revised routing",
+        "headline": "ETA revised to 12-SEP, pickup rescheduled, $690-750 demurrage exposure avoided",
         "detail": (
             "OP-4471 arrives 12-SEP via Busan instead of the booked direct sailing. "
             "The plan was revised once mid-run when the BL revealed the unplanned "
-            "transshipment: the booked ETA step was dropped, and the second-leg BL "
-            "and two-leg ETA were extracted before the client was notified."
+            "transshipment: the booked ETA step was dropped, the second-leg BL and "
+            "two-leg ETA were extracted, and the land pickup was moved to the new "
+            "date — avoiding $690-750 in demurrage at the $138-150/day North "
+            "American benchmark."
         ),
     },
 }, agent=None, advance=2.0)

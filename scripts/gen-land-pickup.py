@@ -218,8 +218,9 @@ start("monitor_free_time_clock", advance=1.2)
 start("predict_overrun", advance=0.5)
 progress("predict_overrun", "Modelling the rebooking window", 40, advance=2.6)
 done("monitor_free_time_clock",
-     "1 day 9 hours left",
-     "Now the most urgent of 14 active operations.",
+     "1 day 9 hours left — most urgent of 14 active operations",
+     "Free-time countdown live against the Wed 23:59 expiry; everything else "
+     "in the queue has more slack.",
      manual_minutes=10, advance=1.6)
 progress("predict_overrun", "Scoring the Thursday slot", 75, advance=2.4)
 done("predict_overrun",
@@ -230,8 +231,9 @@ done("predict_overrun",
 # ── 7 · DETECT ──────────────────────────────────────────────────────────────
 start("detect_capacity_conflict", advance=1.2)
 done("detect_capacity_conflict",
-     "Land pickup capacity conflict",
-     "Outside the three documented automations - this needs reasoning, not a rule.",
+     "Exception — outside the three documented automations",
+     "A genuine capacity shortfall, not a data mismatch: no standing rule "
+     "covers it, so the case is worked by reasoning.",
      manual_minutes=12, advance=2.6)
 
 # ── 8 · EXPLAIN · the star: a fourth subtask appears mid-step ───────────────
@@ -400,7 +402,7 @@ done("act_book_alternate",
 
 emit("run_finished", {
     "summary": {
-        "headline": "BERU-40022 rebooked at no cost",
+        "headline": "Run #4,812: BERU-40022 rebooked at no cost",
         "detail": (
             "Pickup moved to Wed 08:00 with an alternate carrier, clearing free time with "
             "about 12 hours to spare. $276-414 in exposure avoided and no rebooking fee incurred."

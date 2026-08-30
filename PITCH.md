@@ -17,22 +17,22 @@ reproducción desde el principio.
 
 | Tiempo | En pantalla | Qué se dice (idea central) |
 |---|---|---|
-| 0:00–0:15 | Nada aún, o portada | Nauta vende agentes que ACTÚAN: mandan emails, reservan camiones, disputan facturas, 24/7. |
-| 0:15–0:30 | Portada / primera pestaña | Un agente que solo alerta se audita leyendo la alerta. Uno que actúa necesita una ventana y un freno. Donald es las dos cosas. |
+| 0:00–0:15 | Nada aún, o portada | Jorge paga un agente que actúa solo, 24/7 — y se entera por su cliente. Tres o cuatro llamadas de media hora por semana: cien horas al año entendiendo a su propio software. |
+| 0:15–0:30 | Portada / primera pestaña | Un agente que solo alerta se audita leyendo la alerta. Uno que actúa necesita una ventana y un freno. Donald es las dos cosas. **"Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma."** |
 | 0:30–0:45 | Pestaña 1 recién recargada. El pedido del operador en lenguaje natural; el plan aparece en gris | El operador escribe lo que quiere. El agente propone su plan. Gris = intención, todavía no hechos. |
 | 0:45–1:05 | Los primeros pasos se encienden y narran: PO-44190, packing list | Cada paso cuenta qué buscó y qué encontró, con identificadores reales. |
 | 1:05–1:20 | La factura no aparece. **Nace una tarjeta nueva hacia abajo**: contactar al proveedor | Nadie programó esa tarjeta. El agente la generó porque la necesitó. |
-| 1:20–1:35 | Click en la tarjeta: el email al proveedor, visible entero. El run en ámbar | El email se lee ANTES de confiar en él. Ámbar = esperando, no colgado. |
-| 1:35–1:50 | Panel de decisión: dos opciones, cada una con precio | La decisión llega al humano con opciones y costos, no con un muro de texto. |
-| 1:50–2:00 | La respuesta llega; **el mismo nodo** se reanuda; el run cierra en verde | Se reanuda donde se quedó. Sin adivinar ningún valor. |
+| 1:20–1:35 | Click en la tarjeta: el email al proveedor, visible entero. El nodo en ámbar | El email se lee ANTES de confiar en él. Ámbar = esperando, no colgado. |
+| 1:35–1:50 | Compuerta humana: opciones con precio. El operador elige *"file with provisional value"*. **Tres pasos corren en paralelo** mientras el nodo del email sigue ámbar | La decisión no detiene el run: se declara el valor provisional y el trabajo sigue. Ámbar convive con progreso. |
+| 1:50–2:00 | La factura llega al final; **el mismo nodo** se reanuda; las cifras se confirman; el run cierra en verde | La factura confirma las cifras: $180 de enmienda evitados. El mismo nodo, donde se quedó. Sin adivinar ningún valor. |
 | 2:00–2:10 | Pestaña 2 recargada. Seis pasos en línea recta | Chequeo de llegada rutinario. Un plan aburrido, a propósito. |
 | 2:10–2:35 | El BL revela el transbordo. **La línea se convierte en diamante en vivo**; un nodo queda gris con motivo | El plan cambiando no es un error: el agente aprendió algo. |
 | 2:35–2:50 | La causa citada en pantalla: BL MSCUXM2213, Busan | El grafo trae su evidencia. Nadie programó esta forma. |
 | 2:50–3:00 | Pestaña 3 recargada. Otro cliente: Berríos, San Juan, contenedor BERU-40022 | Otro cliente, otro país, otra falla. Cero código nuevo de frontend. |
-| 3:00–3:15 | Checklist vivo dentro de una tarjeta; **una subtarea aparece a media faena** | El mismo principio, un nivel más adentro: la tarjeta también se construye sola. |
+| 3:00–3:15 | Checklist vivo dentro de una tarjeta; **una subtarea aparece a media faena, en rojo** | El mismo principio, un nivel más adentro: la tarjeta también se construye sola. El ítem rojo no es un fallo. |
 | 3:15–3:30 | Compuerta humana: tres opciones con precio ($0 / $90 / $276–414). Cierre en verde | $276–414 evitados por $0. Un número que un distribuidor reconoce como dinero. |
-| 3:30–3:45 | Cierre (pantalla del run terminado o portada) | Seis eventos estructurales finitos; árboles infinitos. Como HTML. |
-| 3:45–4:00 | Portada / contacto | De horas a 90 segundos para una decisión confiada. Qué pedimos. |
+| 3:30–3:45 | Cierre (pantalla del run terminado o portada) | Seis eventos estructurales finitos; árboles infinitos. Como HTML. De horas a 90 segundos para una decisión confiada. |
+| 3:45–4:00 | Portada / contacto | El ask: el proveedor de agentes paga, por asiento supervisado. **"Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma."** |
 
 ---
 
@@ -43,14 +43,23 @@ en inglés.
 
 ### 1 · Gancho (0:00–0:30)
 
-> Nauta vende agentes de IA que no avisan y esperan. Actúan. Lo dice su propia web:
-> *"Agents that do not send an alert and wait. They act."*
-> Mandan emails, reservan camiones, disputan facturas. Veinticuatro siete.
+> Jorge dirige operaciones en un importador. Paga un agente de IA que trabaja
+> veinticuatro siete y actúa solo: manda emails, reserva camiones, disputa facturas.
+> Jorge no ve nada de eso. Se entera cuando su cliente lo llama.
 
-> Y ahí hay un hueco. Un agente que solo alerta se audita leyendo la alerta.
+> Tres o cuatro veces por semana, alguien le explica por teléfono qué hizo el agente.
+> Media hora cada vez. Cien horas al año entendiendo a su propio software.
+
+> Un agente que solo alerta se audita leyendo la alerta.
 > Uno que actúa necesita dos cosas: una ventana para verlo trabajar, y un freno.
+> Donald es las dos cosas.
 
-> Donald es esa ventana y ese freno. Se lo enseño. Tres casos reales, cuatro minutos.
+> Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma.
+
+> Tres casos reales, cuatro minutos.
+
+*Nota para el presentador: las cien horas salen de `PROBLEM.md` — 3–4 llamadas por semana
+× 30 minutos × 52 semanas ≈ 91–104 h/año. Redondeado a "cien horas".*
 
 *(Recargar pestaña 1.)*
 
@@ -79,26 +88,31 @@ en inglés.
 > Acaba de nacer una tarjeta que no estaba en el plan: contactar al proveedor.
 > Nadie programó esa tarjeta. El agente la generó porque el trabajo la pidió.
 
-**[1:20 — el email, un click; el run en ámbar]**
+**[1:20 — el email, un click; el nodo en ámbar]**
 
 *(Click en la tarjeta.)*
 
 > Y el email está aquí. Entero. Se lee antes de confiar en él, no después.
-> El run se queda en ámbar. Ámbar no es "se colgó". Ámbar es: sé exactamente
+> El nodo se queda en ámbar. Ámbar no es "se colgó". Ámbar es: sé exactamente
 > qué me falta, lo digo, y no he enviado nada a aduanas.
 
-**[1:35 — la decisión humana]**
+**[1:35 — la decisión humana; el run no se detiene]**
 
-> Y cuando hay que decidir, la decisión llega así: dos opciones, cada una con su precio.
+> Y cuando hay que decidir, la decisión llega así: opciones, cada una con su precio.
 
-*(Leer las dos opciones tal cual aparecen en pantalla, con sus números.)*
+*(Leer las opciones tal cual aparecen en pantalla, con sus números.)*
 
-> No es un muro de texto. Es una decisión que se toma en segundos.
+> El operador elige *"file with provisional value"*. Y fíjense en lo que NO pasa:
+> el run no se detiene a esperar al proveedor. Tres pasos arrancan en paralelo
+> mientras el nodo del email sigue en ámbar. Ámbar no bloquea el trabajo que sí puede avanzar.
 
-**[1:50 — el resumen y el cierre]**
+> En la corrida real esto tardó lo que tardó. La reproducción respeta los tiempos originales.
 
-> Llega la respuesta del proveedor — y fíjense: se reanuda el MISMO nodo.
+**[1:50 — la factura llega y el cierre]**
+
+> Y al final llega la factura del proveedor — y miren: se reanuda el MISMO nodo.
 > No un plan nuevo, no desde cero. El mismo paso, donde se quedó.
+> La factura confirma las cifras: $180 de enmienda evitados.
 > El run termina en verde sin haber adivinado un solo valor. Eso es el freno funcionando.
 
 *(Recargar pestaña 2.)*
@@ -148,10 +162,12 @@ en inglés.
 > Y el mismo principio funciona un nivel más adentro. Miren dentro de esta tarjeta:
 > un checklist que el agente declaró al entrar al paso, resolviéndose ítem por ítem.
 
-*(Señalar la subtarea nueva.)*
+*(Señalar la subtarea nueva, en rojo.)*
 
 > Ese cuarto ítem no existía hace treinta segundos. El agente descubrió un feriado
 > local en San Juan y añadió la verificación a media faena. La tarjeta creció para contarlo.
+> Y el ítem rojo no es un fallo. Es el agente diciendo: es la primera vez que esto
+> pasa en esta ruta en noventa días.
 
 **[3:15 — la compuerta y el dinero]**
 
@@ -175,9 +191,14 @@ en inglés.
 > pasan horas. Con Donald, noventa segundos. Y las tres o cuatro llamadas semanales
 > de "explícame qué pasó" desaparecen.
 
-> Lo que pedimos: un piloto con un proveedor de agentes que actúan — Nauta o quien sea.
+> Lo que pedimos no es un piloto genérico. Es un comprador concreto: el proveedor de
+> agentes que actúan. Él paga, por asiento supervisado, porque Donald le quita su
+> objeción de venta más cara: "¿cómo confío en algo que ya actuó?".
 > El protocolo son cinco verbos sobre MCP. Cualquier agente que los hable se vuelve
-> supervisable, sin tocar su lógica. Gracias.
+> supervisable, sin tocar su lógica.
+
+> Nauta vende autonomía. Nosotros vendemos la razón por la que un cliente la firma.
+> Gracias.
 
 ---
 
@@ -191,6 +212,16 @@ en inglés.
 | "¿No son pantallas predefinidas?" | El agente no construye animaciones; construye estructura. Seis eventos estructurales escritos una vez; el contenido y el árbol vienen del agente en runtime. La prueba son las tres formas distintas que acaban de ver con el mismo código. |
 | Se acaba el tiempo a mitad de la demo 2 | El momento irrenunciable es el rewire (línea → diamante). Si hay que cortar, se corta la demo 3 y se salta al cierre con una frase: "el tercer caso — otro cliente, otro país, cero código nuevo — está corriendo en esta pestaña; lo enseño en preguntas." |
 | Pregunta técnica profunda (esquema, eventos) | `agent_event` es la fuente de verdad, append-only, con `sequence` monotónico por run; nodos y aristas son snapshots materializados. La forma del grafo se calcula de las aristas, nunca se dibuja a mano. |
+
+## Preguntas hostiles — respuestas de 15 segundos
+
+| Pregunta hostil | Respuesta |
+|---|---|
+| "¿Esto no es LangSmith / observabilidad?" | LangSmith enseña trazas a quien escribió el agente. Donald enseña el trabajo a quien paga las consecuencias — que no es técnico. Y no solo mira: hay freno y volante, opciones con precio a media corrida. |
+| "¿Por qué Nauta no lo hace en un sprint?" | Pueden — para SU agente. Esto son cinco verbos sobre MCP: cualquier agente los habla. Con tres proveedores, Jorge no quiere tres ventanas. Y Nauta vende más con nuestra ventana que construyendo la suya. |
+| "¿Quién paga y cuánto?" | El proveedor de agentes, por asiento supervisado. Somos la respuesta a su objeción de compra más cara: "¿cómo confío en algo que ya actuó?". |
+| "El freno es advisory. No frena nada." | Correcto, y lo decimos así: el freno se escribe como evento y el agente lo honra en su siguiente `check_instructions`. Lo garantizado es otra cosa: cuando falta un dato, no adivina — se pone en ámbar, dice qué falta, y reanuda el mismo nodo. |
+| "¿$78 de ahorro? Eso es un café." | $78 es solo el trabajo de oficina. El número de negocio es $414 de exposición evitados por $0, decidido en 90 segundos. Y corre 4,812 veces en este cliente. |
 
 ## NO decir
 
