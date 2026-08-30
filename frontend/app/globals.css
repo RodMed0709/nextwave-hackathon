@@ -273,6 +273,35 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .executive-phase.state-running .executive-phase-state { color: var(--chartreuse); }
 .executive-phase.state-done .executive-phase-state { color: #9fd18a; }
+/* The watch caught something: the cell goes amber and the Render button glows. */
+.executive-phase.state-alert {
+  opacity: 1;
+  border-color: var(--amber);
+  background: #2a2110;
+  box-shadow: 0 0 0 1px #e8a23d44, 0 10px 26px #020b1470;
+  animation: action-pulse 1.6s ease-in-out infinite;
+}
+.executive-phase.state-alert .executive-phase-state { color: var(--amber); }
+.executive-phase.state-alert .executive-phase-index { background: var(--amber); color: #2a1a02; }
+.render-button {
+  justify-self: start;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--amber);
+  color: #2a1a02;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  cursor: pointer;
+  box-shadow: 0 0 18px #e8a23d88, 0 6px 16px #020b1470;
+  animation: render-glow 1.4s ease-in-out infinite;
+}
+.render-button:hover { transform: translateY(-1px); }
+@keyframes render-glow {
+  0%, 100% { box-shadow: 0 0 10px #e8a23d66, 0 6px 16px #020b1470; }
+  50% { box-shadow: 0 0 26px #e8a23dcc, 0 6px 16px #020b1470; }
+}
 
 /* Bottom dock: run controls + prompt bar travel together and follow the page,
    like a chat composer. The controls used to hang off the header and scrolled

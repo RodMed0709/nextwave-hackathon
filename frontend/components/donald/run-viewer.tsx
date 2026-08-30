@@ -245,6 +245,15 @@ const STAGE_GRAPH_MIN_HEIGHT = 300
 // judge just asked for - streams from the real API and accepts interventions.
 const RECORDED_RUNS = new Set(['missing-invoice', 'replan', 'land-pickup', 'berrios-op4471'])
 
+// Nauta's named roster — the product's cast, shown before the run's own
+// run_started event arrives (pre-render, only the Watch is on screen).
+const DEFAULT_AGENTS = [
+  { label: 'Nina', role: 'Shipment Watch' },
+  { label: 'Theo', role: 'Freight Anomaly' },
+  { label: 'Rex', role: 'Root Cause' },
+  { label: 'Lex', role: 'Expedite Communication' },
+]
+
 function isRecordedRunKey(runKey: string | null): boolean {
   return runKey === null || RECORDED_RUNS.has(runKey)
 }
@@ -956,11 +965,6 @@ function FlowCard({ data }: { data: FlowNodeData }) {
           <FileText aria-hidden="true" size={12} /> Open the document
         </button>
       )}
-      {!data.intervention && (
-        <span className="expand-hint">
-          {data.selected ? 'Showing details' : data.steerable ? 'Click to inspect or steer' : 'Click to inspect'}
-        </span>
-      )}
       <Handle type="source" position={Position.Right} />
     </div>
   )
@@ -1079,6 +1083,27 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   // A view-side pause: the reader loop stops pulling, the source keeps
   // buffering, and resume drains from the cursor. The agent itself never stops
   // — instructions queued while paused reach it exactly as they would live.
+  // The run does not draw itself on page load: only the Watch runs. After a
+  // few seconds it CATCHES something (turns amber), the Render button lights
+  // up, and only the operator's click asks Nina and starts the flow. That is
+  // the product's story told by the interface itself: always-on watch,
+  // event-reactive response, human chooses when to look.
+  const [renderStarted, setRenderStarted] = useState(() => Boolean(API_BASE_URL) && !isRecordedRunKey(requestedRunKey))
+  const [watchAlert, setWatchAlert] = useState(false)
+  const [askingNina, setAskingNina] = useState(false)
+  useEffect(() => {
+    if (renderStarted) return
+    const timer = window.setTimeout(() => setWatchAlert(true), 6_500)
+    return () => window.clearTimeout(timer)
+  }, [renderStarted])
+  const startRender = useCallback(() => {
+    if (renderStarted || askingNina) return
+    setAskingNina(true)
+    window.setTimeout(() => {
+      setAskingNina(false)
+      setRenderStarted(true)
+    }, 2_600)
+  }, [askingNina, renderStarted])
   const [paused, setPaused] = useState(false)
   // True once the operator picked a NON-recommended gate option on a recorded
   // run: the recording only knows the recommended path, so the reader stops
@@ -1141,7 +1166,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
   }, [])
 
   useEffect(() => {
-    if (paused || diverged) return
+    if (!renderStarted || paused || diverged) return
     if (state.open_intervention) return
     let cancelled = false
     void (async () => {
@@ -1162,7 +1187,7 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
       // still-live loop open one more read that landed an event mid-pause.
       abortRef.current?.abort()
     }
-  }, [diverged, paused, readNext, state.open_intervention])
+  }, [diverged, paused, readNext, renderStarted, state.open_intervention])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -2060,8 +2085,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
 
       <ExecutiveStrip
         actingNow={actingNow}
+        onRender={startRender}
         phases={getExecutivePhases(state.nodes)}
+        renderPending={!renderStarted && !askingNina}
         solvingNow={solvingNow}
+        watchAlert={watchAlert}
         watchContent={(
           <AmbientStrip
             nodes={ambientNodes}
@@ -2084,6 +2112,11 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         {decisionRecalculationKey && (
           <div className="replan-overlay decision" key={decisionRecalculationKey}>
             <div className="recalculating">Recalculating…</div>
+          </div>
+        )}
+        {askingNina && (
+          <div className="replan-overlay decision" key="asking-nina">
+            <div className="recalculating">Asking Nina for instructions…</div>
           </div>
         )}
         {sourceError && <div className="source-error"><AlertTriangle size={14} />{sourceError}</div>}
@@ -2173,7 +2206,10 @@ export function RunViewer({ requestedRunKey }: { requestedRunKey: string | null 
         </div>
       )}
 
-      <AgentRail active={activeAgents} agents={clientMetadata.agents} />
+      <AgentRail
+        active={askingNina || (watchAlert && !renderStarted) ? new Set([...activeAgents, 'Nina']) : activeAgents}
+        agents={clientMetadata.agents.length > 0 ? clientMetadata.agents : DEFAULT_AGENTS}
+      />
 
       <div className="prompt-dock">
         <RunControls

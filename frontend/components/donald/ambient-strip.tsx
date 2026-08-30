@@ -38,6 +38,14 @@ const ACTIVITY: readonly (readonly string[])[] = [
 const BASE_COUNTS = [38, 24, 51]
 const TICK_MS = 4_600
 
+// Before the run's own ambient nodes have streamed in, the watch still exists
+// — these rows keep it visibly alive on the pre-render screen.
+const DEFAULT_ROWS = [
+  { node_key: 'default_ingest', label: 'Ingest every carrier feed' },
+  { node_key: 'default_identify', label: 'Match each update to its operation' },
+  { node_key: 'default_monitor', label: 'Keep a live picture of the book' },
+]
+
 export function AmbientStrip({ nodes }: { nodes: RunNode[] }) {
   const [tick, setTick] = useState(0)
 
@@ -46,10 +54,13 @@ export function AmbientStrip({ nodes }: { nodes: RunNode[] }) {
     return () => window.clearInterval(timer)
   }, [])
 
+  const rows: Array<Pick<RunNode, 'node_key' | 'label'> & { output_summary?: RunNode['output_summary'] }> =
+    nodes.length > 0 ? nodes : DEFAULT_ROWS
+
   return (
     <div className="ambient-strip">
       <div className="ambient-items">
-        {nodes.slice(0, 3).map((node, index) => {
+        {rows.slice(0, 3).map((node, index) => {
           const feed = ACTIVITY[index % ACTIVITY.length]
           const message = feed[tick % feed.length]
           // A counter that only moves when a "new item" plausibly landed.
