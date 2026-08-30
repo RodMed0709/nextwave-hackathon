@@ -200,6 +200,46 @@ test('a discovered node arrives with the edge that anchors it', () => {
   assert.equal(state.edges['first->discovered']?.planned, false)
 })
 
+test('subtask snapshots use last-write-wins on start and progress updates', () => {
+  let state = createInitialRunState('run-1')
+  state = applyEvent(state, event(1, 'node_status_changed', {
+    status: 'in_progress',
+    subtasks: [
+      { key: 'write-test', label: 'Write the failing test', status: 'pending' },
+      { key: 'implement', label: 'Implement the change', status: 'pending' },
+      { key: 'verify', label: 'Verify the result', status: 'pending' },
+    ],
+  }, 'build'))
+  assert.deepEqual(state.nodes.build.subtasks?.map((subtask) => subtask.key), ['write-test', 'implement', 'verify'])
+
+  const latest = [
+    { key: 'write-test', label: 'Write the failing test', status: 'done' },
+    { key: 'implement', label: 'Implement the change', status: 'running' },
+  ] as const
+  state = applyEvent(state, event(2, 'node_updated', { subtasks: latest }, 'build'))
+  assert.deepEqual(state.nodes.build.subtasks, latest)
+
+  // A repeated complete snapshot replaces with the same value; it never appends.
+  state = applyEvent(state, event(3, 'node_updated', { subtasks: latest }, 'build'))
+  assert.equal(state.nodes.build.subtasks?.length, 2)
+
+  // An unrelated update keeps the current snapshot, while [] explicitly clears it.
+  state = applyEvent(state, event(4, 'node_updated', { progress_percent: 75 }, 'build'))
+  assert.deepEqual(state.nodes.build.subtasks, latest)
+  state = applyEvent(state, event(5, 'node_updated', { subtasks: [] }, 'build'))
+  assert.deepEqual(state.nodes.build.subtasks, [])
+})
+
+test('subtask detail JSON is not treated as a node finding', () => {
+  const subtasks = [{ key: 'write-test', label: 'Write the failing test', status: 'running' }]
+  const state = applyEvent(createInitialRunState('run-1'), event(1, 'node_updated', {
+    detail: JSON.stringify({ subtasks }),
+    subtasks,
+  }, 'build'))
+
+  assert.equal(state.nodes.build.output_summary, null)
+})
+
 test('an operator steer records the instruction without claiming the step stopped', () => {
   let state = createInitialRunState('run-1')
   state = applyEvent(state, event(1, 'node_added', {

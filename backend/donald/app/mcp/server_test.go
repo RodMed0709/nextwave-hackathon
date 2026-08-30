@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -224,5 +226,105 @@ func TestTransitionKeySeparatesAttempts(t *testing.T) {
 	// Within one attempt, a duplicate send must still deduplicate.
 	if transitionKey("complete", "run1", "fetch", enums.AGENT_NODE_STATUS_IN_PROGRESS, 1) != firstComplete {
 		t.Error("a duplicate send inside one attempt must produce a stable key")
+	}
+}
+
+func TestNormalizeSubtasksDefaultsPendingAndValidatesSnapshots(t *testing.T) {
+	got, err := normalizeSubtasks([]Subtask{
+		{Key: "write-test", Label: "Write the failing test"},
+		{Key: "implement", Label: "Implement the change", Status: "running"},
+	})
+	if err != nil {
+		t.Fatalf("normalizeSubtasks returned an unexpected error: %v", err)
+	}
+	want := []Subtask{
+		{Key: "write-test", Label: "Write the failing test", Status: "pending"},
+		{Key: "implement", Label: "Implement the change", Status: "running"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeSubtasks() = %#v, want %#v", got, want)
+	}
+
+	tests := []struct {
+		name     string
+		subtasks []Subtask
+		want     string
+	}{
+		{"too many subtasks", make([]Subtask, 51), "subtasks has 51 items; maximum is 50"},
+		{"missing key", []Subtask{{Label: "Write the test"}}, "subtasks[0].key is required"},
+		{"missing label", []Subtask{{Key: "write-test"}}, "subtasks[0].label is required"},
+		{"label too long", []Subtask{{Key: "write-test", Label: strings.Repeat("x", 121)}}, "subtasks[0].label is 121 characters; maximum is 120"},
+		{"duplicate key", []Subtask{{Key: "write-test", Label: "First"}, {Key: "write-test", Label: "Second"}}, "subtasks[1].key \"write-test\" is duplicated"},
+		{"duplicate key after trimming", []Subtask{{Key: "write-test", Label: "First"}, {Key: " write-test ", Label: "Second"}}, "subtasks[1].key \"write-test\" is duplicated"},
+		{"invalid status", []Subtask{{Key: "write-test", Label: "Write the test", Status: "waiting"}}, "subtasks[0].status must be one of pending, running, done, skipped, failed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := normalizeSubtasks(tc.subtasks)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("normalizeSubtasks() error = %v, want message containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestDetailWithSubtasksSeparatesAbsentFromEmpty(t *testing.T) {
+	// Absent and empty are different instructions: absent means "I am not talking
+	// about subtasks", empty means "the list is now empty". Collapsing them would
+	// make every progress report without subtasks wipe the card's list.
+	if absent := detailWithSubtasks(nil); absent.Valid {
+		t.Fatalf("a nil snapshot must write no detail at all, got %q", absent.String)
+	}
+
+	empty := detailWithSubtasks([]Subtask{})
+	var emptyDetail map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(empty.String), &emptyDetail); err != nil {
+		t.Fatal(err)
+	}
+	if string(emptyDetail["subtasks"]) != "[]" {
+		t.Fatalf("an explicit empty snapshot must stay present, got %s", empty.String)
+	}
+}
+
+func TestLiftDetailExposesTypedSubtasksWithoutDroppingRawDetail(t *testing.T) {
+	payload := deltaPayload{Detail: detailJSON(map[string]any{
+		"source_node_key": "prepare",
+		"subtasks":        []Subtask{{Key: "write-test", Label: "Write the test", Status: "done"}},
+	})}
+
+	liftDetail(&payload)
+
+	if payload.Subtasks == nil || len(*payload.Subtasks) != 1 {
+		t.Fatalf("lifted subtasks = %#v, want one item", payload.Subtasks)
+	}
+	if got := (*payload.Subtasks)[0]; got.Key != "write-test" || got.Status != "done" {
+		t.Fatalf("lifted subtask = %#v", got)
+	}
+	if !payload.Detail.Valid || !strings.Contains(payload.Detail.String, "source_node_key") {
+		t.Fatalf("raw detail was lost: %#v", payload.Detail)
+	}
+
+	empty := deltaPayload{Detail: detailJSON(map[string]any{"subtasks": []Subtask{}})}
+	liftDetail(&empty)
+	encoded, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"subtasks":[]`) {
+		t.Fatalf("explicit empty snapshot disappeared from the wire: %s", encoded)
+	}
+}
+
+func TestSubtaskStatusIsOptionalOnTheWire(t *testing.T) {
+	raw, err := json.Marshal(Subtask{Key: "write-test", Label: "Write the test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := wire["status"]; present {
+		t.Fatalf("an omitted status must stay absent so the server can default it to pending, got %s", raw)
 	}
 }

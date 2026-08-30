@@ -1,4 +1,4 @@
-import type { DonaldEvent, InterventionRecord, NodeSummary, RunNode, RunState } from './types'
+import type { DonaldEvent, InterventionRecord, NodeSummary, RunNode, RunState, RunSubtaskStatus } from './types'
 
 export const NODE_STAGGER_MS = 120
 export const EDGE_LAND_DELAY_MS = 340
@@ -23,6 +23,27 @@ export type GraphPresentation = {
 export type LiveNodeStatus = {
   key: string
   text: string
+}
+
+export type SubtaskPresentation = {
+  icon: 'ring' | 'spinner' | 'check' | 'minus' | 'x'
+  tone: 'muted' | 'emphasis' | 'failed'
+  struck: boolean
+}
+
+export function getSubtaskPresentation(status: RunSubtaskStatus): SubtaskPresentation {
+  switch (status) {
+    case 'pending': return { icon: 'ring', tone: 'muted', struck: false }
+    case 'running': return { icon: 'spinner', tone: 'emphasis', struck: false }
+    case 'done': return { icon: 'check', tone: 'muted', struck: true }
+    case 'skipped': return { icon: 'minus', tone: 'muted', struck: true }
+    case 'failed': return { icon: 'x', tone: 'failed', struck: false }
+    // Unreachable through the union, and deliberately handled anyway: without it
+    // an unexpected status returned undefined, and FlowCard crashed reading
+    // .tone off it. A status we do not know should look unstarted, not take the
+    // card down with it.
+    default: return { icon: 'ring', tone: 'muted', struck: false }
+  }
 }
 
 export type DisplayMetric = {
@@ -300,11 +321,13 @@ export function getLatestNodeStatus(
       event.event_type !== 'agent_message'
     ) continue
 
+    const hasSubtasks = Array.isArray(event.payload.subtasks) && event.payload.subtasks.length > 0
+    const detail = hasSubtasks ? null : stringValue(event.payload.detail)
     const text = stringValue(event.payload.status_message) ??
       stringValue(event.payload.message) ??
       stringValue(event.payload.headline) ??
       stringValue(event.payload.finding) ??
-      stringValue(event.payload.detail) ??
+      detail ??
       fallbackStatus(node, event)
     return { key: event.idempotency_key, text }
   }

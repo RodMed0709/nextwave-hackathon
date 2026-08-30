@@ -21,11 +21,12 @@ import {
   ExternalLink,
   FileText,
   Hand,
+  Minus,
   Send,
   Sparkles,
   UserRound,
-  X,
   Wrench,
+  X,
 } from 'lucide-react'
 import {
   Background,
@@ -55,6 +56,7 @@ import {
   getNodeInterventions,
   getPrimaryMetric,
   getRunRequest,
+  getSubtaskPresentation,
   getRunSavings,
   getVisiblyActiveNodeKey,
   metricRows,
@@ -79,6 +81,7 @@ import type {
   RunArtifact,
   RunNode,
   RunState,
+  RunSubtask,
 } from '@/lib/donald/types'
 import '@xyflow/react/dist/style.css'
 
@@ -606,6 +609,16 @@ function ExpandedDetails({ data }: { data: FlowNodeData }) {
         </section>
       )}
 
+      {/* The card shows a six-item window; the drawer is where there is room for
+          all of them. Without this, opening the drawer on a step with subtasks
+          showed strictly LESS than the collapsed card behind it. */}
+      {node.subtasks && node.subtasks.length > 0 && (
+        <section>
+          <div className="section-label">Work inside this step</div>
+          <SubtaskList subtasks={node.subtasks} complete />
+        </section>
+      )}
+
       <section className="timing-grid">
         <div><Clock3 size={13} /><span>Started</span><b>{formatTime(node.started_at)}</b></div>
         <div><Clock3 size={13} /><span>Duration</span><b>{formatDuration(node)}</b></div>
@@ -721,6 +734,7 @@ function FlowCard({ data }: { data: FlowNodeData }) {
         </div>
       )}
       {data.liveStatus && <p className="live-status"><i />{data.liveStatus.text}</p>}
+      {node.subtasks && node.subtasks.length > 0 && <SubtaskList subtasks={node.subtasks} />}
       {pendingIntervention && (
         <p className="card-instruction"><Hand size={11} /> {pendingIntervention.type === 'stop' ? 'Stop' : 'Steer'} sent — {pendingIntervention.status === 'queued' ? 'waiting for the agent' : 'agent has it'}</p>
       )}
@@ -729,6 +743,48 @@ function FlowCard({ data }: { data: FlowNodeData }) {
       </span>
       <Handle type="source" position={Position.Right} />
     </div>
+  )
+}
+
+const SUBTASK_WINDOW = 6
+
+// The window follows the work instead of cutting from the head. With ten
+// subtasks and the first six done, a fixed slice(0, 6) showed six struck-through
+// lines and hid the only one actually running — the reason the list exists.
+function subtaskWindowStart(subtasks: RunSubtask[]): number {
+  if (subtasks.length <= SUBTASK_WINDOW) return 0
+  const focus = subtasks.findIndex((s) => s.status === 'running' || s.status === 'failed')
+  if (focus < 0) return Math.max(0, subtasks.length - SUBTASK_WINDOW)
+  // Keep a line of finished context above the live one where there is room.
+  return Math.min(Math.max(0, focus - 1), subtasks.length - SUBTASK_WINDOW)
+}
+
+function SubtaskList({ subtasks, complete = false }: { subtasks: RunSubtask[]; complete?: boolean }) {
+  const start = complete ? 0 : subtaskWindowStart(subtasks)
+  const visibleSubtasks = complete ? subtasks : subtasks.slice(start, start + SUBTASK_WINDOW)
+  const hiddenBefore = start
+  const hiddenAfter = subtasks.length - start - visibleSubtasks.length
+  return (
+    <ul className={complete ? 'subtask-list subtask-list-complete' : 'subtask-list'}>
+      {hiddenBefore > 0 && <li className="subtask-more">+{hiddenBefore} done</li>}
+      {visibleSubtasks.map((subtask) => {
+        const appearance = getSubtaskPresentation(subtask.status)
+        return (
+          <li
+            className={`subtask-item subtask-${appearance.tone} ${appearance.struck ? 'subtask-struck' : ''}`}
+            key={subtask.key}
+          >
+            <span className={`subtask-icon subtask-icon-${appearance.icon}`} role="img" aria-label={`${subtask.status} subtask`}>
+              {appearance.icon === 'check' && <Check size={12} aria-hidden="true" />}
+              {appearance.icon === 'minus' && <Minus size={12} aria-hidden="true" />}
+              {appearance.icon === 'x' && <X size={12} aria-hidden="true" />}
+            </span>
+            <span className="subtask-label">{subtask.label}</span>
+          </li>
+        )
+      })}
+      {hiddenAfter > 0 && <li className="subtask-more">+{hiddenAfter} more</li>}
+    </ul>
   )
 }
 

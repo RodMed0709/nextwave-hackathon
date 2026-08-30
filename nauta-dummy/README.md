@@ -1,6 +1,6 @@
 # Nauta demo scenarios
 
-Seven scenario briefs an agent enacts live, reporting through the `donald-flow` skill to
+Eight scenario briefs an agent enacts live, reporting through the `donald-flow` skill to
 the Donald MCP server. The graph the audience watches is built from those reports.
 
 | File | Ends | Shows |
@@ -12,10 +12,12 @@ the Donald MCP server. The graph the audience watches is built from those report
 | `nauta_agent_replan_midflight.md` | succeeded | Plan revised mid-run with a stated cause; line becomes a diamond |
 | `nauta_agent_parallel_sweep.md` | succeeded | Twelve concurrent lanes, one exception surfacing |
 | `nauta_agent_edge_cases.md` | various | Stop mid-run, provider outage, context loss, duplicates, slow step, abandoned run |
+| `nauta_agent_land_pickup_conflict.md` | succeeded | **Subtasks inside a card**, one discovered mid-step; a human gate with three priced options; a different customer |
 
 **Suggested demo order:** happy path (what it is) → parallel sweep (what it is at scale) →
 waiting on user (it is a control, not a dashboard) → replan (the plan changing is the
-product) → failed (failure is legible).
+product) → land pickup conflict (the same thing inside one card) → failed (failure is
+legible).
 
 All timings are deliberate. **The duration is the intervention window** — a graph of
 instant steps has a decorative stop button.

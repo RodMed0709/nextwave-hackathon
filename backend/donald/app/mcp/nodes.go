@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid"
 	"github.com/guregu/null/v6"
@@ -225,16 +226,87 @@ func (h *Handler) AddAction(ctx context.Context, req *mcp.CallToolRequest, args 
 // Tools: start_action / report_progress / complete_action / fail_action / skip_action
 // ─────────────────────────────────────────────
 
+type Subtask struct {
+	Key    string `json:"key" jsonschema:"Stable key, unique within this node"`
+	Label  string `json:"label" jsonschema:"Short user-facing description in English"`
+	Status string `json:"status,omitempty" jsonschema:"Subtask state: pending, running, done, skipped, or failed. Defaults to pending."`
+}
+
+// report_progress is the highest-frequency tool in the protocol, and every call
+// carries the WHOLE snapshot. Without a ceiling, one agent with a runaway list
+// grows the event log and the card without bound — and the card cannot scroll.
+const (
+	maxSubtasks          = 50
+	maxSubtaskLabelRunes = 120
+)
+
+func normalizeSubtasks(subtasks []Subtask) ([]Subtask, error) {
+	if subtasks == nil {
+		return nil, nil
+	}
+	if len(subtasks) > maxSubtasks {
+		return nil, fmt.Errorf("subtasks has %d items; maximum is %d - a step with more than that is several steps, so declare them with add_action", len(subtasks), maxSubtasks)
+	}
+	normalized := make([]Subtask, len(subtasks))
+	seen := make(map[string]bool, len(subtasks))
+	for i, subtask := range subtasks {
+		// Trim before every check, and store what was checked. Comparing the raw
+		// key while validating the trimmed one let "a" and "a " through as two
+		// distinct subtasks that render identically.
+		subtask.Key = strings.TrimSpace(subtask.Key)
+		subtask.Label = strings.TrimSpace(subtask.Label)
+		if subtask.Key == "" {
+			return nil, fmt.Errorf("subtasks[%d].key is required", i)
+		}
+		if subtask.Label == "" {
+			return nil, fmt.Errorf("subtasks[%d].label is required", i)
+		}
+		if n := utf8.RuneCountInString(subtask.Label); n > maxSubtaskLabelRunes {
+			return nil, fmt.Errorf("subtasks[%d].label is %d characters; maximum is %d - it is a line on a card, not a paragraph", i, n, maxSubtaskLabelRunes)
+		}
+		if seen[subtask.Key] {
+			return nil, fmt.Errorf("subtasks[%d].key %q is duplicated; keys must be unique within the node", i, subtask.Key)
+		}
+		seen[subtask.Key] = true
+		if subtask.Status == "" {
+			subtask.Status = "pending"
+		}
+		switch subtask.Status {
+		case "pending", "running", "done", "skipped", "failed":
+		default:
+			return nil, fmt.Errorf("subtasks[%d].status must be one of pending, running, done, skipped, failed (got %q)", i, subtask.Status)
+		}
+		normalized[i] = subtask
+	}
+	return normalized, nil
+}
+
+// A nil snapshot writes no detail at all; an explicit empty one writes `[]`,
+// which is how an agent clears a list it no longer has work for. The two are
+// not the same and the client relies on the difference.
+func detailWithSubtasks(subtasks []Subtask) null.String {
+	if subtasks == nil {
+		return null.String{}
+	}
+	return detailJSON(map[string]any{"subtasks": subtasks})
+}
+
 type StartActionParams struct {
-	RunKey       string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
-	NodeKey      string `json:"node_key" jsonschema:"The action you are starting"`
-	InputSummary string `json:"input_summary,omitempty" jsonschema:"Short summary of the inputs. Never put credentials or personal data here."`
+	RunKey       string    `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey      string    `json:"node_key" jsonschema:"The action you are starting"`
+	InputSummary string    `json:"input_summary,omitempty" jsonschema:"Short summary of the inputs. Never put credentials or personal data here."`
+	Subtasks     []Subtask `json:"subtasks,omitempty" jsonschema:"Complete ordered subtask snapshot. Declare it when starting the step."`
 }
 
 func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, args StartActionParams) (*mcp.CallToolResult, any, error) {
+	subtasks, err := normalizeSubtasks(args.Subtasks)
+	if err != nil {
+		return nil, nil, err
+	}
 	return h.transition(ctx, args.RunKey, args.NodeKey, transitionSpec{
 		to:                enums.AGENT_NODE_STATUS_IN_PROGRESS,
 		idempotencySuffix: "start",
+		detail:            detailWithSubtasks(subtasks),
 		mutate: func(n *agent_node_entity.AgentNode) {
 			now := time.Now().UTC()
 			n.StartedAt = nullTime(&now)
@@ -252,15 +324,20 @@ func (h *Handler) StartAction(ctx context.Context, req *mcp.CallToolRequest, arg
 }
 
 type ReportProgressParams struct {
-	RunKey  string `json:"run_key" jsonschema:"The run_key you passed to start_run"`
-	NodeKey string `json:"node_key" jsonschema:"The action you are working on"`
-	Message string `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
-	Percent *int64 `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	RunKey   string    `json:"run_key" jsonschema:"The run_key you passed to start_run"`
+	NodeKey  string    `json:"node_key" jsonschema:"The action you are working on"`
+	Message  string    `json:"message" jsonschema:"One short line describing what is happening right now - this is displayed live under the node"`
+	Percent  *int64    `json:"percent,omitempty" jsonschema:"Optional completion percentage, 0-100"`
+	Subtasks []Subtask `json:"subtasks,omitempty" jsonschema:"Complete ordered subtask snapshot for this update."`
 }
 
 // ReportProgress is the highest-frequency tool in the surface, so it stays
 // deliberately thin: no status change, no structural change, one short line.
 func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, args ReportProgressParams) (*mcp.CallToolResult, any, error) {
+	subtasks, err := normalizeSubtasks(args.Subtasks)
+	if err != nil {
+		return nil, nil, err
+	}
 	run, err := h.resolveRun(ctx, args.RunKey)
 	if err != nil {
 		return nil, nil, err
@@ -285,6 +362,7 @@ func (h *Handler) ReportProgress(ctx context.Context, req *mcp.CallToolRequest, 
 			Message:         nullString(args.Message),
 			ProgressPercent: nullInt64(args.Percent),
 			NewStatus:       node.Status,
+			Detail:          detailWithSubtasks(subtasks),
 		},
 		apply: func(ctx context.Context, tx *sql.Tx) error {
 			node.StatusMessage = nullString(args.Message)

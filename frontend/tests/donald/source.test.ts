@@ -67,6 +67,36 @@ test('liveSource reads SSE frames, skips keepalives, and yields events in order'
   assert.equal(second.value?.agent_label, 'Nina')
 })
 
+test('liveSource sanitizes typed subtask snapshots without collapsing absent and empty', async () => {
+  const body = [
+    'data: {"sequence":1,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:00Z","node_key":"build","idempotency_key":"a","payload":{}}\n\n',
+    'data: {"sequence":2,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:01Z","node_key":"build","idempotency_key":"b","payload":{"subtasks":[]}}\n\n',
+    'data: {"sequence":3,"event_type":"node_updated","occurred_at":"2026-08-29T11:20:02Z","node_key":"build","idempotency_key":"c","payload":{"subtasks":[{"key":"write-test","label":"Write the failing test","status":"running"},{"key":"implement","label":"Implement the change"},{"key":"implement","label":"Duplicate key","status":"done"},{"key":"verify","label":"Verify the result","status":"waiting"},null,{"key":"broken"}]}}\n\n',
+  ].join('')
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body))
+      controller.close()
+    },
+  })
+  const source = liveSource('https://api.example.com', 'run-1', {
+    fetch: (async () => new Response(stream, { status: 200 })) as unknown as typeof fetch,
+    wait: async () => {},
+  })
+
+  const absent = (await source.next()).value
+  const empty = (await source.next()).value
+  const sanitized = (await source.next()).value
+
+  assert.ok(absent && !Object.hasOwn(absent.payload, 'subtasks'))
+  assert.deepEqual(empty?.payload.subtasks, [])
+  assert.deepEqual(sanitized?.payload.subtasks, [
+    { key: 'write-test', label: 'Write the failing test', status: 'running' },
+    { key: 'implement', label: 'Implement the change', status: 'pending' },
+    { key: 'verify', label: 'Verify the result', status: 'pending' },
+  ])
+})
+
 test('liveSource resolves the newest run when no run key is given', async () => {
   const calls: string[] = []
   const stream = new ReadableStream<Uint8Array>({

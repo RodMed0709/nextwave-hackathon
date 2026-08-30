@@ -136,6 +136,11 @@ type deltaPayload struct {
 
 	// Plan is the whole declared plan, present on plan_declared only.
 	Plan *planWire `json:"plan,omitempty"`
+
+	// Subtasks is the complete ordered snapshot carried by start_action or
+	// report_progress. A pointer preserves the difference between absent and an
+	// explicitly empty list, which clears the client's current snapshot.
+	Subtasks *[]Subtask `json:"subtasks,omitempty"`
 }
 
 // planWire is the declared plan as a client receives it. Edges are included

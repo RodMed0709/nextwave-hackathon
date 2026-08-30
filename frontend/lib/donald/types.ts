@@ -11,6 +11,13 @@ export type NodeStatus =
 
 export type EdgeStatus = 'pending' | 'traversed' | 'skipped' | 'removed'
 export type RunStatus = 'not_started' | 'running' | 'finished' | 'failed' | 'cancelled'
+export type RunSubtaskStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed'
+
+export type RunSubtask = {
+  key: string
+  label: string
+  status: RunSubtaskStatus
+}
 
 export type DonaldEvent = {
   sequence: number
@@ -53,6 +60,7 @@ export type RunNode = {
   finished_at: string | null
   input_summary: string | null
   output_summary: NodeSummary | null
+  subtasks?: RunSubtask[]
   artifacts: RunArtifact[]
   removed: boolean
   removed_at?: string | null
@@ -184,4 +192,35 @@ export function isNodeStatus(value: unknown): value is NodeStatus {
     value === 'cancelled' ||
     value === 'skipped'
   )
+}
+
+export function isRunSubtaskStatus(value: unknown): value is RunSubtaskStatus {
+  return value === 'pending' || value === 'running' || value === 'done' || value === 'skipped' || value === 'failed'
+}
+
+// Sanitizing lives here, next to the guards, because BOTH the transport and the
+// reducer have to do it. It used to live only in source.ts, which meant a
+// snapshot reaching the reducer by any other path — a recorded fixture, a test,
+// a future producer — was cast unchecked and could put a duplicate key or an
+// unknown status in front of the renderer. A malformed subtask should cost you
+// that subtask, never the card.
+//
+// Returns null when the value is not a list at all, which the caller reads as
+// "say nothing about subtasks" rather than "the list is empty".
+export function sanitizeSubtasks(value: unknown): RunSubtask[] | null {
+  if (!Array.isArray(value)) return null
+  const seen = new Set<string>()
+  return value.flatMap((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
+    const candidate = item as Record<string, unknown>
+    const key = typeof candidate.key === 'string' ? candidate.key.trim() : ''
+    const label = typeof candidate.label === 'string' ? candidate.label.trim() : ''
+    if (!key || !label || seen.has(key)) return []
+    seen.add(key)
+    return [{
+      key,
+      label,
+      status: isRunSubtaskStatus(candidate.status) ? candidate.status : 'pending',
+    }]
+  })
 }

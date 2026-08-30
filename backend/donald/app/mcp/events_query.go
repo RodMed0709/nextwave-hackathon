@@ -110,50 +110,7 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 				}
 			}
 		}
-		// detail carries the type-specific extras the stored payload has no
-		// columns for: edge endpoints, the declared plan, and the human time a
-		// completed step stood in for. Lifting them into named fields means a
-		// client never has to parse a nested JSON string.
-		if d.Payload.Detail.Valid {
-			var extra map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(d.Payload.Detail.String), &extra); err == nil {
-				assign := func(key string, dst *string) {
-					if raw, ok := extra[key]; ok {
-						_ = json.Unmarshal(raw, dst)
-					}
-				}
-				// The numeric counterpart. It writes through a pointer-to-pointer
-				// so a key that is absent, or present but not a number, leaves the
-				// field nil rather than reporting a confident zero — "this step
-				// saved 0 minutes" is a claim, and not one the agent made.
-				assignInt := func(key string, dst **int64) {
-					raw, ok := extra[key]
-					if !ok {
-						return
-					}
-					var n int64
-					if err := json.Unmarshal(raw, &n); err != nil {
-						return
-					}
-					*dst = &n
-				}
-				assign("edge_key", &d.Payload.EdgeKey)
-				assign("source_node_key", &d.Payload.SourceNodeKey)
-				assign("target_node_key", &d.Payload.TargetNodeKey)
-				assign("origin", &d.Payload.Origin)
-				// Replayed, never recalculated: this is the number the agent
-				// reported when the step completed, and it must read the same on
-				// the hundredth open of the card as on the first.
-				assignInt("manual_minutes", &d.Payload.ManualMinutes)
-				if raw, ok := extra["steps"]; ok {
-					d.Payload.Plan = &planWire{}
-					_ = json.Unmarshal(raw, &d.Payload.Plan.Steps)
-					if e, ok := extra["edges"]; ok {
-						_ = json.Unmarshal(e, &d.Payload.Plan.Edges)
-					}
-				}
-			}
-		}
+		liftDetail(&d.Payload)
 		d.Payload.RunName = runName
 		d.Payload.RunSummary = runSummary
 		if d.Payload.NewStatus != enums.AGENT_NODE_STATUS_INVALID {
@@ -197,6 +154,53 @@ func deltasAfter(ctx context.Context, db *sql.DB, runUUID uuid.UUID, after int64
 		return nil, err
 	}
 	return out, nil
+}
+
+// liftDetail exposes type-specific extras as ordinary delta fields while
+// retaining the raw detail for clients that already consume its other keys.
+func liftDetail(payload *deltaPayload) {
+	if !payload.Detail.Valid {
+		return
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload.Detail.String), &extra); err != nil {
+		return
+	}
+	assign := func(key string, dst *string) {
+		if raw, ok := extra[key]; ok {
+			_ = json.Unmarshal(raw, dst)
+		}
+	}
+	// The numeric counterpart. It writes through a pointer-to-pointer so an
+	// absent or malformed value stays nil rather than becoming a confident zero.
+	assignInt := func(key string, dst **int64) {
+		raw, ok := extra[key]
+		if !ok {
+			return
+		}
+		var value int64
+		if err := json.Unmarshal(raw, &value); err == nil {
+			*dst = &value
+		}
+	}
+	assign("edge_key", &payload.EdgeKey)
+	assign("source_node_key", &payload.SourceNodeKey)
+	assign("target_node_key", &payload.TargetNodeKey)
+	assign("origin", &payload.Origin)
+	assignInt("manual_minutes", &payload.ManualMinutes)
+	if raw, ok := extra["steps"]; ok {
+		payload.Plan = &planWire{}
+		_ = json.Unmarshal(raw, &payload.Plan.Steps)
+		if edges, ok := extra["edges"]; ok {
+			_ = json.Unmarshal(edges, &payload.Plan.Edges)
+		}
+	}
+	if raw, ok := extra["subtasks"]; ok {
+		var subtasks []Subtask
+		if err := json.Unmarshal(raw, &subtasks); err == nil {
+			payload.Subtasks = &subtasks
+		}
+	}
 }
 
 // enrichInterventions attaches the type and prompt to the stop/steer events, so
