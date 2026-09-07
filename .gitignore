@@ -50,3 +50,8 @@ __pycache__/
 
 # scratch snapshots of run logs, not part of the product
 backup/
+
+# Pitch media kept out of git: the 61 MB screen recording bloats every clone
+# forever, and the cover lives tracked at docs/donald-cover.png.
+DONALD.mp4
+DONALD_PORTADA.png

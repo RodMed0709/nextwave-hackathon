@@ -4,6 +4,8 @@
 
 NextWave Hackathon 2026 · CDMX · Challenge 3 — *The Interface That Builds Itself*
 
+[![Donald — Nauta runtime supervision](docs/donald-cover.png)](https://usedonald.com)
+
 ---
 
 ## See it live
