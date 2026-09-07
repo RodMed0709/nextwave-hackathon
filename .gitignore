@@ -47,3 +47,6 @@ __pycache__/
 
 # macOS Finder metadata
 .DS_Store
+
+# scratch snapshots of run logs, not part of the product
+backup/
