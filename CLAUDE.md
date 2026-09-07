@@ -7,54 +7,56 @@ The human-facing overview is [`readme.md`](readme.md); this file is the operatio
 
 ## The one rule that unblocks you
 
-**Everything is deployed and live at `usedonald.com`. Never point anything at
-`localhost`, `127.0.0.1`, or any other local backend — there is no local backend
-and there never will be one for you.**
+**The demo is a Vercel deployment with no backend, and that is deliberate.**
+`usedonald.com` serves `frontend/` with `NEXT_PUBLIC_DONALD_API` unset, so every run key
+falls back to a bundled JSONL recording. Nothing to boot, nothing that can be down.
 
-The database, the REST API, the SSE stream and the MCP server all run on the team's
-own infrastructure and are reachable from anywhere, **with no authentication**:
+**The previously hosted backend is GONE.** `api.usedonald.com`, `mcp.usedonald.com` and
+`connect.usedonald.com` no longer resolve — the DNS records were deleted on 7 Sep 2026 along
+with the Cloudflare Tunnel that served them. Do not fetch them, do not write them into code,
+docs or env files, and do not tell anyone to curl them.
 
-| Surface | URL | What it serves |
-|---|---|---|
-| Web app | `https://usedonald.com/runs/<run_key>` | one run, watched live |
-| REST API | `https://api.usedonald.com/v1/runs` | run list, newest first |
-| Snapshot | `https://api.usedonald.com/v1/runs/<run_key>` | run + nodes + edges + `last_sequence` |
-| Live stream | `https://api.usedonald.com/v1/runs/<run_key>/stream?after=N` | SSE deltas after a cursor |
-| Interventions | `POST https://api.usedonald.com/v1/runs/<run_key>/interventions` | stop/steer — `{type, node_key?, prompt}` |
-| MCP server | `https://mcp.usedonald.com/v1/mcp` | agent-facing, streamable HTTP, 13 tools |
+| Surface | Status |
+|---|---|
+| `https://usedonald.com` and `/runs/<run_key>` | **live on Vercel**, recordings only |
+| `https://usedonald.vercel.app` | same deployment, direct alias |
+| `api.usedonald.com` · `mcp.usedonald.com` | **deleted** — no DNS, no host, no cert |
 
-Quick sanity check (should return `{"status":"OK"}`):
+So: **for frontend work you need no backend at all.** `npx pnpm@10 dev` and the five recorded
+runs play. That is the whole setup.
 
-```sh
-curl -s https://api.usedonald.com/healthz
-```
+### If you genuinely need the live path
 
-The **frontend dev server** itself still runs on `localhost:3000` — that part is
-normal Next.js. What must never be local is the **data**: the API base the app talks
-to is always `https://api.usedonald.com`.
+The Go API, the MCP server and the MySQL schema are all still in this repo and still work —
+they are simply not hosted by anyone right now. `readme.md` §*Self-hosting the live stack* has
+the recipe: `backend/donald/Dockerfile` run twice (`DONALD_ROLE=api` and `DONALD_ROLE=mcp`),
+`deploy/schema.sql` into a MySQL, `deploy/prod.yaml.example` as the config template, then set
+`NEXT_PUBLIC_DONALD_API` to wherever you put the API.
 
-### Hard rule: never GENERATE localhost either
+**Ask Rodrigo before standing any of that up.** It costs money and it is not needed for the
+work that actually happens in this repo.
 
-Do not write `localhost`, `127.0.0.1`, `0.0.0.0` or any local port as an API base,
-MCP URL, database host, fetch target, env-var value, config default, doc example or
-code comment — anywhere, ever. There is nothing running locally to point at. The only
-acceptable localhost in this repo is the Next dev-server URL in human-facing run
-instructions (`http://localhost:3000`).
+### Hard rule: still do not scatter localhost around
 
-**Before declaring any task done, run this over the files you touched and justify
-every hit:**
+The reason this rule existed has changed, but the rule has not. Do not write `localhost`,
+`127.0.0.1` or `0.0.0.0` as an API base, MCP URL, database host, fetch target, env-var value,
+config default, doc example or code comment. The only acceptable local URLs are the **Next
+dev-server** (`http://localhost:3000`) in human-facing run instructions, and whatever a
+self-host recipe legitimately needs.
+
+Above all: **do not scaffold a mock server, a fake backend, or a docker-compose with a
+database to "unblock" yourself.** The recordings already unblock you.
+
+Before declaring any task done, run this over the files you touched and justify every hit:
 
 ```sh
 git diff --name-only | xargs grep -n -i "localhost\|127\.0\.0\.1" --
 ```
 
-If you catch yourself scaffolding a mock server, a local backend, a docker-compose
-with a database, or an `.env` pointing anywhere but `https://api.usedonald.com` —
-stop. The deployed stack IS the dev environment. Read/write it directly.
-
 ---
 
-## How the frontend connects to the backend
+
+## How the frontend connects to its data
 
 One environment variable decides everything. In `frontend/components/donald/run-viewer.tsx`:
 
@@ -64,27 +66,30 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_DONALD_API ?? null
 // set            → liveSource(API_BASE_URL, runKey)  (snapshot + SSE)
 ```
 
-`NEXT_PUBLIC_DONALD_API` is read from `frontend/.env.local`, which is **gitignored —
-a fresh clone does not have it**. That is why the app "cannot connect" after cloning.
-Fix it once:
+`NEXT_PUBLIC_DONALD_API` is read from `frontend/.env.local`, which is **gitignored**. A fresh
+clone does not have it, **and does not need it** — that is the supported path:
 
 ```sh
 cd frontend
-cp .env.example .env.local     # sets NEXT_PUBLIC_DONALD_API=https://api.usedonald.com
 npx pnpm@10 install
 npx pnpm@10 dev                # on Windows PowerShell use npx.cmd, not npx
 ```
 
-Behaviour once the variable is set:
+With the variable unset, **every** run key plays from a bundled recording and the app is fully
+functional offline. Do not "fix" this by inventing an API base.
 
-- The three pitch runs — `missing-invoice`, `replan`, `land-pickup` — and the bare `/`
-  route play from **bundled recordings** (`frontend/lib/donald/events.*.jsonl`) on
-  purpose, so the pitch never depends on the network. The allowlist is
-  `RECORDED_RUNS` in `run-viewer.tsx`.
-- **Any other run key streams live** from the API and accepts interventions. Create a
-  live run by having any MCP client call the tools at `https://mcp.usedonald.com/v1/mcp`
-  (see [`skill/README.md`](skill/README.md)) — `start_run` returns a `watch_url` you
-  can open immediately.
+Behaviour if someone does set it to a self-hosted API:
+
+- The five pitch runs — `missing-invoice`, `replan`, `land-pickup`, `berrios-op4471`,
+  `berrios-op4471-v2` — and the bare `/` route still play from **bundled recordings**
+  (`frontend/lib/donald/events.*.jsonl`) on purpose, so the pitch never depends on the network.
+  The allowlist is `RECORDED_RUNS` in `run-viewer.tsx`.
+- **Any other run key streams live** from that API and accepts interventions, created by an MCP
+  client calling the tools on the self-hosted MCP server (see [`skill/README.md`](skill/README.md))
+  — `start_run` returns a `watch_url` you can open immediately.
+
+`frontend/.env.example` documents the variable; it deliberately ships **commented out**, because
+there is no default host to point at any more.
 
 **All shape differences between backend payloads and what the UI wants are absorbed in
 `frontend/lib/donald/source.ts` (the adapter) and `frontend/lib/donald/reduce.ts` (the
@@ -93,24 +98,26 @@ never ask the backend to reshape events.**
 
 ---
 
-## The database — you do not need credentials
 
-The data lives in MySQL inside a microk8s cluster on the team's Linode box. You are
-probably **not invited to nuzur** (the SaaS the backend is generated from) and you do
-**not have the MySQL credentials** (they exist only in a root-only file on the box).
-None of that blocks you:
+## The database — there is nothing to connect to
 
-- **Read anything** through the public REST API above — every table is exposed as
-  generated CRUD in kebab-case (`/v1/agent-runs`, `/v1/agent-events`, `/v1/agent-nodes`,
-  `/v1/agent-edges`, `/v1/interventions`, `/v1/artifacts`, `/v1/clients`), plus the
-  curated `/v1/runs` endpoints above. No auth; the paging parameter is `page_size`,
-  not `limit`. The full contract is served at `https://api.usedonald.com/v1/openapi.yaml`.
-- **Write runs/events** through the public MCP endpoint — also no auth.
-- Direct SQL access is SSH-only to the box and is not needed for frontend work. If you
-  genuinely need it, ask Rodrigo.
+The MySQL that backed the old deployment lived in a microk8s cluster on a Linode box that is
+dead, and the tunnel that replaced it is off. **There is no running database and no REST API.**
+You cannot read live runs, and you do not need to: the five recordings in
+`frontend/lib/donald/events.*.jsonl` are real captured event logs and go through the exact same
+adapter and reducer as live data.
 
-`agent_event` is the source of truth (append-only, per-run monotonic `sequence`);
-nodes and edges are materialised snapshots of it. Schema: `deploy/schema.sql`.
+What still exists in the repo, for when someone self-hosts:
+
+- `deploy/schema.sql` — the full schema. `agent_event` is the source of truth (append-only,
+  per-run monotonic `sequence`); nodes and edges are materialised snapshots of it.
+- `backend/donald/` — the Go REST API and MCP server, generated by nuzur from the
+  `v2-run-graph-events` model. Every table is exposed as generated CRUD in kebab-case, plus
+  the curated `/v1/runs` endpoints. The OpenAPI contract is served at `/v1/openapi.yaml` by a
+  **running** instance.
+- Credentials for the old box existed only in a root-only file on it. They are not recoverable
+  and not needed.
+
 
 ---
 
@@ -193,8 +200,15 @@ branches in components.
 
 ## Current truth vs stale docs
 
-`readme.md` (Status section) is the up-to-date picture: everything redeployed and live
-on `usedonald.com`. **`HANDOFF.md` §1 is stale** — it describes an outage of the old
-`todes.mx` deployment that has since been replaced; its house rules and scope tables
-are still valid. `INTEGRATION.md` describes backend asks that were already fixed.
-When docs disagree, trust `readme.md`, then this file, then the code.
+`readme.md` is the up-to-date picture and this file is the operational contract. When they
+disagree with anything else, they win, then the code.
+
+Known stale, do not trust:
+
+- **`HANDOFF.md` §1** — describes an outage of the old `todes.mx` deployment, two deployments
+  ago. Its house rules and scope tables are still valid.
+- **`INTEGRATION.md`** — backend asks that were fixed long ago.
+- **`deploy/README.md` and the Helm charts** — they describe the Linode/microk8s topology.
+  Still correct as a *recipe*; nothing is running.
+- **Anything anywhere promising `api.usedonald.com` or `mcp.usedonald.com`.** Those hosts are
+  gone. If you find such a reference, fix it rather than following it.
